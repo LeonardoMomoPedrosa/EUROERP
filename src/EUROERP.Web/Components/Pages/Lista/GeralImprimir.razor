@@ -1,0 +1,139 @@
+@page "/lista/geral/imprimir"
+@layout PrintLayout
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>@(_data?.Title ?? "Lista")</PageTitle>
+
+<div class="no-print mb-3 d-flex gap-2">
+    <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">Imprimir</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.close()">Fechar</button>
+</div>
+
+@if (_loading)
+{
+    <p class="text-muted">Carregando...</p>
+}
+else if (_error != null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+else if (_data != null)
+{
+    <table border="0" width="100%" cellpadding="0" cellspacing="0" style="font-size:.75rem; margin-bottom:1rem;">
+        <tr>
+            <td><img src="/images/mailogo.jpg" alt="Logo" style="max-height:48px;" />&nbsp;&nbsp;Data:&nbsp;@_data.Date.ToString("dd/MM/yyyy")</td>
+        </tr>
+    </table>
+
+    <div style="font-size:.8rem;">
+        <strong>@_data.Title</strong>
+        @foreach (var group in _data.Groups)
+        {
+            <div class="mt-3 mb-1 text-center"><strong>@group.GroupName</strong></div>
+            <table class="table table-sm table-bordered mb-0" style="font-size:inherit;">
+                <tbody>
+                    @if (_data.Mode == ProductListMode.Stock)
+                    {
+                        @for (var i = 0; i < group.Items.Count; i += 2)
+                        {
+                            var a = group.Items[i];
+                            var b = i + 1 < group.Items.Count ? group.Items[i + 1] : null;
+                            <tr style="@(i % 4 == 0 ? "background:#CDCDCD" : null)">
+                                @StockCells(a)
+                                @if (b != null) { @StockCells(b) } else { <td></td><td></td><td></td> }
+                            </tr>
+                        }
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < group.Items.Count; i += 2)
+                        {
+                            var a = group.Items[i];
+                            var b = i + 1 < group.Items.Count ? group.Items[i + 1] : null;
+                            <tr style="@(i % 4 == 0 ? "background:#CDCDCD" : null)">
+                                @PriceCells(a)
+                                @if (b != null) { @PriceCells(b) } else { <td></td><td></td><td></td> }
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private ProductListExportDto? _data;
+    private bool _loading = true;
+    private string? _error;
+
+    [Inject] private IProductListExportService ExportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _data = await ExportService.GetProductListDataAsync(ParseRequest(Navigation.ToAbsoluteUri(Navigation.Uri).Query));
+        }
+        catch (Exception ex)
+        {
+            _error = "Erro ao carregar lista: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static ProductListRequest ParseRequest(string query)
+    {
+        var q = ParseQueryString(query);
+        var mode = q.GetValueOrDefault("mode") switch
+        {
+            "priceInStock" => ProductListMode.PriceInStock,
+            "stock" => ProductListMode.Stock,
+            _ => ProductListMode.PriceAll
+        };
+        var allGroups = q.GetValueOrDefault("allGroups") == "1";
+        var groupIds = new List<byte>();
+        if (q.TryGetValue("groupIds", out var raw) && !string.IsNullOrWhiteSpace(raw))
+        {
+            foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (byte.TryParse(part, out var id))
+                    groupIds.Add(id);
+            }
+        }
+        return new ProductListRequest { Mode = mode, AllGroups = allGroups, GroupIds = groupIds };
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query)) return d;
+        foreach (var part in query.TrimStart('?').Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private static RenderFragment PriceCells(ProductListItemDto item) => __builder =>
+    {
+        <td>@($"{item.LionCode} - {item.ExternalPkid}")</td>
+        <td>@item.Name<br /><i>@(item.Description ?? "")</i></td>
+        <td class="text-end">@item.Price.ToString("N2")</td>
+    };
+
+    private static RenderFragment StockCells(ProductListItemDto item) => __builder =>
+    {
+        var stock = item.DecimalStock ? item.Stock.ToString("N3") : item.Stock.ToString("N0");
+        <td>@($"{item.LionCode} - {item.ExternalPkid}")</td>
+        <td>@item.Name</td>
+        <td class="text-end">@stock @item.UnitLabel</td>
+    };
+}

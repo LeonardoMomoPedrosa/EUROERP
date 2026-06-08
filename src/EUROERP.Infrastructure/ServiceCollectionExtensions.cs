@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductHistoryService, ProductHistoryService>();
         services.AddScoped<IProductMassInfoService, ProductMassInfoService>();
         services.AddScoped<IProductMassCostService, ProductMassCostService>();
+        services.AddScoped<IProductListExportService, ProductListExportService>();
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IClientReferenceService, ClientReferenceService>();
         services.AddScoped<ISupplierService, SupplierService>();

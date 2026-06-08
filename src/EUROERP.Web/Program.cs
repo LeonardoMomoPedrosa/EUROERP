@@ -2,6 +2,7 @@ using System.Security.Claims;
 using EUROERP.Application;
 using EUROERP.Application.Address;
 using EUROERP.Application.Auth;
+using EUROERP.Application.Products;
 using EUROERP.Infrastructure;
 using EUROERP.Infrastructure.Address;
 using EUROERP.Web.Components;
@@ -87,6 +88,46 @@ app.MapPost("/auth/login", async (HttpContext ctx, IAuthService authService) =>
 }).AllowAnonymous();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+
+static ProductListRequest ParseProductListRequest(HttpRequest request)
+{
+    var mode = request.Query["mode"].ToString() switch
+    {
+        "priceInStock" => ProductListMode.PriceInStock,
+        "stock" => ProductListMode.Stock,
+        _ => ProductListMode.PriceAll
+    };
+    var allGroups = request.Query["allGroups"] == "1";
+    var groupIds = new List<byte>();
+    var raw = request.Query["groupIds"].ToString();
+    if (!string.IsNullOrWhiteSpace(raw))
+    {
+        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (byte.TryParse(part, out var id))
+                groupIds.Add(id);
+        }
+    }
+    return new ProductListRequest { Mode = mode, AllGroups = allGroups, GroupIds = groupIds };
+}
+
+app.MapGet("/api/productlist/export/pdf", async (HttpRequest request, IProductListExportService exportService) =>
+{
+    var bytes = await exportService.GeneratePdfAsync(ParseProductListRequest(request));
+    var mode = request.Query["mode"].ToString();
+    var prefix = mode == "stock" ? "saldos" : "precos";
+    var fileName = $"{prefix}_{DateTime.Today:yyyyMMdd}.pdf";
+    return Results.File(bytes, "application/pdf", fileName);
+}).RequireAuthorization();
+
+app.MapGet("/api/productlist/export/excel", async (HttpRequest request, IProductListExportService exportService) =>
+{
+    var bytes = await exportService.GenerateExcelAsync(ParseProductListRequest(request));
+    var mode = request.Query["mode"].ToString();
+    var prefix = mode == "stock" ? "saldos" : "precos";
+    var fileName = $"{prefix}_{DateTime.Today:yyyyMMdd}.xlsx";
+    return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+}).RequireAuthorization();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

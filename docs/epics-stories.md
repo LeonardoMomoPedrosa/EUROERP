@@ -124,7 +124,7 @@ Legacy: `Eurobus4/principal/stock/stock_value_search.aspx`, `stock_supplier_valu
 
 ## EPIC 7 — Product lists (Listas)
 
-**Story 7.1 — Lista geral (PDF/Excel)** — **STATUS: Pending**  
+**Story 7.1 — Lista geral (PDF/Excel)** — **STATUS: Done** *(Eurobus)*  
 Legacy: `Eurobus4/principal/list/product_list_search.aspx`  
 Note: Eurobus uses single “Geral” list (no separate Animais page).
 
