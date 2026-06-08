@@ -1,0 +1,157 @@
+@using EUROERP.Application.Address
+@using EUROERP.Application.Products
+@using EUROERP.Application.Suppliers
+
+<div class="row g-2 mb-2">
+    <div class="col-md-6">
+        <label class="form-label">Rua/Av.</label>
+        <InputText class="form-control form-control-sm" Value="@AddressStreet" ValueChanged="@(v => AddressStreetChanged.InvokeAsync(v))" ValueExpression="@(() => AddressStreet)" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Número</label>
+        <InputText class="form-control form-control-sm" Value="@AddressNumber" ValueChanged="@(v => AddressNumberChanged.InvokeAsync(v))" ValueExpression="@(() => AddressNumber)" />
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Complemento</label>
+        <InputText class="form-control form-control-sm" Value="@AddressComplement" ValueChanged="@(v => AddressComplementChanged.InvokeAsync(v))" ValueExpression="@(() => AddressComplement)" />
+    </div>
+</div>
+<div class="row g-2 mb-2">
+    <div class="col-md-3">
+        <label class="form-label">Bairro</label>
+        <InputText class="form-control form-control-sm" Value="@AddressBlock" ValueChanged="@(v => AddressBlockChanged.InvokeAsync(v))" ValueExpression="@(() => AddressBlock)" />
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">CEP <span class="text-danger">*</span></label>
+        <div class="d-flex flex-wrap align-items-stretch gap-1">
+            <div class="flex-grow-1" style="min-width: 6.5rem;">
+                <InputText class="form-control form-control-sm" Value="@AddressZipCode" ValueChanged="@(v => AddressZipCodeChanged.InvokeAsync(v))" ValueExpression="@(() => AddressZipCode)" @onblur="OnCepBlur" placeholder="00000-000" />
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap align-self-stretch" @onclick="ConsultarCepClickAsync" disabled="@_cepLoading" title="Consultar endereço na base ViaCEP">Buscar CEP</button>
+        </div>
+        @if (_cepLoading)
+        {
+            <span class="small text-muted">Consultando...</span>
+        }
+        @if (!string.IsNullOrEmpty(_cepError))
+        {
+            <span class="small text-danger">@_cepError</span>
+        }
+        <ValidationMessage For="@ValidationForCep" />
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Estado</label>
+        <select class="form-select form-select-sm" value="@AddressStateId" @onchange="@(e => AddressStateIdChanged.InvokeAsync(byte.TryParse((e.Value as string) ?? "", out var b) ? b : (byte)0))" disabled>
+            @foreach (var st in _states.Where(x => x.Id > 0))
+            {
+                <option value="@st.Id">@st.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Cidade</label>
+        <InputText class="form-control form-control-sm" Value="@AddressCityName" ValueChanged="@(v => AddressCityNameChanged.InvokeAsync(v))" ValueExpression="@(() => AddressCityName)" readonly />
+    </div>
+    <div class="col-md-1">
+        <label class="form-label">Cód. Mun.</label>
+        <InputText class="form-control form-control-sm"
+                   Value="@AddressCityIbge"
+                   ValueChanged="@(v => AddressCityIbgeChanged.InvokeAsync(v))"
+                   ValueExpression="@(() => AddressCityIbge)"
+                   maxlength="7"
+                   readonly="@AddressCityIbgeReadOnly" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? AddressStreet { get; set; }
+    [Parameter] public EventCallback<string?> AddressStreetChanged { get; set; }
+
+    [Parameter] public string? AddressNumber { get; set; }
+    [Parameter] public EventCallback<string?> AddressNumberChanged { get; set; }
+
+    [Parameter] public string? AddressComplement { get; set; }
+    [Parameter] public EventCallback<string?> AddressComplementChanged { get; set; }
+
+    [Parameter] public string? AddressBlock { get; set; }
+    [Parameter] public EventCallback<string?> AddressBlockChanged { get; set; }
+
+    [Parameter] public string? AddressZipCode { get; set; }
+    [Parameter] public EventCallback<string?> AddressZipCodeChanged { get; set; }
+
+    [Parameter] public byte AddressStateId { get; set; }
+    [Parameter] public EventCallback<byte> AddressStateIdChanged { get; set; }
+
+    [Parameter] public string? AddressCityName { get; set; }
+    [Parameter] public EventCallback<string?> AddressCityNameChanged { get; set; }
+
+    [Parameter] public string? AddressCityIbge { get; set; }
+    [Parameter] public EventCallback<string?> AddressCityIbgeChanged { get; set; }
+    [Parameter] public bool AddressCityIbgeReadOnly { get; set; } = true;
+
+    [Parameter] public IReadOnlyList<IdNameDto> States { get; set; } = Array.Empty<IdNameDto>();
+    [Parameter] public System.Linq.Expressions.Expression<Func<string?>>? ValidationForCep { get; set; }
+
+    [Inject] private IViaCepService ViaCepService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService ReferenceService { get; set; } = null!;
+
+    private IReadOnlyList<IdNameDto> _states = Array.Empty<IdNameDto>();
+    private bool _cepLoading;
+    private string? _cepError;
+    private string? _lastFetchedCep;
+
+    protected override void OnParametersSet() => _states = States;
+
+    private Task OnCepBlur() => FetchCepAsync(force: false);
+
+    private Task ConsultarCepClickAsync() => FetchCepAsync(force: true);
+
+    /// <param name="force">When true (button), always queries ViaCEP even if CEP matches last successful fetch.</param>
+    private async Task FetchCepAsync(bool force)
+    {
+        _cepError = null;
+        var value = AddressZipCode;
+        var digits = new string((value ?? "").Where(char.IsDigit).ToArray());
+        if (digits.Length != 8)
+        {
+            if (digits.Length > 0)
+                _cepError = "CEP deve ter 8 dígitos.";
+            return;
+        }
+
+        if (!force && digits == _lastFetchedCep)
+            return;
+
+        var cepFormatted = $"{digits[..5]}-{digits[5..]}";
+
+        _cepLoading = true;
+        StateHasChanged();
+        try
+        {
+            var result = await ViaCepService.GetByCepAsync(digits);
+            if (result == null)
+            {
+                _cepError = "CEP não encontrado ou erro ao consultar. Verifique o número e tente de novo.";
+                return;
+            }
+
+            _lastFetchedCep = digits;
+            await AddressZipCodeChanged.InvokeAsync(cepFormatted);
+            if (!string.IsNullOrWhiteSpace(result.Logradouro))
+                await AddressStreetChanged.InvokeAsync(result.Logradouro);
+            if (!string.IsNullOrWhiteSpace(result.Bairro))
+                await AddressBlockChanged.InvokeAsync(result.Bairro);
+            await AddressCityNameChanged.InvokeAsync(result.Localidade ?? "");
+            await AddressCityIbgeChanged.InvokeAsync(result.Ibge ?? "");
+
+            var stateId = await ReferenceService.GetStateIdByCodeAsync(result.Uf ?? "");
+            if (stateId.HasValue && stateId.Value > 0)
+                await AddressStateIdChanged.InvokeAsync(stateId.Value);
+        }
+        finally
+        {
+            _cepLoading = false;
+            StateHasChanged();
+        }
+    }
+}

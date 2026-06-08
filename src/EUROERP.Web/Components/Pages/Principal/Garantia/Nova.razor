@@ -1,0 +1,255 @@
+@page "/principal/garantia/nova"
+@rendermode InteractiveServer
+
+<PageTitle>Garantia - Nova</PageTitle>
+
+<p class="text-muted small">Inserir nova garantia (Eurobus: new_warranty.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Selecionar cliente</h5></div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Filtrar cliente</label>
+                <input type="text" class="form-control form-control-sm" @bind="_clientFilter" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="ListClients" disabled="@_loading">Listar</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+        <div class="table-responsive">
+            <table class="table table-sm table-striped table-hover mb-0 data-grid-table">
+                <thead class="table-light"><tr><th>Id</th><th>Nome</th><th>Cidade</th></tr></thead>
+                <tbody>
+                    @foreach (var c in _clients)
+                    {
+                        <tr role="button" class="@(_selectedClientId == c.Id ? "table-primary" : "")" @onclick="() => SelectClient(c)">
+                            <td>@c.Id</td>
+                            <td>@c.SocialName</td>
+                            <td>@(c.City ?? "-")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Dados da garantia</h5></div>
+    <div class="card-body">
+        @if (_selectedClientId <= 0)
+        {
+            <p class="text-muted mb-0">Selecione um cliente na lista acima.</p>
+        }
+        else
+        {
+            <p class="mb-3"><strong>Cliente:</strong> @_selectedClientName</p>
+            <div class="row g-2 mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">NF Fornecedor</label>
+                    <input class="form-control form-control-sm" @bind="_supNf" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">NF Eurobus</label>
+                    <input class="form-control form-control-sm" @bind="_ebNf" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">OS</label>
+                    <input type="number" class="form-control form-control-sm" @bind="_orderId" />
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">Certificado Fornecedor</label>
+                    <input class="form-control form-control-sm" @bind="_supCert" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Certificado Eurobus</label>
+                    <input class="form-control form-control-sm" @bind="_ebCert" />
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                    <label class="form-label">Modelo</label>
+                    <input class="form-control form-control-sm" @bind="_model" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Tipo do Veículo</label>
+                    <select class="form-select form-select-sm" @bind="_vehicleType">
+                        @foreach (var vt in WarrantyVehicleTypes.Options)
+                        {
+                            <option value="@vt.Value">@vt.Label</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                    <label class="form-label">Núm. Chassi</label>
+                    <input class="form-control form-control-sm" @bind="_chassiNo" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Núm. Carroceria</label>
+                    <input class="form-control form-control-sm" @bind="_bodyNo" />
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">Placa</label>
+                    <input class="form-control form-control-sm" @bind="_plateNo" maxlength="8" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Núm. Série do aparelho</label>
+                    <input class="form-control form-control-sm" @bind="_serialNo" />
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">Data da Instalação</label>
+                    <input type="date" class="form-control form-control-sm" @bind="_installationDate" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Data de Vencimento</label>
+                    <input type="date" class="form-control form-control-sm" @bind="_expirationDate" />
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                    <label class="form-label">Instalado por</label>
+                    <input class="form-control form-control-sm" @bind="_installedBy" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Peças utilizadas</label>
+                    <input class="form-control form-control-sm" @bind="_partsUsed" />
+                </div>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Observações</label>
+                    <textarea class="form-control form-control-sm" rows="3" maxlength="300" @bind="_memo"></textarea>
+                </div>
+            </div>
+            <button type="button" class="btn btn-success btn-sm" @onclick="Save" disabled="@_saving">Criar Garantia</button>
+        }
+    </div>
+</div>
+
+<SuccessModal Show="@_showSuccess" Message="A garantia foi criada com sucesso!" OnClosed="OnSuccessClosed" />
+
+@code {
+    private string _clientFilter = "";
+    private string? _error;
+    private bool _loading;
+    private bool _saving;
+    private bool _showSuccess;
+    private int _selectedClientId;
+    private string? _selectedClientName;
+    private IReadOnlyList<ClientSummaryDto> _clients = new List<ClientSummaryDto>();
+
+    private string _supNf = "";
+    private string _ebNf = "";
+    private int _orderId;
+    private string _supCert = "";
+    private string _ebCert = "";
+    private string _model = "";
+    private string _vehicleType = "T";
+    private string _chassiNo = "";
+    private string _bodyNo = "";
+    private string _plateNo = "";
+    private string _serialNo = "";
+    private DateTime _installationDate = DateTime.Today;
+    private DateTime _expirationDate = DateTime.Today.AddYears(1);
+    private string _installedBy = "";
+    private string _partsUsed = "";
+    private string _memo = "";
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IWarrantyService WarrantyService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    private async Task ListClients()
+    {
+        _error = null;
+        _loading = true;
+        try
+        {
+            _clients = await ClientService.GetListAsync(new ClientFilterDto { Name = _clientFilter });
+            _selectedClientId = 0;
+            _selectedClientName = null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private void SelectClient(ClientSummaryDto c)
+    {
+        _selectedClientId = c.Id;
+        _selectedClientName = c.SocialName;
+    }
+
+    private async Task Save()
+    {
+        if (_selectedClientId <= 0)
+        {
+            _error = "Selecione um cliente.";
+            return;
+        }
+
+        if (_installationDate.Year < 2004 || _expirationDate.Year < 2004)
+        {
+            _error = "Informe datas válidas.";
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+
+            await WarrantyService.CreateAsync(new WarrantyCreateDto
+            {
+                ClientId = _selectedClientId,
+                OrderId = _orderId,
+                SupNf = _supNf,
+                EbNf = _ebNf,
+                EbCert = _ebCert,
+                SupCert = _supCert,
+                Model = _model,
+                VehicleType = _vehicleType,
+                ChassiNo = _chassiNo,
+                BodyNo = _bodyNo,
+                PlateNo = _plateNo,
+                SerialNo = _serialNo,
+                InstallationDate = _installationDate,
+                ExpirationDate = _expirationDate,
+                InstalledBy = _installedBy,
+                PartsUsed = _partsUsed,
+                Memo = _memo
+            }, userId);
+
+            _showSuccess = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private void OnSuccessClosed()
+    {
+        _showSuccess = false;
+        ClearForm();
+    }
+
+    private void ClearForm()
+    {
+        _supNf = _ebNf = _supCert = _ebCert = _model = _chassiNo = _bodyNo = _plateNo = _serialNo = "";
+        _installedBy = _partsUsed = _memo = "";
+        _orderId = 0;
+        _vehicleType = "T";
+        _installationDate = DateTime.Today;
+        _expirationDate = DateTime.Today.AddYears(1);
+    }
+}

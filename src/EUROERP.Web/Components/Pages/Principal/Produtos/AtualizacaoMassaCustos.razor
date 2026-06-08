@@ -1,0 +1,315 @@
+@page "/principal/produtos/atualizacao-massa-custos"
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Produtos - Alterar em massa (Custos)</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Produtos</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2">
+            <div class="col-md-2">
+                <label class="form-label">Mercado</label>
+                <select class="form-select form-select-sm" @bind="_filter.MarketId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var m in _markets)
+                    {
+                        <option value="@m.Id">@m.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Classe</label>
+                <select class="form-select form-select-sm" @bind="_filter.ClassId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var c in _classes)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Grupo</label>
+                <select class="form-select form-select-sm" @bind="_filter.GroupId">
+                    <option value="0">Selecione</option>
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.Name" placeholder="Nome do produto" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome científico</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.SciName" placeholder="Nome científico" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Prod.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.Code" placeholder="Cód" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Forn.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.SupplierId" placeholder="Forn" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="inclInactiveCost" @bind="_filter.IncludeInactive" />
+                    <label class="form-check-label small" for="inclInactiveCost">Incluir prod. inativos</label>
+                </div>
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-warning">@_errorMessage</div>
+}
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 mass-cost-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="cell-cod-interno">Cód.Int</th>
+                        <th>Descrição</th>
+                        <th class="mass-cost-th-custo">Custo</th>
+                        <th class="text-end">Desc %</th>
+                        <th class="text-end">C. Líq.</th>
+                        <th class="text-end">Trnsp</th>
+                        <th class="text-end">C. Final</th>
+                        <th class="text-end">Lucro %</th>
+                        <th class="mass-cost-th-preco-mercado">Preço Mercado</th>
+                        <th class="text-center">Saldo</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _items.Count == 0)
+                    {
+                        <tr><td colspan="12" class="text-center text-muted py-4">Carregando...</td></tr>
+                    }
+                    else if (_items.Count == 0)
+                    {
+                        <tr><td colspan="12" class="text-center text-muted py-4">Preencha os filtros e clique em Buscar.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in _items)
+                        {
+                            <tr>
+                                <td class="text-center cell-cod-interno">@item.PKId</td>
+                                <td>
+                                    <span class="text-truncate d-inline-block mass-cost-desc" title="@item.Name @item.SciName @item.Size">@item.Name @(string.IsNullOrEmpty(item.SciName) ? "" : " ") <em class="text-primary">@item.SciName</em> @item.Size</span>
+                                </td>
+                                <td class="mass-cost-cell-custo"><input type="number" class="form-control form-control-sm mass-cost-custo" step="0.01" @bind="item.CostGross" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
+                                <td class="text-end"><input type="number" class="form-control form-control-sm text-end mass-cost-disc" step="0.01" @bind="item.Discount" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
+                                <td class="text-end">@FormatDecimal(GetCostNet(item))</td>
+                                <td class="text-end"><input type="number" class="form-control form-control-sm text-end mass-cost-trns" step="0.01" @bind="item.CostTransport" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
+                                <td class="text-end">@FormatDecimal(GetCostFinal(item))</td>
+                                <td class="text-end"><input type="number" class="form-control form-control-sm text-end mass-cost-num" step="0.0001" @bind="item.Profit" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
+                                <td class="mass-cost-cell-preco-mercado"><input type="text" class="form-control form-control-sm mass-cost-preco-mercado" value="@FormatDecimal(item.PriceMarket)" @onchange="e => SetPriceMarketFromInput(item, e)" /></td>
+                                <td class="text-center"><input type="number" class="form-control form-control-sm text-end mass-info-stock-min" @bind="item.Stock" /></td>
+                                <td class="mass-info-action-cell">
+                                    @if (_savingRowId == item.PKId)
+                                    {
+                                        <span class="mass-info-action-placeholder text-muted small" aria-label="Salvando" title="Salvando">
+                                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                        </span>
+                                    }
+                                    else if (_rowFeedback.TryGetValue(item.PKId, out var feedback))
+                                    {
+                                        <span class="mass-info-action-placeholder small @(feedback.IsError ? "text-danger" : "text-success") mass-info-fade"
+                                              aria-label="@(feedback.IsError ? "Erro" : "Atualizado")"
+                                              title="@(feedback.IsError ? "Erro" : "Atualizado")">
+                                            @if (feedback.IsError)
+                                            {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                                                    <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
+                                                </svg>
+                                            }
+                                            else
+                                            {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                                                    <path d="M6.5 12.5 2.5 8.5l1-1 3 3 7-7 1 1-8 8z" />
+                                                </svg>
+                                            }
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary mass-info-save-btn"
+                                                @onclick="() => SaveRow(item)"
+                                                title="Salvar"
+                                                aria-label="Salvar">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                                                <path d="M0 1.5A1.5 1.5 0 0 1 1.5 0H3v5.5A1.5 1.5 0 0 0 4.5 7h7A1.5 1.5 0 0 0 13 5.5V0h.086a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5H14v-5.5A1.5 1.5 0 0 0 12.5 9h-9A1.5 1.5 0 0 0 2 10.5V16h-.5A1.5 1.5 0 0 1 0 14.5z" />
+                                                <path d="M3 16h10v-5.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5zm9-16H4v5.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5zM9 1h2v4H9z" />
+                                            </svg>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly ProductFilterDto _filter = new();
+    private IReadOnlyList<IdNameDto> _markets = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _classes = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private List<ProductMassCostItemDto> _items = new();
+    private string? _errorMessage;
+    private bool _loading;
+    private int _savingRowId;
+    private readonly Dictionary<int, (string Message, bool IsError)> _rowFeedback = new();
+
+    [Inject] private IProductMassCostService MassCostService { get; set; } = null!;
+    [Inject] private IProductReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {        await LoadReferences();
+        await LoadGroups();
+    }
+
+    private async Task LoadReferences()
+    {
+        try
+        {
+            _markets = await ReferenceService.GetMarketsAsync();
+            _classes = await ReferenceService.GetProductClassesAsync();
+            if (_markets.Count > 0 && _filter.MarketId == 0)
+                _filter.MarketId = (byte)_markets[0].Id;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar referências: " + ex.Message;
+        }
+    }
+
+    private async Task LoadGroups()
+    {
+        if (_filter.ClassId <= 0)
+        {
+            _groups = new List<IdNameDto>();
+            _filter.GroupId = 0;
+            return;
+        }
+        try
+        {
+            _groups = await ReferenceService.GetProductGroupsByClassAsync((byte)_filter.ClassId);
+            _filter.GroupId = 0;
+        }
+        catch
+        {
+            _groups = new List<IdNameDto>();
+        }
+    }
+
+    private async Task Search()
+    {
+        _errorMessage = null;
+        var hasParam = _filter.GroupId > 0 ||
+                       (!string.IsNullOrWhiteSpace(_filter.Name) && _filter.Name.Length >= 2) ||
+                       (!string.IsNullOrWhiteSpace(_filter.SciName) && _filter.SciName.Length >= 2) ||
+                       _filter.Code > 0 || _filter.SupplierId > 0;
+        if (!hasParam)
+        {
+            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Nome científico, Cód. Produto ou Cód. Fornecedor.";
+            return;
+        }
+        _loading = true;
+        _rowFeedback.Clear();
+        try
+        {
+            var list = await MassCostService.GetListForMassCostAsync(_filter);
+            _items = list.ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro na busca: " + ex.Message;
+            _items = new List<ProductMassCostItemDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static decimal GetCostNet(ProductMassCostItemDto item) => item.CostGross * (1 - item.Discount / 100m);
+    private static decimal GetCostFinal(ProductMassCostItemDto item) => GetCostNet(item) * item.CostTransport;
+    private static decimal GetPrice(ProductMassCostItemDto item) => GetCostFinal(item) * (1 + item.Profit / 100m);
+    private static decimal GetPriceMarket(ProductMassCostItemDto item) => Math.Round(GetPrice(item) * (item.Conversion <= 0 ? 1m : item.Conversion), 4);
+    private static string FormatDecimal(decimal v) => v.ToString("N4").Replace(".", ",");
+
+    private void SetPriceMarketFromInput(ProductMassCostItemDto item, ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString()?.Trim().Replace(",", ".");
+        if (string.IsNullOrEmpty(s)) return;
+        if (decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v))
+        {
+            item.PriceMarket = Math.Round(v, 4);
+            BackCalcProfitFromPriceMarket(item);
+        }
+    }
+
+    /// <summary>Quando o usuário edita Preço Mercado, recalcula Lucro % (comportamento Story 2.1/2.4).</summary>
+    private void BackCalcProfitFromPriceMarket(ProductMassCostItemDto item)
+    {
+        var costFinal = GetCostFinal(item);
+        if (costFinal <= 0) return;
+        var conversion = item.Conversion <= 0 ? 1m : item.Conversion;
+        var priceInProduct = item.PriceMarket / conversion;
+        item.Profit = (priceInProduct / costFinal - 1m) * 100m;
+    }
+
+    /// <summary>Quando o usuário edita Lucro %, atualiza Preço Mercado para manter consistência.</summary>
+    private void SyncPriceMarketFromProfit(ProductMassCostItemDto item)
+    {
+        item.PriceMarket = GetPriceMarket(item);
+    }
+
+    private async Task SaveRow(ProductMassCostItemDto item)
+    {
+        _savingRowId = item.PKId;
+        _rowFeedback.Remove(item.PKId);
+        StateHasChanged();
+        var dto = new ProductMassCostUpdateDto
+        {
+            PKId = item.PKId,
+            MarketId = _filter.MarketId == 0 ? (byte)1 : _filter.MarketId,
+            CostGross = item.CostGross,
+            Discount = item.Discount,
+            CostTransport = item.CostTransport,
+            Profit = item.Profit,
+            Stock = item.Stock
+        };
+        var (success, message) = await MassCostService.UpdateRowAsync(dto);
+        _rowFeedback[item.PKId] = (message, !success);
+        _savingRowId = 0;
+        StateHasChanged();
+        _ = ClearRowFeedbackAfterDelay(item.PKId);
+    }
+
+    private async Task ClearRowFeedbackAfterDelay(int pkId)
+    {
+        await Task.Delay(1400);
+        _rowFeedback.Remove(pkId);
+        await InvokeAsync(StateHasChanged);
+    }
+}

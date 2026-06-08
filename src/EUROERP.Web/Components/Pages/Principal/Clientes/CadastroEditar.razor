@@ -1,0 +1,349 @@
+@page "/principal/clientes/cadastro/{Id:int}"
+@using EUROERP.Application.Address
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Editar Cliente @_client?.Id</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Editar Cliente</h5>
+    <a class="btn btn-outline-secondary btn-sm" href="/principal/clientes/cadastro">Voltar à lista</a>
+</div>
+
+@if (_notFound)
+{
+    <div class="alert alert-warning">Cliente não encontrado.</div>
+    return;
+}
+
+@if (_client == null)
+{
+    <p class="text-muted">Carregando...</p>
+    return;
+}
+
+<SuccessModal Show="_showSuccessModal" Message="Cliente salvo." OnClosed="HideSuccessModal" />
+
+<div class="card">
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
+
+        <EditForm Model="_client" OnValidSubmit="Save" OnInvalidSubmit="OnSubmitWithErrors" FormName="editClient">
+            <DataAnnotationsValidator />
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Identificação</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Tipo</label>
+                            <select class="form-select form-select-sm" @bind="_client.PersonType">
+                                <option value="F">Pessoa Física</option>
+                                <option value="J">Pessoa Jurídica</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">CNPJ/CPF <span class="text-danger">*</span></label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Cnpjpf" />
+                            <ValidationMessage For="@(() => _client.Cnpjpf)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Insc. Estadual</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.StateInscr" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nome / Razão Social <span class="text-danger">*</span></label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.SocialName" />
+                            <ValidationMessage For="@(() => _client.SocialName)" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nome Fantasia</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.FantasyName" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Mercado</label>
+                            <select class="form-select form-select-sm" @bind="_client.MarketId">
+                                @foreach (var m in _markets.Where(x => x.Id > 0))
+                                {
+                                    <option value="@m.Id">@m.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Contato</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Contact" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Endereço</div>
+                <div class="card-body py-2">
+                    <AddressByCep @bind-AddressStreet="_client.AddressStreet"
+                                 @bind-AddressNumber="_client.AddressNumber"
+                                 @bind-AddressComplement="_client.AddressComplement"
+                                 @bind-AddressBlock="_client.AddressBlock"
+                                 @bind-AddressZipCode="_client.AddressZipCode"
+                                 @bind-AddressStateId="_client.AddressStateId"
+                                 @bind-AddressCityName="_client.AddressCityName"
+                                 @bind-AddressCityIbge="_client.AddressCityIbge"
+                                 AddressCityIbgeReadOnly="false"
+                                 States="_states" ValidationForCep="@(() => _client.AddressZipCode)" />
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Contato</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 1</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Phone1" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 2</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Phone2" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 3</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Phone3" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Celular</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Celular" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label">E-mail</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_client.Email" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Comercial</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Modo pagto. 1</label>
+                            <select class="form-select form-select-sm" @bind="_client.PaymentMethodId">
+                                @foreach (var pm in _paymentMethods)
+                                {
+                                    <option value="@(pm.Id == 0 ? (byte?)null : (byte)pm.Id)">@pm.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Modo pagto. 2</label>
+                            <select class="form-select form-select-sm" @bind="_client.PaymentMethodId2">
+                                @foreach (var pm in _paymentMethods)
+                                {
+                                    <option value="@(pm.Id == 0 ? (byte?)null : (byte)pm.Id)">@pm.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Modo pagto. 3</label>
+                            <select class="form-select form-select-sm" @bind="_client.PaymentMethodId3">
+                                @foreach (var pm in _paymentMethods)
+                                {
+                                    <option value="@(pm.Id == 0 ? (byte?)null : (byte)pm.Id)">@pm.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Prazo médio</label>
+                            <input type="number" min="0" max="255" class="form-control form-control-sm" value="@_avgPayTermInt" @onchange="@(e => SetAvgPayTermFromChange(e))" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Limite</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_client.LimitAmount" />
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">Dia aniv.</label>
+                            <input type="number" min="0" max="31" class="form-control form-control-sm" @bind="_client.Birthday" />
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">Mês aniv.</label>
+                            <input type="number" min="0" max="12" class="form-control form-control-sm" @bind="_client.BirthMonth" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Endereço de cobrança</div>
+                <div class="card-body py-2">
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="bill_same" checked="@(_client.BillAddressIndicator == "Y")" @onchange="@(e => ToggleBillSame(e))" />
+                        <label class="form-check-label" for="bill_same">Igual ao endereço acima</label>
+                    </div>
+                    @if (_client.BillAddressIndicator != "Y")
+                    {
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-4">
+                                <label class="form-label">Rua</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="_client.BillAddressStreet" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Bairro</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="_client.BillAddressBlock" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Número</label>
+                                <InputNumber class="form-control form-control-sm" @bind-Value="_client.BillAddressNumber" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">CEP</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="_client.BillAddressZipCode" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Transportadoras</div>
+                <div class="card-body py-2">
+                    <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                        @foreach (var d in _deliverySuppliers.Where(x => x.Id > 0))
+                        {
+                            var deliveryId = d.Id;
+                            var isChecked = _client.DeliverySupplierIds.Contains(deliveryId);
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="@($"del_{d.Id}")" checked="@isChecked" @onchange="@(e => SetDeliverySupplier(deliveryId, (bool)(e.Value ?? false)))" />
+                                <label class="form-check-label small" for="@($"del_{d.Id}")">@d.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Vendedores</div>
+                <div class="card-body py-2">
+                    <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                        @foreach (var s in _salesAgents)
+                        {
+                            var uid = s.Id;
+                            var isChecked = _client.SalesAgentIds.Contains(uid);
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="@($"sales_{uid}")" checked="@isChecked" @onchange="@(e => SetSalesAgent(uid, (bool)(e.Value ?? false)))" />
+                                <label class="form-check-label small" for="@($"sales_{uid}")">@s.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Observações</div>
+                <div class="card-body py-2">
+                    <InputTextArea class="form-control form-control-sm" @bind-Value="_client.Obs" rows="2" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary @(_submitAttemptedWithErrors ? "btn-submit-has-errors" : null)" disabled="@_saving">@(_saving ? "Salvando..." : _submitAttemptedWithErrors ? "Salvar — Corrija os erros acima" : "Salvar")</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ClientEditDto? _client;
+    private IReadOnlyList<IdNameDto> _markets = new List<IdNameDto>();
+    private int? _avgPayTermInt;
+    private IReadOnlyList<IdNameDto> _states = new List<IdNameDto>();
+    private IReadOnlyList<PaymentMethodRefDto> _paymentMethods = new List<PaymentMethodRefDto>();
+    private IReadOnlyList<IdNameDto> _deliverySuppliers = new List<IdNameDto>();
+    private IReadOnlyList<UserIdNameDto> _salesAgents = new List<UserIdNameDto>();
+    private string? _errorMessage;
+    private bool _notFound;
+    private bool _saving;
+    private bool _showSuccessModal;
+    private bool _submitAttemptedWithErrors;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IClientReferenceService ReferenceService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = await ClientService.GetByIdAsync(Id);
+        if (_client == null)
+        {
+            _notFound = true;
+            return;
+        }
+        _markets = await ReferenceService.GetMarketsAsync();
+        _states = await ReferenceService.GetStatesAsync(1);
+        _paymentMethods = await ReferenceService.GetPaymentMethodsAsync();
+        _deliverySuppliers = await ReferenceService.GetDeliverySuppliersAsync();
+        _salesAgents = await ReferenceService.GetSalesAgentsAsync();
+        _avgPayTermInt = _client.AvgPayTerm.HasValue ? (int)_client.AvgPayTerm.Value : null;
+    }
+
+    private void SetAvgPayTermFromChange(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(s)) { _avgPayTermInt = null; if (_client != null) _client.AvgPayTerm = null; }
+        else if (int.TryParse(s, out var n)) { _avgPayTermInt = Math.Clamp(n, 0, 255); if (_client != null) _client.AvgPayTerm = (byte)_avgPayTermInt.Value; }
+        StateHasChanged();
+    }
+
+    private void ToggleBillSame(ChangeEventArgs e)
+    {
+        if (_client != null)
+            _client.BillAddressIndicator = (bool)(e.Value ?? false) ? "Y" : "N";
+        StateHasChanged();
+    }
+
+    private void SetDeliverySupplier(int id, bool selected)
+    {
+        if (_client == null) return;
+        if (selected && !_client.DeliverySupplierIds.Contains(id))
+            _client.DeliverySupplierIds.Add(id);
+        else if (!selected)
+            _client.DeliverySupplierIds.Remove(id);
+    }
+
+    private void SetSalesAgent(string userId, bool selected)
+    {
+        if (_client == null) return;
+        if (selected && !_client.SalesAgentIds.Contains(userId))
+            _client.SalesAgentIds.Add(userId);
+        else if (!selected)
+            _client.SalesAgentIds.Remove(userId);
+    }
+
+    private void HideSuccessModal() => _showSuccessModal = false;
+    private void OnSubmitWithErrors() { _submitAttemptedWithErrors = true; StateHasChanged(); }
+
+    private async Task Save()
+    {
+        if (_client == null) return;
+        _submitAttemptedWithErrors = false;
+        _errorMessage = null;
+        _saving = true;
+        try
+        {
+            var ok = await ClientService.UpdateAsync(_client);
+            if (ok)
+                _showSuccessModal = true;
+            else
+                _errorMessage = "Erro ao salvar.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

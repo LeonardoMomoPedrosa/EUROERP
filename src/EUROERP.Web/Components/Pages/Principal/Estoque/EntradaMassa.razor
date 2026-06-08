@@ -1,0 +1,173 @@
+@page "/principal/estoque/entrada-massa"
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Entrada em Lote</PageTitle>
+
+<p class="text-muted small">Entrada em lote por fornecedor (Eurobus: stock_in2.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end mb-2">
+            <div class="col-md-4">
+                <label class="form-label">Fornecedor</label>
+                <input class="form-control form-control-sm" @bind="_supplierFilter" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SearchSuppliers" disabled="@_loading">Buscar</button>
+            </div>
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-md-3">
+                <label class="form-label">Número da fatura</label>
+                <input class="form-control form-control-sm" @bind="_externalPkid" />
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+        <table class="table table-sm table-bordered data-grid-table mb-3">
+            <thead class="table-light"><tr><th>Id</th><th>Razão Social</th><th>Cidade</th></tr></thead>
+            <tbody>
+                @foreach (var s in _suppliers)
+                {
+                    <tr role="button" class="@(_selectedSupplierId == s.Id ? "table-primary" : "")" @onclick="() => SelectSupplier(s)">
+                        <td>@s.Id</td><td>@s.SocialName</td><td>@(s.City ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_selectedSupplierId > 0)
+        {
+            <button type="button" class="btn btn-outline-primary btn-sm mb-2" @onclick="LoadProducts" disabled="@_loading">Carregar produtos do fornecedor</button>
+        }
+    </div>
+</div>
+
+@if (_rows.Count > 0)
+{
+    <div class="card grid-card mb-3">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0 data-grid-table">
+                    <thead class="table-light">
+                        <tr><th>Produto</th><th>Qtd</th><th>C.bruto</th><th>IPI %</th><th>Desc.%</th><th>Estoque</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td>@row.Name @(string.IsNullOrEmpty(row.ExternalPkid) ? "" : $"({row.ExternalPkid})")</td>
+                                <td><input type="number" step="0.001" class="form-control form-control-sm" style="width:5rem" @bind="row.Quantity" /></td>
+                                <td><input type="number" step="0.01" class="form-control form-control-sm" style="width:5rem" @bind="row.UnitCostGross" /></td>
+                                <td><input type="number" step="0.01" class="form-control form-control-sm" style="width:4rem" @bind="row.Ipi" /></td>
+                                <td><input type="number" step="0.01" class="form-control form-control-sm" style="width:4rem" @bind="row.Discount" /></td>
+                                <td>@row.Stock</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <button type="button" class="btn btn-success btn-sm" @onclick="Apply" disabled="@_saving">Aplicar entrada</button>
+}
+
+<SuccessModal Show="@_showSuccess" Message="A entrada de estoque foi efetuada com sucesso!" OnClosed="() => _showSuccess = false" />
+
+@code {
+    private string _supplierFilter = "";
+    private string _externalPkid = "";
+    private string? _error;
+    private bool _loading;
+    private bool _saving;
+    private bool _showSuccess;
+    private int _selectedSupplierId;
+    private List<MassRow> _rows = new();
+    private IReadOnlyList<StockInSupplierDto> _suppliers = new List<StockInSupplierDto>();
+
+    [Inject] private IStockInService StockInService { get; set; } = null!;
+    [Inject] private IStockInMassService MassService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    private async Task SearchSuppliers()
+    {
+        _loading = true;
+        _error = null;
+        try { _suppliers = await StockInService.GetSuppliersForStockInAsync(_supplierFilter); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private void SelectSupplier(StockInSupplierDto s) => _selectedSupplierId = s.Id;
+
+    private async Task LoadProducts()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var products = await MassService.GetSupplierProductsAsync(_selectedSupplierId);
+            _rows = products.Select(p => new MassRow
+            {
+                ProductId = p.ProductId,
+                Name = p.Name,
+                ExternalPkid = p.ExternalPkid,
+                Stock = p.Stock,
+                UnitCostGross = p.CostGross,
+                Ipi = p.Ipi,
+                Discount = p.Discount,
+                Profit = p.Profit,
+                CurrencyId = p.CurrencyId,
+                CstbId = p.CstbId,
+                DecimalInd = p.DecimalInd
+            }).ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task Apply()
+    {
+        if (_selectedSupplierId <= 0) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var appId = Configuration["App:ApplicationId"] ?? "EUROERP";
+            var lines = _rows.Where(r => r.Quantity > 0).Select(r => new StockMassApplyLineDto
+            {
+                ProductId = r.ProductId,
+                Quantity = r.Quantity,
+                UnitCostGross = r.UnitCostGross,
+                Ipi = r.Ipi,
+                Discount = r.Discount,
+                CstbId = r.CstbId,
+                Profit = r.Profit,
+                CurrencyId = r.CurrencyId,
+                DecimalInd = r.DecimalInd
+            }).ToList();
+            await MassService.ApplyMassStockAsync(_selectedSupplierId, _externalPkid, lines, userId, appId);
+            _showSuccess = true;
+            _rows.Clear();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private sealed class MassRow
+    {
+        public int ProductId { get; set; }
+        public string Name { get; set; } = "";
+        public string? ExternalPkid { get; set; }
+        public short Stock { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitCostGross { get; set; }
+        public decimal Ipi { get; set; }
+        public decimal Discount { get; set; }
+        public decimal Profit { get; set; }
+        public byte CurrencyId { get; set; }
+        public string? CstbId { get; set; }
+        public bool DecimalInd { get; set; }
+    }
+}

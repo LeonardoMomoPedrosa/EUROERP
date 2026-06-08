@@ -1,0 +1,132 @@
+@page "/principal/garantia/consulta"
+@rendermode InteractiveServer
+
+<PageTitle>Garantia - Consulta</PageTitle>
+
+<p class="text-muted small">Consulta garantias por cliente (Eurobus: search_warranty.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Nome do cliente</label>
+                <input type="text" class="form-control form-control-sm" @bind="_searchName" placeholder="(opcional) Nome ou parte do nome" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SearchByName" disabled="@_loading">Busca</button>
+            </div>
+        </div>
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">CNPJ ou CPF</label>
+                <input type="text" class="form-control form-control-sm" @bind="_searchCnpjpf" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SearchByCnpjpf" disabled="@_loading">Busca</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card grid-card">
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0 data-grid-table">
+                    <thead class="table-light">
+                        <tr><th>Id</th><th>Nome</th><th>Cidade</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _clients)
+                        {
+                            <tr role="button" class="@(_selectedClientId == c.Id ? "table-primary" : "")" @onclick="() => SelectClient(c)">
+                                <td>@c.Id</td>
+                                <td>@c.SocialName</td>
+                                <td>@(c.City ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><strong>Garantias</strong></div>
+            <div class="card-body">
+                @if (_selectedClientId <= 0)
+                {
+                    <p class="text-muted mb-0">Selecione um cliente.</p>
+                }
+                else if (_warranties.Count == 0)
+                {
+                    <p class="text-muted mb-0">Nenhuma garantia encontrada.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var w in _warranties)
+                        {
+                            <li class="mb-2">
+                                <a href="/principal/garantia/detalhes/@w.Id" target="_blank" rel="noopener">
+                                    Criado por: @w.UserId em @w.SysCreationDate.ToString("dd/MM/yyyy")
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _searchName = "";
+    private string _searchCnpjpf = "";
+    private string? _error;
+    private bool _loading;
+    private int _selectedClientId;
+    private IReadOnlyList<ClientSummaryDto> _clients = new List<ClientSummaryDto>();
+    private IReadOnlyList<WarrantyListItemDto> _warranties = new List<WarrantyListItemDto>();
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IWarrantyService WarrantyService { get; set; } = null!;
+
+    private async Task SearchByName()
+    {
+        _searchCnpjpf = "";
+        await Search(new ClientFilterDto { Name = _searchName });
+    }
+
+    private async Task SearchByCnpjpf()
+    {
+        _searchName = "";
+        await Search(new ClientFilterDto { Cnpjpf = _searchCnpjpf });
+    }
+
+    private async Task Search(ClientFilterDto filter)
+    {
+        _error = null;
+        _loading = true;
+        try
+        {
+            _clients = await ClientService.GetListAsync(filter);
+            _selectedClientId = 0;
+            _warranties = new List<WarrantyListItemDto>();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SelectClient(ClientSummaryDto c)
+    {
+        _selectedClientId = c.Id;
+        _error = null;
+        try
+        {
+            _warranties = await WarrantyService.GetByClientIdAsync(c.Id);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

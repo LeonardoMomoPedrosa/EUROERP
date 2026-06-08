@@ -1,0 +1,44 @@
+@page "/principal/garantia/detalhes/{WarrantyId:int}"
+@rendermode InteractiveServer
+
+<PageTitle>Detalhes da Garantia</PageTitle>
+
+@if (_loading)
+{
+    <p class="text-muted">Carregando...</p>
+}
+else if (_warranty == null)
+{
+    <div class="alert alert-warning">Garantia não encontrada.</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header"><h5 class="mb-0">Detalhes da Garantia #@_warranty.Id</h5></div>
+        <div class="card-body">
+            <WarrantyDetailsView Warranty="_warranty" />
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int WarrantyId { get; set; }
+
+    private bool _loading = true;
+    private WarrantyDto? _warranty;
+
+    [Inject] private IWarrantyService WarrantyService { get; set; } = null!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            _warranty = await WarrantyService.GetByIdAsync(WarrantyId);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

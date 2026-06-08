@@ -1,0 +1,311 @@
+@page "/principal/produtos/atualizacao-massa-descricao"
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Produtos - Alterar em massa (Descrição)</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Produtos</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2">
+            <div class="col-md-2">
+                <label class="form-label">Mercado</label>
+                <select class="form-select form-select-sm" @bind="_filter.MarketId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var m in _markets)
+                    {
+                        <option value="@m.Id">@m.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Classe</label>
+                <select class="form-select form-select-sm" @bind="_filter.ClassId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var c in _classes)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Grupo</label>
+                <select class="form-select form-select-sm" @bind="_filter.GroupId">
+                    <option value="0">Selecione</option>
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.Name" placeholder="Nome do produto" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome científico</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.SciName" placeholder="Nome científico" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Prod.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.Code" placeholder="Cód" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Forn.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.SupplierId" placeholder="Forn" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="inclInactive" @bind="_filter.IncludeInactive" />
+                    <label class="form-check-label small" for="inclInactive">Incluir prod. inativos</label>
+                </div>
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-warning">@_errorMessage</div>
+}
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 mass-info-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="cell-cod-interno">Cód.Int</th>
+                        <th>Cód.Ext</th>
+                        <th>Ativo</th>
+                        @if (_showQuarantineColumn)
+                        {
+                            <th>Qrnt.</th>
+                        }
+                        <th>Forn.</th>
+                        <th>Nome</th>
+                        <th>Nome Cient.</th>
+                        @if (_filter.MarketId > 1)
+                        {
+                            <th>Nome Export</th>
+                            <th>Nome Cient. Export</th>
+                        }
+                        <th>Tamanho</th>
+                        <th>pH</th>
+                        <th>Saldo Min.</th>
+                        <th>Emb/Cx.</th>
+                        <th>Saldo</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _items.Count == 0)
+                    {
+                        <tr><td colspan="17" class="text-center text-muted py-4">Carregando...</td></tr>
+                    }
+                    else if (_items.Count == 0)
+                    {
+                        <tr><td colspan="17" class="text-center text-muted py-4">Preencha os filtros e clique em Buscar.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in _items)
+                        {
+                            var showQ = _showQuarantineColumn;
+                            <tr class="@(item.Quarantine ? "table-warning" : "")">
+                                <td class="text-center cell-cod-interno">@item.PKId</td>
+                                <td><input type="text" class="form-control form-control-sm mass-info-stock-min" @bind="item.ExternalPkId" /></td>
+                                <td>
+                                    <select class="form-select form-select-sm mass-info-ativo" @bind="item.Active">
+                                        <option value="Y">Y</option>
+                                        <option value="N">N</option>
+                                        <option value="X">X</option>
+                                    </select>
+                                </td>
+                                @if (showQ)
+                                {
+                                    <td class="text-center"><input type="checkbox" class="form-check-input" @bind="item.Quarantine" /></td>
+                                }
+                                <td><input type="number" class="form-control form-control-sm" style="width:55px" @bind="item.SupplierId" /></td>
+                                <td><input type="text" class="form-control form-control-sm mass-info-nome" @bind="item.Name" /></td>
+                                <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.SciName" /></td>
+                                @if (_filter.MarketId > 1)
+                                {
+                                    <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.MktName" /></td>
+                                    <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.MktSciName" /></td>
+                                }
+                                <td>
+                                    <select class="form-select form-select-sm" style="width:90px" @bind="item.SizeId">
+                                        @foreach (var s in _sizes)
+                                        {
+                                            <option value="@s.Id">@(s.Id == 0 ? " " : s.Name)</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><input type="number" class="form-control form-control-sm text-end" style="width:50px" step="0.1" @bind="item.Ph" /></td>
+                                <td><input type="number" class="form-control form-control-sm text-end mass-info-stock-min" @bind="item.StockMin" /></td>
+                                <td><input type="number" class="form-control form-control-sm text-end" style="width:55px" @bind="item.Pack" /></td>
+                                <td class="text-center">@item.Stock</td>
+                                <td class="mass-info-action-cell">
+                                    @if (_savingRowId == item.PKId)
+                                    {
+                                        <span class="mass-info-action-placeholder text-muted small">Salvando...</span>
+                                    }
+                                    else if (_rowFeedback.TryGetValue(item.PKId, out var feedback))
+                                    {
+                                        <span class="mass-info-action-placeholder small @(feedback.IsError ? "text-danger mass-info-feedback-detail" : "text-success") mass-info-fade">@(feedback.IsError ? (string.IsNullOrWhiteSpace(feedback.Message) ? "Erro" : feedback.Message) : "Atualizado")</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SaveRow(item)">Salvar</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly ProductFilterDto _filter = new();
+    private IReadOnlyList<IdNameDto> _markets = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _classes = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _sizes = new List<IdNameDto>();
+    private List<ProductMassInfoItemDto> _items = new();
+    private string? _errorMessage;
+    private bool _loading;
+    private int _savingRowId;
+    private bool _showQuarantineColumn = true;
+    private readonly Dictionary<int, (string Message, bool IsError)> _rowFeedback = new();
+
+    [Inject] private IProductMassInfoService MassInfoService { get; set; } = null!;
+    [Inject] private IProductReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {        await LoadReferences();
+        await LoadGroups();
+        await LoadDropdowns();
+    }
+
+    private async Task LoadReferences()
+    {
+        try
+        {
+            _markets = await ReferenceService.GetMarketsAsync();
+            _classes = await ReferenceService.GetProductClassesAsync();
+            if (_markets.Count > 0 && _filter.MarketId == 0)
+                _filter.MarketId = (byte)_markets[0].Id;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar referências: " + ex.Message;
+        }
+    }
+
+    private async Task LoadGroups()
+    {
+        if (_filter.ClassId <= 0)
+        {
+            _groups = new List<IdNameDto>();
+            _filter.GroupId = 0;
+            return;
+        }
+        try
+        {
+            _groups = await ReferenceService.GetProductGroupsByClassAsync((byte)_filter.ClassId);
+            _filter.GroupId = 0;
+        }
+        catch
+        {
+            _groups = new List<IdNameDto>();
+        }
+    }
+
+    private async Task LoadDropdowns()
+    {
+        try
+        {
+            _sizes = await ReferenceService.GetAnimalSizesAsync();
+        }
+        catch { /* keep defaults */ }
+    }
+
+    private async Task Search()
+    {
+        _errorMessage = null;
+        var hasParam = _filter.GroupId > 0 ||
+                       (!string.IsNullOrWhiteSpace(_filter.Name) && _filter.Name.Length >= 2) ||
+                       (!string.IsNullOrWhiteSpace(_filter.SciName) && _filter.SciName.Length >= 2) ||
+                       _filter.Code > 0 || _filter.SupplierId > 0;
+        if (!hasParam)
+        {
+            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Nome científico, Cód. Produto ou Cód. Fornecedor.";
+            return;
+        }
+        _loading = true;
+        _rowFeedback.Clear();
+        try
+        {
+            var list = await MassInfoService.GetListForMassInfoAsync(_filter);
+            _items = list.ToList();
+            _showQuarantineColumn = _filter.ClassId != 4; // legacy: hide Quarentena column when class 4
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro na busca: " + ex.Message;
+            _items = new List<ProductMassInfoItemDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveRow(ProductMassInfoItemDto item)
+    {
+        _savingRowId = item.PKId;
+        _rowFeedback.Remove(item.PKId);
+        StateHasChanged();
+        var dto = new ProductMassInfoUpdateDto
+        {
+            PKId = item.PKId,
+            MarketId = _filter.MarketId == 0 ? (byte)1 : _filter.MarketId,
+            ExternalPkId = item.ExternalPkId,
+            Active = item.Active,
+            Quarantine = item.Quarantine,
+            SupplierId = item.SupplierId,
+            CFat = item.CFat,
+            Name = item.Name,
+            SciName = item.SciName,
+            MktName = item.MktName,
+            MktSciName = item.MktSciName,
+            SizeId = item.SizeId,
+            Ph = item.Ph,
+            CstId = item.CstId,
+            CstbId = item.CstbId,
+            StockMin = item.StockMin,
+            Pack = item.Pack
+        };
+        var (success, message) = await MassInfoService.UpdateRowAsync(dto);
+        _rowFeedback[item.PKId] = (message, !success);
+        _savingRowId = 0;
+        StateHasChanged();
+        _ = ClearRowFeedbackAfterDelay(item.PKId);
+    }
+
+    private async Task ClearRowFeedbackAfterDelay(int pkId)
+    {
+        await Task.Delay(1400);
+        _rowFeedback.Remove(pkId);
+        await InvokeAsync(StateHasChanged);
+    }
+}

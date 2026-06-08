@@ -1,0 +1,316 @@
+@page "/principal/fornecedores/cadastro/{Id:int}"
+@using EUROERP.Application.Address
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Editar Fornecedor @_supplier?.Id</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Editar Fornecedor</h5>
+    <a class="btn btn-outline-secondary btn-sm" href="/principal/fornecedores/cadastro">Voltar à lista</a>
+</div>
+
+@if (_notFound)
+{
+    <div class="alert alert-warning">Fornecedor não encontrado.</div>
+    return;
+}
+
+@if (_supplier == null)
+{
+    <p class="text-muted">Carregando...</p>
+    return;
+}
+
+<SuccessModal Show="_showSuccessModal" Message="Fornecedor salvo." OnClosed="HideSuccessModal" />
+<HelpModal Show="_showPaymentPlanHelp" Title="Plano de pagamento" OnClosed="HidePaymentPlanHelp">
+    <p class="mb-0">É o prazo de pagamento parcelado para o fornecedor.</p>
+    <p class="mb-0 mt-2">Ex.: 30, 60, 90 significa 30 dias, 60 dias e 90 dias.</p>
+</HelpModal>
+
+<div class="card">
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
+
+        <EditForm Model="_supplier" OnValidSubmit="Save" OnInvalidSubmit="OnSubmitWithErrors" FormName="editSupplier">
+            <DataAnnotationsValidator />
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Identificação</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Grupo</label>
+                            <select class="form-select form-select-sm" @bind="_supplier.SupplierGroupId">
+                                @foreach (var g in _groups)
+                                {
+                                    @if (g.Id > 0)
+                                    {
+                                        <option value="@g.Id">@g.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Razão Social <span class="text-danger">*</span></label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.SocialName" />
+                            <ValidationMessage For="@(() => _supplier.SocialName)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">CNPJ / CPF</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Cnpj" />
+                            <ValidationMessage For="@(() => _supplier.Cnpj)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Insc. Estadual</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.StateInscr" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Contato</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Contact" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Endereço</div>
+                <div class="card-body py-2">
+                    <AddressByCep @bind-AddressStreet="_supplier.AddressStreet"
+                                 @bind-AddressNumber="_supplier.AddressNumber"
+                                 @bind-AddressComplement="_supplier.AddressComplement"
+                                 @bind-AddressBlock="_supplier.AddressBlock"
+                                 @bind-AddressZipCode="_supplier.AddressZipCode"
+                                 @bind-AddressStateId="_supplier.AddressStateId"
+                                 @bind-AddressCityName="_supplier.AddressCityName"
+                                 @bind-AddressCityIbge="_supplier.AddressCityIbge"
+                                 States="_states" ValidationForCep="@(() => _supplier.AddressZipCode)" />
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Contato</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 1</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Phone1" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 2</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Phone2" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Telefone 3</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Phone3" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Celular</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Celular" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label">E-mail</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.Email" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Banco</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Banco</label>
+                            <select class="form-select form-select-sm" @bind="_supplier.BankInfoBankId">
+                                @foreach (var b in _banks)
+                                {
+                                    <option value="@(b.Id == 0 ? (byte?)null : (byte)b.Id)">@b.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Agência</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.BankInfoAgency" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Conta</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.BankInfoAccNo" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Favorecido</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.BankInfoName" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Swift Code</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.SwffitCode" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Comercial</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Modo pagto.</label>
+                            <select class="form-select form-select-sm" @bind="_supplier.PaymentMethodId">
+                                @foreach (var pm in _paymentMethods)
+                                {
+                                    <option value="@(pm.Id == 0 ? (byte?)null : (byte)pm.Id)">@pm.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Prazo</label>
+                            <input type="number" min="0" max="255" class="form-control form-control-sm" value="@_payTermInt" @onchange="@(e => SetPayTermFromChange(e))" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label d-flex align-items-center gap-1">
+                                Plano pagto.
+                                <button type="button" class="help-icon-btn" @onclick="ShowPaymentPlanHelp" title="Ajuda">?</button>
+                            </label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_supplier.PaymentPlan" placeholder="30, 60, 90" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Desconto %</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_supplier.Discount" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Custo transp. %</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_supplier.CostTransport" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Estoque (dias)</label>
+                            <input type="number" min="0" max="255" class="form-control form-control-sm" value="@_stockDaysInt" @onchange="@(e => SetStockDaysFromChange(e))" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Transportadoras</div>
+                <div class="card-body py-2">
+                    <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                        @foreach (var d in _deliverySuppliers.Where(x => x.Id > 0))
+                        {
+                            var deliveryId = d.Id;
+                            var isChecked = _supplier.DeliverySupplierIds.Contains(deliveryId);
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="@($"del_{d.Id}")" checked="@isChecked" @onchange="@(e => SetDeliverySupplier(deliveryId, (bool)(e.Value ?? false)))" />
+                                <label class="form-check-label small" for="@($"del_{d.Id}")">@d.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Observações</div>
+                <div class="card-body py-2">
+                    <InputTextArea class="form-control form-control-sm" @bind-Value="_supplier.Obs" rows="2" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary @(_submitAttemptedWithErrors ? "btn-submit-has-errors" : null)" disabled="@_saving">@(_saving ? "Salvando..." : _submitAttemptedWithErrors ? "Salvar — Corrija os erros acima" : "Salvar")</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SupplierEditDto? _supplier;
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private int? _payTermInt;
+    private int? _stockDaysInt;
+    private IReadOnlyList<IdNameDto> _states = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _banks = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _paymentMethods = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _deliverySuppliers = new List<IdNameDto>();
+    private string? _errorMessage;
+    private bool _notFound;
+    private bool _saving;
+    private bool _showSuccessModal;
+    private bool _showPaymentPlanHelp;
+    private bool _submitAttemptedWithErrors;
+
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService ReferenceService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _supplier = await SupplierService.GetByIdAsync(Id);
+        if (_supplier == null)
+        {
+            _notFound = true;
+            return;
+        }
+        _groups = await ReferenceService.GetSupplierGroupsAsync();
+        _states = await ReferenceService.GetStatesAsync();
+        _banks = await ReferenceService.GetBanksAsync();
+        _paymentMethods = await ReferenceService.GetPaymentMethodsAsync();
+        _deliverySuppliers = await ReferenceService.GetDeliverySuppliersAsync();
+        _payTermInt = _supplier.PayTerm.HasValue ? (int)_supplier.PayTerm.Value : null;
+        _stockDaysInt = _supplier.StockDays.HasValue ? (int)_supplier.StockDays.Value : null;
+    }
+
+    private void SetPayTermFromChange(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(s)) { _payTermInt = null; if (_supplier != null) _supplier.PayTerm = null; }
+        else if (int.TryParse(s, out var n)) { _payTermInt = Math.Clamp(n, 0, 255); if (_supplier != null) _supplier.PayTerm = (byte)_payTermInt.Value; }
+        StateHasChanged();
+    }
+
+    private void SetStockDaysFromChange(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(s)) { _stockDaysInt = null; if (_supplier != null) _supplier.StockDays = null; }
+        else if (int.TryParse(s, out var n)) { _stockDaysInt = Math.Clamp(n, 0, 255); if (_supplier != null) _supplier.StockDays = (byte)_stockDaysInt.Value; }
+        StateHasChanged();
+    }
+
+    private void SetDeliverySupplier(int id, bool selected)
+    {
+        if (_supplier == null) return;
+        if (selected && !_supplier.DeliverySupplierIds.Contains(id))
+            _supplier.DeliverySupplierIds.Add(id);
+        else if (!selected)
+            _supplier.DeliverySupplierIds.Remove(id);
+    }
+
+    private void HideSuccessModal() => _showSuccessModal = false;
+    private void ShowPaymentPlanHelp() { _showPaymentPlanHelp = true; }
+    private void HidePaymentPlanHelp() => _showPaymentPlanHelp = false;
+
+    private void OnSubmitWithErrors() { _submitAttemptedWithErrors = true; StateHasChanged(); }
+
+    private async Task Save()
+    {
+        if (_supplier == null) return;
+        _submitAttemptedWithErrors = false;
+        _errorMessage = null;
+        _saving = true;
+        try
+        {
+            var ok = await SupplierService.UpdateAsync(_supplier);
+            if (ok)
+                _showSuccessModal = true;
+            else
+                _errorMessage = "Erro ao salvar.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

@@ -1,0 +1,207 @@
+@page "/principal/produtos/cadastro"
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Produtos - Cadastro</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Produtos</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2">
+            <div class="col-md-2">
+                <label class="form-label">Mercado</label>
+                <select class="form-select form-select-sm" @bind="_filter.MarketId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var m in _markets)
+                    {
+                        <option value="@m.Id">@m.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Classe</label>
+                <select class="form-select form-select-sm" @bind="_filter.ClassId" @bind:after="LoadGroups">
+                    <option value="0">Selecione</option>
+                    @foreach (var c in _classes)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Grupo</label>
+                <select class="form-select form-select-sm" @bind="_filter.GroupId">
+                    <option value="0">Selecione</option>
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.Name" placeholder="Nome do produto" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Nome científico</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filter.SciName" placeholder="Nome científico" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Prod.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.Code" placeholder="Cód" />
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Cód. Forn.</label>
+                <input type="number" class="form-control form-control-sm" @bind="_filter.SupplierId" placeholder="Forn" />
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+        <a class="btn btn-success btn-sm ms-2" href="/principal/produtos/cadastro/novo">Novo produto</a>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-warning">@_errorMessage</div>
+}
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 product-grid-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="cell-cod-interno">Cód. Int.</th>
+                        <th>Cód. Externo</th>
+                        <th>Descrição</th>
+                        <th class="text-end">Preço</th>
+                        <th class="text-center">Estoque</th>
+                        <th class="text-center">Est. Mín.</th>
+                        <th class="text-center">Últ. Entrada</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _products.Count == 0)
+                    {
+                        <tr><td colspan="7" class="text-center text-muted py-4">Carregando...</td></tr>
+                    }
+                    else if (_products.Count == 0)
+                    {
+                        <tr><td colspan="7" class="text-center text-muted py-4">Preencha os filtros e clique em Buscar.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var p in _products)
+                        {
+                            <tr role="button" class="@(p.Quarantine ? "table-warning" : "")" @onclick="() => AbrirEdicao(p.PKId)">
+                                <td class="cell-cod-interno">@p.LionCode</td>
+                                <td>@p.ExternalPkId</td>
+                                <td>
+                                    <div class="product-desc-cell">
+                                        @if (p.Quarantine) { <span class="product-quarantine">Q</span> }
+                                        <span class="product-desc-name">@p.Name</span>
+                                        @if (!string.IsNullOrEmpty(p.SciName)) { <span class="product-desc-sci">@p.SciName</span> }
+                                        @if (!string.IsNullOrEmpty(p.Size)) { <span class="product-desc-size">@p.Size</span> }
+                                    </div>
+                                </td>
+                                <td class="text-end product-price">@(p.CurrencySymbol) @p.Price.ToString("N2")</td>
+                                <td class="text-center">@p.Stock</td>
+                                <td class="text-center">@p.StockMin</td>
+                                <td class="text-center">@(p.StockLastInDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly ProductFilterDto _filter = new();
+    private IReadOnlyList<IdNameDto> _markets = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _classes = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private IReadOnlyList<ProductSummaryDto> _products = new List<ProductSummaryDto>();
+    private string? _errorMessage;
+    private bool _loading;
+
+    [Inject] private IProductService ProductService { get; set; } = null!;
+    [Inject] private IProductReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    protected override async Task OnInitializedAsync()
+    {        await LoadReferences();
+        await LoadGroups();
+    }
+
+    private async Task LoadReferences()
+    {
+        try
+        {
+            _markets = await ReferenceService.GetMarketsAsync();
+            _classes = await ReferenceService.GetProductClassesAsync();
+            if (_markets.Count > 0 && _filter.MarketId == 0)
+                _filter.MarketId = (byte)_markets[0].Id;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar referências: " + ex.Message;
+        }
+    }
+
+    private async Task LoadGroups()
+    {
+        if (_filter.ClassId <= 0)
+        {
+            _groups = new List<IdNameDto>();
+            _filter.GroupId = 0;
+            return;
+        }
+        try
+        {
+            _groups = await ReferenceService.GetProductGroupsByClassAsync((byte)_filter.ClassId);
+            _filter.GroupId = 0;
+        }
+        catch
+        {
+            _groups = new List<IdNameDto>();
+        }
+    }
+
+    private async Task Search()
+    {
+        _errorMessage = null;
+        var hasParam = _filter.GroupId > 0 ||
+                       (!string.IsNullOrWhiteSpace(_filter.Name) && _filter.Name.Length >= 2) ||
+                       (!string.IsNullOrWhiteSpace(_filter.SciName) && _filter.SciName.Length >= 2) ||
+                       _filter.Code > 0 || _filter.SupplierId > 0;
+        if (!hasParam)
+        {
+            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Nome científico, Cód. Produto ou Cód. Fornecedor.";
+            return;
+        }
+        _loading = true;
+        try
+        {
+            _products = await ProductService.GetListAsync(_filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro na busca: " + ex.Message;
+            _products = new List<ProductSummaryDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AbrirEdicao(int id)
+    {
+        Navigation.NavigateTo($"/principal/produtos/cadastro/{id}");
+    }
+}

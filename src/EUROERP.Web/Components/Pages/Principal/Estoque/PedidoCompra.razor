@@ -1,0 +1,187 @@
+@page "/principal/estoque/pedido-compra"
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Pedido de Compra</PageTitle>
+
+<p class="text-muted small">Pedido de compra geral (Eurobus: gnrl_ordering.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Consultar pedido</h5></div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Nº compra</label>
+                <input type="number" class="form-control form-control-sm" @bind="_searchPurchaseId" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="LoadPurchase" disabled="@_loading">Consultar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Novo pedido de compra</h5></div>
+    <div class="card-body">
+        <div class="row g-2 mb-2">
+            <div class="col-md-2">
+                <label class="form-label">Vendas últimos (dias)</label>
+                <input type="number" class="form-control form-control-sm" @bind="_days" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Dólar</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" @bind="_dollar" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Dólar vivo</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" @bind="_dollarVivo" />
+            </div>
+        </div>
+        <p class="small mb-2">Fornecedores com compra geral:</p>
+        <div class="mb-2" style="max-height:200px; overflow-y:auto">
+            @foreach (var s in _orderingSuppliers)
+            {
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="sup_@s.Id" checked="@_selectedSupplierIds.Contains(s.Id)" @onchange="e => ToggleSupplier(s.Id, e)" />
+                    <label class="form-check-label" for="sup_@s.Id">@s.SocialName (@s.StockDays dias estoque)</label>
+                </div>
+            }
+        </div>
+        <button type="button" class="btn btn-success btn-sm" @onclick="Generate" disabled="@_generating">Gerar pedido</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+@if (_generatedPurchaseId > 0) { <div class="alert alert-success py-2">Pedido #@_generatedPurchaseId criado.</div> }
+
+@if (_purchaseSuppliers.Count > 0)
+{
+    <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0">Fornecedores do pedido #@_activePurchaseId</h5></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light"><tr><th>Fornecedor</th><th class="text-end">Valor</th><th>Comprado</th><th>Recebido</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var row in _purchaseSuppliers)
+                    {
+                        <tr>
+                            <td>@row.SupplierName</td>
+                            <td class="text-end">@row.Amount.ToString("N2")</td>
+                            <td>@(row.Purchased ? "Sim" : "Não")</td>
+                            <td>@(row.Received ? "Sim" : "Não")</td>
+                            <td>
+                                @if (!row.Purchased)
+                                {
+                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => MarkPurchased(row)">Marcar comprado</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header"><h6 class="mb-0">Últimos pedidos</h6></div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light"><tr><th>Id</th><th>Data</th><th>Usuário</th><th>Dias</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in _lastPurchases)
+                {
+                    <tr>
+                        <td>@p.Id</td><td>@p.Date</td><td>@p.UserId</td><td>@p.Days</td>
+                        <td><button type="button" class="btn btn-link btn-sm p-0" @onclick="() => LoadPurchaseById(p.Id)">Abrir</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private int _searchPurchaseId;
+    private int _activePurchaseId;
+    private int _generatedPurchaseId;
+    private byte _days = 30;
+    private decimal _dollar = 1;
+    private decimal _dollarVivo = 1;
+    private string? _error;
+    private bool _loading;
+    private bool _generating;
+    private HashSet<int> _selectedSupplierIds = new();
+    private IReadOnlyList<PurchaseOrderSupplierDto> _orderingSuppliers = new List<PurchaseOrderSupplierDto>();
+    private IReadOnlyList<PurchaseSummaryDto> _lastPurchases = new List<PurchaseSummaryDto>();
+    private IReadOnlyList<PurchaseSupplierSummaryDto> _purchaseSuppliers = new List<PurchaseSupplierSummaryDto>();
+
+    [Inject] private IPurchaseOrderService PurchaseOrderService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _orderingSuppliers = await PurchaseOrderService.GetOrderingSuppliersAsync();
+        _selectedSupplierIds = _orderingSuppliers.Select(s => s.Id).ToHashSet();
+        _lastPurchases = await PurchaseOrderService.GetLastPurchasesAsync();
+    }
+
+    private void ToggleSupplier(int id, ChangeEventArgs e)
+    {
+        var on = e.Value is bool b && b;
+        if (on) _selectedSupplierIds.Add(id); else _selectedSupplierIds.Remove(id);
+    }
+
+    private async Task LoadPurchase() => await LoadPurchaseById(_searchPurchaseId);
+
+    private async Task LoadPurchaseById(int id)
+    {
+        if (id <= 0) return;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _activePurchaseId = id;
+            _purchaseSuppliers = await PurchaseOrderService.GetPurchaseSuppliersAsync(id);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task Generate()
+    {
+        _generating = true;
+        _error = null;
+        _generatedPurchaseId = 0;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var appId = Configuration["App:ApplicationId"] ?? "EUROERP";
+            var id = await PurchaseOrderService.GeneratePurchaseAsync(new GeneratePurchaseRequestDto
+            {
+                Days = _days,
+                DollarRate = _dollar,
+                DollarVivoRate = _dollarVivo,
+                SupplierIds = _selectedSupplierIds.ToList()
+            }, userId, appId);
+            _generatedPurchaseId = id;
+            _activePurchaseId = id;
+            _purchaseSuppliers = await PurchaseOrderService.GetPurchaseSuppliersAsync(id);
+            _lastPurchases = await PurchaseOrderService.GetLastPurchasesAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _generating = false; }
+    }
+
+    private async Task MarkPurchased(PurchaseSupplierSummaryDto row)
+    {
+        try
+        {
+            await PurchaseOrderService.SetPurchasedAsync(row.PurchaseId, row.SupplierId, true, true);
+            _purchaseSuppliers = await PurchaseOrderService.GetPurchaseSuppliersAsync(_activePurchaseId);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

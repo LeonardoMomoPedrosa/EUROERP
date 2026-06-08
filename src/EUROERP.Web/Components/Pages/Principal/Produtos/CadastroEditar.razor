@@ -1,0 +1,460 @@
+@page "/principal/produtos/cadastro/{Id:int}"
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Editar Produto @_product?.PKId</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Editar Produto</h5>
+    <a class="btn btn-outline-secondary btn-sm" href="/principal/produtos/cadastro">Voltar à lista</a>
+</div>
+
+@if (_notFound)
+{
+    <div class="alert alert-warning">Produto não encontrado.</div>
+    return;
+}
+
+@if (_product == null)
+{
+    <p class="text-muted">Carregando...</p>
+    return;
+}
+
+<SuccessModal Show="_showSuccessModal" Message="Produto salvo." OnClosed="HideSuccessModal" />
+
+<div class="card">
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
+
+        <EditForm Model="_product" OnValidSubmit="Save" OnInvalidSubmit="OnSubmitWithErrors" FormName="editProduct">
+            <DataAnnotationsValidator />
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Identificação</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Classe</label>
+                            <select class="form-select form-select-sm" @bind="_product.ClassId" @bind:after="OnClassChangedAsync">
+                                @foreach (var c in _classes)
+                                {
+                                    <option value="@c.Id">@c.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Grupo</label>
+                            <select class="form-select form-select-sm" @bind="_product.GroupId">
+                                @foreach (var g in _groups)
+                                {
+                                    <option value="@g.Id">@g.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nome</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_product.Name" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nome científico</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_product.SciName" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Cód. externo</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_product.ExternalPkId" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Custos</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Custo bruto <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-sm" value="@(_product.CostGross.HasValue ? FormatNumberInput(_product.CostGross.Value) : "")" @onchange="OnCostGrossChangedFromEvent" step="any" required />
+                            <ValidationMessage For="@(() => _product.CostGross)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Desconto % <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-sm" value="@(_product.Discount.HasValue ? FormatNumberInput(_product.Discount.Value) : "")" @onchange="OnDiscountChangedFromEvent" step="any" required />
+                            <ValidationMessage For="@(() => _product.Discount)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Custo líquido</label>
+                            <input type="text" class="form-control form-control-sm bg-light" readonly value="@FormatDecimal(GetCostLiquid())" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Custo transporte <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-sm" value="@(_product.CostTransport.HasValue ? FormatNumberInput(_product.CostTransport.Value) : "")" @onchange="OnCostTransportChangedFromEvent" step="any" required />
+                            <ValidationMessage For="@(() => _product.CostTransport)" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Custo final</label>
+                            <input type="text" class="form-control form-control-sm bg-light" readonly value="@FormatDecimal(GetCostFinal())" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Peso</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_product.Weight" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Preço por mercado (margem de lucro e preço final)</div>
+                <div class="card-body py-2">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0 product-market-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 100px;">Mercado</th>
+                                    <th class="text-end" style="width: 100px;">Margem lucro %</th>
+                                    <th class="text-end" style="width: 110px;">Preço final</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var mp in _product.MarketProducts)
+                                {
+                                    <tr>
+                                        <td class="text-truncate" style="max-width: 100px;" title="@mp.MarketName">@mp.MarketName</td>
+                                        <td class="text-end">
+                                            <input type="number" class="form-control form-control-sm text-end" value="@FormatProfitPercent(mp.ProfitPercent)" @onchange="@(e => OnMarketProfitChangedFromEvent(mp, e))" step="0.0001" />
+                                        </td>
+                                        <td class="text-end">
+                                            <input type="number" class="form-control form-control-sm text-end" value="@FormatNumberInput(mp.Price)" @onchange="@(e => OnMarketPriceChangedFromEvent(mp, e))" step="any" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Fiscal / Tributação</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-3">
+                            <label class="form-label">Classe fiscal</label>
+                            <select class="form-select form-select-sm" @bind="_product.FiscalClassId">
+                                @foreach (var f in _fiscalClasses)
+                                {
+                                    <option value="@f.Id">@f.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Moeda</label>
+                            <select class="form-select form-select-sm" @bind="_product.CurrencyId">
+                                @foreach (var cur in _currencies)
+                                {
+                                    <option value="@cur.Id">@cur.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CST</label>
+                            <select class="form-select form-select-sm" @bind="_product.CstId">
+                                @foreach (var c in _cst)
+                                {
+                                    <option value="@c.Id">@c.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CSTB <span class="text-danger">*</span></label>
+                            <select class="form-select form-select-sm" @bind="_product.CstbId" required>
+                                <option value="">Selecione</option>
+                                @foreach (var c in _cstb)
+                                {
+                                    <option value="@c.Id.ToString()">@c.Name</option>
+                                }
+                            </select>
+                            <ValidationMessage For="@(() => _product.CstbId)" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Estoque e outros</div>
+                <div class="card-body py-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Cód. barras</label>
+                            <InputText class="form-control form-control-sm" @bind-Value="_product.BarCode" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">pH</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_product.Ph" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Tamanho</label>
+                            <select class="form-select form-select-sm" @bind="_product.SizeId">
+                                <option value="">—</option>
+                                @foreach (var s in _sizes)
+                                {
+                                    <option value="@s.Id">@s.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Estoque mín.</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_product.StockMin" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Pack</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_product.Pack" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Estoque atual</label>
+                            <input type="text" class="form-control form-control-sm bg-light" readonly value="@_product.Stock" />
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-2">
+                            <label class="form-label">Últ. entrada</label>
+                            <input type="text" class="form-control form-control-sm bg-light" readonly value="@(_product.StockLastInDate?.ToString("dd/MM/yyyy") ?? "—")" />
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <div class="form-check mb-2">
+                                <InputCheckbox class="form-check-input" id="edit-active" @bind-Value="_product.Active" />
+                                <label class="form-check-label small" for="edit-active">Ativo</label>
+                            </div>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <div class="form-check mb-2">
+                                <InputCheckbox class="form-check-input" id="edit-quarantine" @bind-Value="_product.Quarantine" />
+                                <label class="form-check-label small" for="edit-quarantine">Quarentena</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header py-2 small fw-semibold">Fornecedores</div>
+                <div class="card-body py-2">
+                    <label class="form-label">IDs separados por vírgula (edição rápida)</label>
+                    <InputText class="form-control form-control-sm" Value="@_supplierIdsText" ValueChanged="@OnSupplierIdsChanged" ValueExpression="@(() => _supplierIdsText)" placeholder="Ex: 1, 2, 3" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary @(_submitAttemptedWithErrors ? "btn-submit-has-errors" : null)" disabled="@_saving">@(_saving ? "Salvando..." : _submitAttemptedWithErrors ? "Salvar — Corrija os erros acima" : "Salvar")</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ProductEditDto? _product;
+    private IReadOnlyList<IdNameDto> _classes = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _fiscalClasses = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _currencies = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _cst = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _cstb = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _sizes = new List<IdNameDto>();
+    private string _supplierIdsText = "";
+    private string? _errorMessage;
+    private bool _notFound;
+    private bool _saving;
+    private bool _showSuccessModal;
+    private bool _submitAttemptedWithErrors;
+
+    [Inject] private IProductService ProductService { get; set; } = null!;
+    [Inject] private IProductReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {        _product = await ProductService.GetByIdAsync(Id);
+        if (_product == null)
+        {
+            _notFound = true;
+            return;
+        }
+        _classes = await ReferenceService.GetProductClassesAsync();
+        _groups = await ReferenceService.GetProductGroupsByClassAsync(_product.ClassId);
+        if (_groups.Count > 0 && !_groups.Any(g => g.Id == _product.GroupId))
+            _product.GroupId = _groups[0].Id;
+        _fiscalClasses = await ReferenceService.GetFiscalClassesAsync();
+        _currencies = await ReferenceService.GetCurrenciesAsync();
+        _cst = await ReferenceService.GetCstAsync();
+        _cstb = await ReferenceService.GetCstbAsync();
+        _sizes = await ReferenceService.GetAnimalSizesAsync();
+        _supplierIdsText = string.Join(", ", _product.SupplierIds);
+        if (_product.MarketProducts.Count == 0)
+        {
+            var markets = await ReferenceService.GetMarketsAsync();
+            _product.MarketProducts = markets.Select(m => new MarketProductItemDto { MarketId = (byte)m.Id, MarketName = m.Name, ProfitPercent = 0, Price = 0 }).ToList();
+        }
+        else
+        {
+            foreach (var mp in _product.MarketProducts)
+                mp.ProfitPercent = Math.Round(mp.ProfitPercent, 4);
+        }
+    }
+
+    private static string FormatDecimal(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+
+    private static string FormatNumberInput(decimal value) => value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Margem de lucro: no máximo 4 casas decimais.</summary>
+    private static string FormatProfitPercent(decimal value) => Math.Round(value, 4).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void OnSupplierIdsChanged(string? value)
+    {
+        _supplierIdsText = value ?? "";
+        _product ??= new ProductEditDto();
+        _product.SupplierIds = _supplierIdsText
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var n) ? n : 0)
+            .Where(n => n > 0)
+            .ToList();
+    }
+
+    /// <summary>Custo líquido = Custo bruto × (1 - Desconto % / 100).</summary>
+    private decimal GetCostLiquid()
+    {
+        if (_product == null) return 0;
+        return (_product.CostGross ?? 0) * (1 - (_product.Discount ?? 0) / 100m);
+    }
+
+    /// <summary>Custo final = Custo líquido × Custo transporte. Cascata: usado para preço final por mercado.</summary>
+    private decimal GetCostFinal()
+    {
+        if (_product == null) return 0;
+        return GetCostLiquid() * (_product.CostTransport ?? 0);
+    }
+
+    /// <summary>Recalcula todos os preços finais por mercado a partir do custo final e da margem de cada um.</summary>
+    private void CascadeCostToMarketPrices()
+    {
+        if (_product == null) return;
+        var costFinal = GetCostFinal();
+        foreach (var mp in _product.MarketProducts)
+            mp.Price = costFinal * (1 + mp.ProfitPercent / 100m);
+        StateHasChanged();
+    }
+
+    private void OnCostGrossChangedFromEvent(ChangeEventArgs e)
+    {
+        var value = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (decimal?)d : null;
+        OnCostGrossChanged(value);
+    }
+
+    private void OnDiscountChangedFromEvent(ChangeEventArgs e)
+    {
+        var value = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (decimal?)d : null;
+        OnDiscountChanged(value);
+    }
+
+    private void OnCostTransportChangedFromEvent(ChangeEventArgs e)
+    {
+        var value = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (decimal?)d : null;
+        OnCostTransportChanged(value);
+    }
+
+    private void OnCostGrossChanged(decimal? value)
+    {
+        if (_product == null) return;
+        _product.CostGross = value;
+        CascadeCostToMarketPrices();
+    }
+
+    private void OnDiscountChanged(decimal? value)
+    {
+        if (_product == null) return;
+        _product.Discount = value;
+        CascadeCostToMarketPrices();
+    }
+
+    private void OnCostTransportChanged(decimal? value)
+    {
+        if (_product == null) return;
+        _product.CostTransport = value;
+        CascadeCostToMarketPrices();
+    }
+
+    private void OnMarketProfitChangedFromEvent(MarketProductItemDto mp, ChangeEventArgs e)
+    {
+        var value = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (decimal?)d : null;
+        OnMarketProfitChanged(mp, value);
+    }
+
+    private void OnMarketPriceChangedFromEvent(MarketProductItemDto mp, ChangeEventArgs e)
+    {
+        var value = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? (decimal?)d : null;
+        OnMarketPriceChanged(mp, value);
+    }
+
+    private void OnMarketProfitChanged(MarketProductItemDto mp, decimal? value)
+    {
+        mp.ProfitPercent = Math.Round(value ?? 0, 4);
+        var costFinal = GetCostFinal();
+        mp.Price = costFinal * (1 + mp.ProfitPercent / 100m);
+    }
+
+    private void OnMarketPriceChanged(MarketProductItemDto mp, decimal? value)
+    {
+        mp.Price = value ?? 0;
+        var costFinal = GetCostFinal();
+        if (costFinal > 0)
+            mp.ProfitPercent = Math.Round((mp.Price / costFinal - 1) * 100, 4);
+    }
+
+    private void HideSuccessModal() => _showSuccessModal = false;
+
+    private void OnSubmitWithErrors() { _submitAttemptedWithErrors = true; StateHasChanged(); }
+
+    private async Task OnClassChangedAsync()
+    {
+        if (_product == null) return;
+        _groups = await ReferenceService.GetProductGroupsByClassAsync(_product.ClassId);
+        if (_groups.Count > 0)
+        {
+            if (!_groups.Any(g => g.Id == _product.GroupId))
+                _product.GroupId = _groups[0].Id;
+        }
+        else
+        {
+            _product.GroupId = 0;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        if (_product == null) return;
+        if (_product.GroupId <= 0)
+        {
+            _errorMessage = "Selecione um grupo válido para a classe informada.";
+            return;
+        }
+        _submitAttemptedWithErrors = false;
+        _errorMessage = null;
+        _saving = true;
+        try
+        {
+            var ok = await ProductService.UpdateAsync(_product);
+            if (ok)
+                _showSuccessModal = true;
+            else
+                _errorMessage = "Erro ao salvar.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

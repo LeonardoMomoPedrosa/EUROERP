@@ -1,0 +1,68 @@
+@page "/principal/clientes/higienizacao-por-cliente"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Higienização por Cliente</PageTitle>
+
+<p class="text-muted small">Higienizações com mais de 180 dias — última OS por frota (Eurobus: higienic_list_2).</p>
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning">@_error</div> }
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Empresa</th>
+                        <th>Frota</th>
+                        <th>Placa</th>
+                        <th>Última higienização</th>
+                        <th>Data recomendada</th>
+                        <th class="text-end">Defasagem (dias)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-3">Carregando...</td></tr>
+                    }
+                    else if (_rows.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-3">Nenhum registro.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var r in _rows)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/principal/clientes/cadastro/@r.ClientId">@r.SocialName</a>
+                                </td>
+                                <td>@r.CarDescription</td>
+                                <td>@r.CarPlate</td>
+                                <td>@(r.SentDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                <td>@(r.RecommendDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                <td class="text-end">@r.DaysBehind</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<HigienicOrderByClientDto> _rows = new List<HigienicOrderByClientDto>();
+    private string? _error;
+    private bool _loading = true;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _rows = await ClientService.GetHigienicOrdersByClientAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+}

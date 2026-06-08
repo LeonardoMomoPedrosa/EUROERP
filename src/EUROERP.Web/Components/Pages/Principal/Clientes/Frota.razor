@@ -1,0 +1,160 @@
+@page "/principal/clientes/frota"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Frota</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Frota do cliente</h5></div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Buscar cliente</label>
+                <input type="text" class="form-control form-control-sm" @bind="_searchName" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">Buscar</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+    </div>
+</div>
+
+<div class="card grid-card mb-3">
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light"><tr><th>Id</th><th>Razão Social</th><th>Cidade</th></tr></thead>
+            <tbody>
+                @foreach (var c in _clients)
+                {
+                    <tr role="button" class="@(_selectedClientId == c.Id ? "table-primary" : "")" @onclick="() => SelectClient(c)">
+                        <td>@c.Id</td><td>@c.SocialName</td><td>@(c.City ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_selectedClientId > 0)
+{
+    <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0">Veículos — @_selectedClientName</h6></div>
+        <div class="card-body">
+            <div class="row g-2 mb-3">
+                <div class="col-md-3"><input class="form-control form-control-sm" @bind="_newPlate" placeholder="Placa" /></div>
+                <div class="col-md-5"><input class="form-control form-control-sm" @bind="_newDescription" placeholder="Descrição" /></div>
+                <div class="col-md-2"><button type="button" class="btn btn-success btn-sm" @onclick="AddCar">Adicionar</button></div>
+            </div>
+            <table class="table table-sm table-bordered data-grid-table">
+                <thead class="table-light"><tr><th>Placa</th><th>Descrição</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var car in _cars)
+                    {
+                        <tr>
+                            @if (_editCarId == car.Id)
+                            {
+                                <td><input class="form-control form-control-sm" @bind="_editPlate" /></td>
+                                <td><input class="form-control form-control-sm" @bind="_editDescription" /></td>
+                                <td>
+                                    <button type="button" class="btn btn-primary btn-sm" @onclick="SaveCar">Salvar</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CancelEdit">Cancelar</button>
+                                </td>
+                            }
+                            else
+                            {
+                                <td>@car.Plate</td>
+                                <td>@car.Description</td>
+                                <td>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => StartEdit(car)">Editar</button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => DeleteCar(car.Id)">Excluir</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private string _searchName = "";
+    private string? _error;
+    private bool _loading;
+    private int _selectedClientId;
+    private string? _selectedClientName;
+    private string _newPlate = "";
+    private string _newDescription = "";
+    private int _editCarId;
+    private string _editPlate = "";
+    private string _editDescription = "";
+    private IReadOnlyList<ClientSummaryDto> _clients = new List<ClientSummaryDto>();
+    private IReadOnlyList<ClientCarDto> _cars = new List<ClientCarDto>();
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    private async Task Search()
+    {
+        _loading = true;
+        _error = null;
+        try { _clients = await ClientService.GetListAsync(new ClientFilterDto { Name = _searchName }); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SelectClient(ClientSummaryDto c)
+    {
+        _selectedClientId = c.Id;
+        _selectedClientName = c.SocialName;
+        await LoadCars();
+    }
+
+    private async Task LoadCars() => _cars = await ClientService.GetCarsByClientAsync(_selectedClientId);
+
+    private async Task AddCar()
+    {
+        if (string.IsNullOrWhiteSpace(_newPlate)) return;
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.Identity?.Name ?? "SYS";
+        var appId = Configuration["App:ApplicationId"] ?? "EUROERP";
+        try
+        {
+            await ClientService.CreateCarAsync(_selectedClientId, _newPlate.Trim(), _newDescription.Trim(), appId, userId);
+            _newPlate = _newDescription = "";
+            await LoadCars();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void StartEdit(ClientCarDto car)
+    {
+        _editCarId = car.Id;
+        _editPlate = car.Plate;
+        _editDescription = car.Description;
+    }
+
+    private void CancelEdit() => _editCarId = 0;
+
+    private async Task SaveCar()
+    {
+        try
+        {
+            await ClientService.UpdateCarAsync(_editCarId, _editPlate.Trim(), _editDescription.Trim());
+            _editCarId = 0;
+            await LoadCars();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task DeleteCar(int carId)
+    {
+        try
+        {
+            await ClientService.DeleteCarAsync(carId);
+            await LoadCars();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

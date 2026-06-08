@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EUROERP.Application/EUROERP.Application.csproj" />
+    <Project Path="src/EUROERP.Domain/EUROERP.Domain.csproj" />
+    <Project Path="src/EUROERP.Infrastructure/EUROERP.Infrastructure.csproj" />
+    <Project Path="src/EUROERP.Web/EUROERP.Web.csproj" />
+  </Folder>
+</Solution>

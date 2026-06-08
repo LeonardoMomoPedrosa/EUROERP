@@ -1,0 +1,210 @@
+{
+  "topMenuItems": [
+    {
+      "id": "principal",
+      "label": "Principal",
+      "children": [
+        {
+          "label": "Produtos",
+          "children": [
+            { "label": "Cadastro", "route": "/principal/produtos/cadastro" },
+            { "label": "Historico", "route": "/principal/produtos/historico" },
+            {
+              "label": "Alterar em massa",
+              "children": [
+                { "label": "Descrição", "route": "/principal/produtos/atualizacao-massa-descricao" },
+                { "label": "Custos", "route": "/principal/produtos/atualizacao-massa-custos" }
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Fornecedores",
+          "children": [
+            { "label": "Cadastro", "route": "/principal/fornecedores/cadastro" },
+            { "label": "Alterar em massa", "route": "/principal/fornecedores/alterar-massa" }
+          ]
+        },
+        {
+          "label": "Clientes",
+          "children": [
+            { "label": "Cadastro", "route": "/principal/clientes/cadastro" },
+            { "label": "Descontos", "route": "/principal/clientes/descontos" },
+            { "label": "Créditos", "route": "/principal/clientes/creditos" },
+            { "label": "Frota", "route": "/principal/clientes/frota" },
+            { "label": "Higienização", "route": "/principal/clientes/higienizacao" },
+            { "label": "Higienização por Cliente", "route": "/principal/clientes/higienizacao-por-cliente" },
+            { "label": "Lista de vendedores", "route": "/principal/clientes/vendedores" },
+            { "label": "Alterar em massa", "route": "/principal/clientes/alterar-massa" }
+          ]
+        },
+        {
+          "label": "Garantia",
+          "children": [
+            { "label": "Nova garantia", "route": "/principal/garantia/nova" },
+            { "label": "Consulta garantia", "route": "/principal/garantia/consulta" }
+          ]
+        },
+        {
+          "label": "Estoque",
+          "children": [
+            { "label": "Entrada manual", "route": "/principal/estoque/entrada" },
+            { "label": "Entrada em lote", "route": "/principal/estoque/entrada-massa" },
+            { "label": "Consulta", "route": "/principal/estoque/consulta" },
+            {
+              "label": "Pedido de compra",
+              "children": [
+                { "label": "Pedidos", "route": "/principal/estoque/pedido-compra" },
+                { "label": "Entrar estoque", "route": "/principal/estoque/entrar-estoque" }
+              ]
+            },
+            {
+              "label": "Relatório de ativos",
+              "children": [
+                { "label": "Por classe", "route": "/principal/estoque/ativos-classe" },
+                { "label": "Por fornecedor", "route": "/principal/estoque/ativos-fornecedor" }
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Listas",
+          "children": [
+            { "label": "Geral", "route": "/lista/geral" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vendas",
+      "label": "Vendas",
+      "children": [
+        { "label": "Nova OS", "route": "/vendas/nova-os" },
+        { "label": "Consultar OS", "route": "/vendas/consultar-os" },
+        {
+          "label": "Relatórios",
+          "children": [
+            { "label": "Minhas vendas", "route": "/vendas/relatorios/minhas-vendas" },
+            { "label": "ABC", "route": "/vendas/relatorios/abc" },
+            { "label": "Cliente/Vendedor", "route": "/vendas/relatorios/cliente-vendedor" }
+          ]
+        },
+        {
+          "label": "Atendimento",
+          "children": [
+            { "label": "Criar atendimento", "route": "/vendas/atendimento/criar" },
+            { "label": "Listar atendimentos", "route": "/vendas/atendimento/listar" },
+            { "label": "Relatórios", "route": "/vendas/atendimento/relatorios" }
+          ]
+        },
+        { "label": "OS não faturada", "route": "/vendas/os-nao-faturada" },
+        { "label": "Faturar OS", "route": "/vendas/faturar-os" },
+        {
+          "label": "NFe",
+          "children": [
+            { "label": "Enviar NFe", "route": "/vendas/nfe/enviar" },
+            { "label": "Outras", "route": "/vendas/nfe/outras" },
+            { "label": "Outras (novo)", "route": "/vendas/nfe/outras-novo" },
+            { "label": "Imprimir", "route": "/vendas/nfe/imprimir" },
+            { "label": "Cancelar NFe", "route": "/vendas/nfe/cancelar" },
+            { "label": "Cancelar NFES", "route": "/vendas/nfe/cancelar-lote" },
+            { "label": "Carta de correção", "route": "/vendas/nfe/carta-correcao" },
+            { "label": "Relatório", "route": "/vendas/nfe/relatorio" },
+            { "label": "Download", "route": "/vendas/nfe/download" },
+            { "label": "Status do serviço", "route": "/vendas/nfe/status-servico" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "financeiro",
+      "label": "Financeiro",
+      "children": [
+        {
+          "label": "Contas a Pagar",
+          "children": [
+            { "label": "Consultar", "route": "/financeiro/contas-a-pagar/consultar" },
+            { "label": "Criar", "route": "/financeiro/contas-a-pagar/criar" },
+            { "label": "Baixa", "route": "/financeiro/contas-a-pagar/baixa" },
+            { "label": "Pendentes", "route": "/financeiro/contas-a-pagar/pendentes" },
+            {
+              "label": "Relatórios",
+              "children": [
+                { "label": "Semanal", "route": "/financeiro/contas-a-pagar/relatorios/semanal" },
+                { "label": "Pagto por grupo", "route": "/financeiro/contas-a-pagar/relatorios/pagto-grupo" }
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Contas a Receber",
+          "children": [
+            { "label": "Consultar", "route": "/financeiro/contas-a-receber/consultar" },
+            {
+              "label": "Relatórios",
+              "children": [
+                { "label": "De baixas", "route": "/financeiro/contas-a-receber/relatorios/baixas" }
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Faturamento",
+          "children": [
+            { "label": "Diário", "route": "/financeiro/faturamento/diario" },
+            {
+              "label": "Mensal",
+              "children": [
+                { "label": "Geral", "route": "/financeiro/faturamento/mensal/geral" },
+                { "label": "Fornecedor", "route": "/financeiro/faturamento/mensal/fornecedor" }
+              ]
+            },
+            { "label": "Anual", "route": "/financeiro/faturamento/anual" }
+          ]
+        },
+        { "label": "Fluxo de caixa", "route": "/financeiro/fluxo-caixa" },
+        { "label": "Liberar cliente", "route": "/financeiro/liberar-cliente" }
+      ]
+    },
+    {
+      "id": "referencia",
+      "label": "Referência",
+      "children": [
+        { "label": "Grupo de produtos", "route": "/referencia/grupos-produtos" },
+        { "label": "Classificação fiscal", "route": "/referencia/classe-fiscal" },
+        { "label": "Conversão de moedas", "route": "/referencia/moedas" }
+      ]
+    },
+    {
+      "id": "diretoria",
+      "label": "Diretoria",
+      "children": [
+        {
+          "label": "Usuários",
+          "children": [
+            { "label": "Funções", "route": "/diretoria/usuarios/funcoes" },
+            { "label": "Mercados", "route": "/diretoria/usuarios/mercados" },
+            { "label": "Novo usuário", "route": "/diretoria/usuarios/novo" },
+            { "label": "Remover usuário", "route": "/diretoria/usuarios/remover" }
+          ]
+        },
+        {
+          "label": "Atividades",
+          "children": [
+            { "label": "Gerenciar", "route": "/diretoria/atividades/gerenciar" },
+            { "label": "Associar", "route": "/diretoria/atividades/associar" }
+          ]
+        },
+        { "label": "Alíq. ICMS", "route": "/diretoria/icms" }
+      ]
+    },
+    {
+      "id": "cadastro",
+      "label": "Cadastro",
+      "children": [
+        { "label": "Alterar senha", "route": "/cadastro/alterar-senha" },
+        { "label": "Alterar e-mail", "route": "/cadastro/alterar-email" }
+      ]
+    }
+  ]
+}

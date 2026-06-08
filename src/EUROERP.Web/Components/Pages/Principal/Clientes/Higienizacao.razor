@@ -1,0 +1,73 @@
+@page "/principal/clientes/higienizacao"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Higienização</PageTitle>
+
+<p class="text-muted small">Higienizações entre 6 meses e 1 ano — marcar processado (Eurobus: higienic_list).</p>
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning">@_error</div> }
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        @if (_loading)
+        {
+            <p class="p-3 text-muted">Carregando...</p>
+        }
+        else if (_orders.Count == 0)
+        {
+            <p class="p-3 text-muted">Nenhum registro pendente.</p>
+        }
+        else
+        {
+            @foreach (var o in _orders)
+            {
+                <div class="border-bottom p-3">
+                    <div class="row g-2 mb-1">
+                        <div class="col-md-2"><strong>OS:</strong> @o.OrderId</div>
+                        <div class="col-md-2"><strong>Vendedor:</strong> @o.SalesAgent</div>
+                        <div class="col-md-2"><strong>Data:</strong> @(o.SentDate?.ToString("dd/MM/yyyy") ?? "-")</div>
+                        <div class="col-md-2"><strong>NFe:</strong> @o.NfeNo</div>
+                        <div class="col-md-4 text-end">
+                            <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => MarkProcessed(o.OrderId)" disabled="@_processing">Marcar processado</button>
+                        </div>
+                    </div>
+                    <div><strong>Cliente:</strong> @o.SocialName — @o.City/@o.State</div>
+                    <div><strong>Frota:</strong> @o.CarPlate — @o.CarDescription @(o.CarKm.HasValue ? $"(KM {o.CarKm})" : "")</div>
+                    @if (!string.IsNullOrEmpty(o.CarProblem)) { <div class="small text-muted">@o.CarProblem</div> }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<HigienicOrderDto> _orders = new List<HigienicOrderDto>();
+    private string? _error;
+    private bool _loading = true;
+    private bool _processing;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = null;
+        try { _orders = await ClientService.GetHigienicOrdersAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task MarkProcessed(int orderId)
+    {
+        _processing = true;
+        try
+        {
+            await ClientService.MarkHigienicProcessedAsync(orderId);
+            await Load();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _processing = false; }
+    }
+}

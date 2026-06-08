@@ -1,0 +1,147 @@
+@page "/principal/clientes/creditos"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Créditos</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Aplicar crédito</h5></div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Buscar cliente</label>
+                <input type="text" class="form-control form-control-sm" @bind="_searchName" placeholder="Razão social ou fantasia" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">Buscar</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+        @if (_selectedClientId > 0)
+        {
+            <p class="mb-2"><strong>Cliente:</strong> @_selectedClientName — <strong>Saldo:</strong> @_creditBalance.ToString("N2")</p>
+            <div class="row g-2 mb-2">
+                <div class="col-md-2">
+                    <label class="form-label">Valor</label>
+                    <input type="number" step="0.01" class="form-control form-control-sm" @bind="_amount" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Observação</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_memo" />
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-success btn-sm mt-4" @onclick="ApplyCredit" disabled="@_saving">Aplicar</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card grid-card mb-3">
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light">
+                <tr><th>Id</th><th>Razão Social</th><th>Cidade</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _clients)
+                {
+                    <tr role="button" class="@(_selectedClientId == c.Id ? "table-primary" : "")" @onclick="() => SelectClient(c)">
+                        <td>@c.Id</td>
+                        <td>@c.SocialName</td>
+                        <td>@(c.City ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_selectedClientId > 0 && _history.Count > 0)
+{
+    <div class="card grid-card">
+        <div class="card-header"><h6 class="mb-0">Histórico de créditos</h6></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light">
+                    <tr><th>Data</th><th>Usuário</th><th class="text-end">Valor</th><th>OS</th><th>Memo</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var h in _history)
+                    {
+                        <tr>
+                            <td>@h.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@h.UserId</td>
+                            <td class="text-end">@h.Amount.ToString("N2")</td>
+                            <td>@(h.OrderId?.ToString() ?? "-")</td>
+                            <td>@h.Memo</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<SuccessModal Show="@_showSuccess" Message="Crédito aplicado com sucesso." OnClosed="() => _showSuccess = false" />
+
+@code {
+    private string _searchName = "";
+    private string? _error;
+    private bool _loading;
+    private bool _saving;
+    private bool _showSuccess;
+    private int _selectedClientId;
+    private string? _selectedClientName;
+    private decimal _creditBalance;
+    private decimal _amount;
+    private string _memo = "";
+    private IReadOnlyList<ClientSummaryDto> _clients = new List<ClientSummaryDto>();
+    private IReadOnlyList<ClientCreditHistoryDto> _history = new List<ClientCreditHistoryDto>();
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    private async Task Search()
+    {
+        _error = null;
+        _loading = true;
+        try
+        {
+            _clients = await ClientService.GetListAsync(new ClientFilterDto { Name = _searchName });
+            _selectedClientId = 0;
+            _history = new List<ClientCreditHistoryDto>();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SelectClient(ClientSummaryDto c)
+    {
+        _selectedClientId = c.Id;
+        _selectedClientName = c.SocialName;
+        _creditBalance = await ClientService.GetClientCreditBalanceAsync(c.Id);
+        _history = await ClientService.GetClientCreditHistoryAsync(c.Id);
+    }
+
+    private async Task ApplyCredit()
+    {
+        if (_selectedClientId <= 0 || _amount == 0) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var appId = Configuration["App:ApplicationId"] ?? "EUROERP";
+            await ClientService.ApplyClientCreditAsync(_selectedClientId, _amount, _memo, appId, userId);
+            _creditBalance = await ClientService.GetClientCreditBalanceAsync(_selectedClientId);
+            _history = await ClientService.GetClientCreditHistoryAsync(_selectedClientId);
+            _amount = 0;
+            _memo = "";
+            _showSuccess = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+}

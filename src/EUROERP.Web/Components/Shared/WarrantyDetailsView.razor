@@ -1,0 +1,63 @@
+@using EUROERP.Application.Warranty
+
+<table class="table table-sm table-borderless mb-0 warranty-details-table">
+    <tbody>
+        <tr>
+            <td class="text-end pe-2" style="width:22%">NF Fornecedor:</td>
+            <td>@(Warranty.SupNf ?? "-")</td>
+            <td style="width:4%"></td>
+            <td class="text-end pe-2" style="width:22%">NF Eurobus:</td>
+            <td>@(Warranty.EbNf ?? "-") — OS: @(Warranty.OrderId?.ToString() ?? "-")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Certificado Fornecedor:</td>
+            <td>@(Warranty.SupCert ?? "-")</td>
+            <td></td>
+            <td class="text-end pe-2">Certificado Eurobus:</td>
+            <td>@(Warranty.EbCert ?? "-")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Modelo:</td>
+            <td>@(Warranty.Model ?? "-")</td>
+            <td></td>
+            <td class="text-end pe-2">Tipo do Veículo:</td>
+            <td>@WarrantyVehicleTypes.GetLabel(Warranty.VehicleType)</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Núm. Chassi:</td>
+            <td>@(Warranty.ChassiNo ?? "-")</td>
+            <td></td>
+            <td class="text-end pe-2">Núm. Carroceria:</td>
+            <td>@(Warranty.BodyNo ?? "-")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Placa:</td>
+            <td>@(Warranty.PlateNo ?? "-")</td>
+            <td></td>
+            <td class="text-end pe-2">Núm. Série do aparelho:</td>
+            <td>@(Warranty.SerialNo ?? "-")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Data da Instalação:</td>
+            <td>@Warranty.InstallationDate.ToString("dd/MM/yyyy")</td>
+            <td></td>
+            <td class="text-end pe-2">Data de Vencimento da Garantia:</td>
+            <td>@Warranty.ExpirationDate.ToString("dd/MM/yyyy")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2">Instalado por:</td>
+            <td>@(Warranty.InstalledBy ?? "-")</td>
+            <td></td>
+            <td class="text-end pe-2">Peças utilizadas:</td>
+            <td>@(Warranty.PartsUsed ?? "-")</td>
+        </tr>
+        <tr>
+            <td class="text-end pe-2 align-top">Observações:</td>
+            <td colspan="4">@(Warranty.Memo ?? "-")</td>
+        </tr>
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public WarrantyDto Warranty { get; set; } = null!;
+}

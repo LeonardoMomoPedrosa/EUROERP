@@ -1,0 +1,70 @@
+@page "/login"
+@layout LayoutLogin
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+
+<PageTitle>Login</PageTitle>
+
+<div class="login-card">
+    <h1 class="login-title">@_loginTitle</h1>
+    <p class="login-subtitle">Entre com seu usuário e senha.</p>
+
+    <form method="post" action="/auth/login">
+        @if (!string.IsNullOrEmpty(_antiforgeryToken))
+        {
+            <input type="hidden" name="__RequestVerificationToken" value="@_antiforgeryToken" />
+        }
+        <input type="hidden" name="ReturnUrl" value="@_returnUrl" />
+
+        <div class="mb-3">
+            <label for="userName" class="form-label">Usuário</label>
+            <input type="text" id="userName" name="UserName" class="form-control" placeholder="Usuário" value="@_userName" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Senha</label>
+            <input type="password" id="password" name="Password" class="form-control" placeholder="Senha" autocomplete="current-password" />
+        </div>
+        @if (_showError)
+        {
+            <div class="alert alert-danger mb-3">Usuário ou senha inválidos.</div>
+        }
+        <button type="submit" class="btn btn-primary w-100">Entrar</button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "userName")]
+    private string? UserNameFromQuery { get; set; }
+
+    [Inject] private IAntiforgery Antiforgery { get; set; } = null!;
+    [Inject] private IHttpContextAccessor HttpContextAccessor { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    private string _returnUrl = "/";
+    private string? _userName;
+    private string? _antiforgeryToken;
+    private bool _showError;
+    private string _loginTitle = "EUROERP";
+
+    protected override void OnInitialized()
+    {
+        var brandName = Configuration["App:BrandName"]?.Trim();
+        _loginTitle = string.IsNullOrEmpty(brandName) ? "EUROERP" : $"{brandName} ERP";
+
+        _returnUrl = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
+        _showError = string.Equals(Error, "invalid", StringComparison.OrdinalIgnoreCase);
+        _userName = UserNameFromQuery;
+
+        var ctx = HttpContextAccessor.HttpContext;
+        if (ctx != null)
+        {
+            var tokens = Antiforgery.GetTokens(ctx);
+            _antiforgeryToken = tokens.RequestToken;
+        }
+    }
+}

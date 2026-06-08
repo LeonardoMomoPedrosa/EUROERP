@@ -1,0 +1,1684 @@
+html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 14px; /* Padrão do projeto: fonte reduzida em todas as páginas */
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+/* Impressão: permitir fluxo em várias páginas (overflow/altura do body cortavam conteúdo extra) */
+@media print {
+    html, body {
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+}
+
+/* ========== Temas (esquema de cores) - no .main-layout para persistir na navegação ========== */
+.main-layout { --theme-header-bg: linear-gradient(90deg, rgb(5, 39, 103) 0%, #1a237e 100%); --theme-sidebar-bg: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%); --theme-content-bg: #f7f7f7; }
+.main-layout[data-theme="ocean"] { --theme-header-bg: linear-gradient(90deg, #0d47a1 0%, #01579b 100%); --theme-sidebar-bg: linear-gradient(180deg, #0d47a1 0%, #0277bd 70%); --theme-content-bg: #e3f2fd; }
+.main-layout[data-theme="forest"] { --theme-header-bg: linear-gradient(90deg, #1b5e20 0%, #2e7d32 100%); --theme-sidebar-bg: linear-gradient(180deg, #1b5e20 0%, #388e3c 70%); --theme-content-bg: #e8f5e9; }
+.main-layout[data-theme="dark"] { --theme-header-bg: linear-gradient(90deg, #212121 0%, #424242 100%); --theme-sidebar-bg: linear-gradient(180deg, #212121 0%, #37474f 70%); --theme-content-bg: #303030; }
+.main-layout[data-theme="sunset"] { --theme-header-bg: linear-gradient(90deg, #e65100 0%, #ef6c00 100%); --theme-sidebar-bg: linear-gradient(180deg, #bf360c 0%, #d84315 70%); --theme-content-bg: #fff8e1; }
+.main-layout[data-theme="slate"] { --theme-header-bg: linear-gradient(90deg, #455a64 0%, #546e7a 100%); --theme-sidebar-bg: linear-gradient(180deg, #37474f 0%, #607d8b 70%); --theme-content-bg: #eceff1; }
+
+/* Remove setas (spinners) de inputs numéricos em todo o projeto */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* ========== Main Layout (master page) ========== */
+.main-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+}
+
+.main-layout-header {
+    flex-shrink: 0;
+}
+
+.main-layout-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.main-layout-sidebar {
+    flex-shrink: 0;
+    width: 230px;
+    background: var(--theme-sidebar-bg);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem 0;
+    transition: width 0.2s ease;
+}
+.main-layout-sidebar.main-layout-sidebar-collapsed {
+    width: 0;
+    padding: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.main-layout-content {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    background: var(--theme-content-bg);
+    border-left: 1px solid #dee2e6;
+}
+
+.main-layout .content {
+    padding: 1rem 1.5rem;
+}
+
+/* Logo Mercado Livre (Import ML / Prod Sync) – diferenciar do e-commerce */
+.meli-logo {
+    height: 2.5rem;
+    width: auto;
+    display: block;
+}
+
+/* ========== Top menu bar ========== */
+.top-menu-bar {
+    display: flex;
+    align-items: center;
+    background: var(--theme-header-bg);
+    color: #fff;
+    padding: 0 1rem;
+    min-height: 3.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+}
+
+.sidebar-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    margin-right: 0.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: rgba(255,255,255,0.9);
+    cursor: pointer;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+.sidebar-toggle-btn:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+}
+
+.top-menu-brand {
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: #fff;
+    text-decoration: none;
+    min-width: 230px;
+    flex-shrink: 0;
+    padding-left: 1rem;
+    box-sizing: border-box;
+}
+
+.top-menu-brand:hover {
+    color: rgba(255,255,255,0.95);
+}
+
+.top-menu-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    flex: 1;
+}
+
+.top-menu-item {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.9);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+.top-menu-item:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+}
+
+.top-menu-item.active {
+    background: rgba(255,255,255,0.25);
+    color: #fff;
+}
+
+/* Área do usuário: fora do nav, visual distinto do menu */
+.top-menu-user-area {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+
+.top-menu-user-name {
+    color: rgba(255,255,255,0.95);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.top-menu-logout-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.top-menu-logout-btn:hover {
+    background: rgba(255,255,255,0.25);
+    border-color: rgba(255,255,255,0.5);
+}
+
+/* Widget Últimas NFes: linha cancelada */
+.nfe-widget-row-cancelada {
+    opacity: 0.75;
+}
+.nfe-widget-row-cancelada .badge.bg-secondary {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.35rem;
+}
+
+/* Widget Certificado NFe: validade em vermelho piscante (45 dias ou menos) */
+@keyframes cert-validity-blink {
+    0%, 100% { opacity: 1; color: var(--bs-danger); }
+    50% { opacity: 0.4; color: var(--bs-danger); }
+}
+.cert-validity-blink {
+    animation: cert-validity-blink 1s ease-in-out infinite;
+    font-weight: 700;
+}
+.cert-validity-date {
+    font-size: 1.05rem;
+}
+
+/* ========== Login page ========== */
+.login-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    padding: 2rem;
+}
+.login-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    text-align: center;
+}
+.login-subtitle {
+    color: #6c757d;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+/* ========== Left menu (sidebar) ========== */
+.left-menu-empty {
+    padding: 1rem;
+    color: rgba(255,255,255,0.7);
+    font-size: 0.9rem;
+}
+
+.left-menu-nav {
+    padding: 0 0.5rem;
+}
+
+.left-menu-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.left-menu-item {
+    margin-bottom: 0.15rem;
+}
+
+.left-menu-sublist {
+    list-style: none;
+    margin: 0;
+    padding-left: 1rem;
+    border-left: 1px solid rgba(255,255,255,0.2);
+}
+
+.left-menu-node.group {
+    padding: 0;
+}
+
+.left-menu-node-header {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    user-select: none;
+}
+.left-menu-node-header:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.left-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.95);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.left-menu-toggle:hover {
+    background: rgba(255,255,255,0.25);
+    color: #fff;
+}
+
+.left-menu-node-label {
+    display: block;
+    padding: 0.25rem 0.5rem;
+    color: rgba(255,255,255,0.85);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.left-menu-node-header .left-menu-node-label {
+    padding: 0;
+}
+
+.left-menu-sublist.collapsed {
+    display: none;
+}
+
+.left-menu-link {
+    display: block;
+    padding: 0.3rem 0.5rem;
+    padding-left: calc(0.5rem + (var(--level, 0) * 0.75rem));
+    color: rgba(255,255,255,0.9);
+    text-decoration: none;
+    font-size: 0.9rem;
+    border-radius: 4px;
+}
+
+.left-menu-link:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+.left-menu-link.active {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+}
+
+/* Top-level menu in sidebar: visible only on mobile (drawer) */
+.sidebar-mobile-top-nav {
+    display: none;
+}
+.sidebar-mobile-top-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem 0.5rem 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+.sidebar-mobile-top-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.9);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+.sidebar-mobile-top-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.sidebar-mobile-top-item.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+/* ========== Mobile (Epic 21 – drawer + hamburger) ========== */
+@media (max-width: 768px) {
+    .top-menu-brand {
+        min-width: 0;
+        max-width: 50%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Hide header top menu on mobile; sections move into the drawer */
+    .top-menu-nav {
+        display: none !important;
+    }
+
+    /* Desktop sidebar toggle: hidden on mobile */
+    .sidebar-toggle-btn {
+        display: none !important;
+    }
+    /* Hamburger: visible only on mobile */
+    .mobile-hamburger-btn {
+        display: flex !important;
+    }
+
+    /* Show top-level sections (Principal, Vendas, etc.) at top of drawer */
+    .sidebar-mobile-top-nav {
+        display: block;
+    }
+
+    .top-menu-item {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.85rem;
+    }
+
+    /* Left sidebar becomes fixed overlay drawer; off-screen by default */
+    .main-layout-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        max-width: 85vw;
+        z-index: 1050;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+    }
+    .main-layout-sidebar.main-layout-sidebar-mobile-open {
+        transform: translateX(0);
+    }
+    /* Backdrop when drawer is open */
+    .main-layout-sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 1040;
+        cursor: pointer;
+    }
+    /* Optional: prevent background scroll when drawer open */
+    .main-layout.main-layout-mobile-drawer-open {
+        overflow: hidden;
+    }
+
+    /* Garantir que o último elemento (ex.: botão Salvar) fique visível ao rolar – mais padding no fim */
+    .main-layout .content {
+        padding-bottom: calc(2.5rem + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+/* Hamburger button: hidden on desktop, shown only in mobile media query above */
+.mobile-hamburger-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    margin-right: 0.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.mobile-hamburger-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+a, .btn-link {
+    color: #006bb7;
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: #1b6ec2;
+    border-color: #1861ac;
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+}
+
+.content {
+    padding-top: 1.6rem;
+    padding-bottom: 0.6rem;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+/* ========== Indicador de erro de validação no botão de enviar (padrão do projeto) ========== */
+.btn-submit-has-errors {
+    animation: btn-submit-shake 0.5s ease-in-out;
+    box-shadow: 0 0 0 2px #8b3a42;
+}
+@keyframes btn-submit-shake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-6px); }
+    30% { transform: translateX(6px); }
+    45% { transform: translateX(-4px); }
+    60% { transform: translateX(4px); }
+    75% { transform: translateX(-2px); }
+}
+
+/* Mensagens de validação: texto menor e vermelho suave, abaixo do campo */
+.validation-message {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8125rem;
+    color: #8b3a42;
+    line-height: 1.35;
+}
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+    .blazor-error-boundary::after {
+        content: "An error has occurred."
+    }
+
+.darker-border-checkbox.form-check-input {
+    border-color: #929292;
+}
+
+/* ========== Grid padrão – estilo melhorado ========== */
+.data-grid-table,
+.product-grid-table,
+.mass-info-table,
+.mass-cost-table,
+.supplier-mass-table {
+    margin-bottom: 0;
+    font-size: 0.85rem;
+    border-color: #e9ecef !important;
+}
+.data-grid-table thead th,
+.product-grid-table thead th,
+.mass-info-table thead th,
+.mass-cost-table thead th,
+.supplier-mass-table thead th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #495057;
+    background: #f1f3f5 !important;
+    border-color: #dee2e6 !important;
+    border-bottom-width: 2px;
+    padding: 0.5rem 0.75rem;
+    white-space: nowrap;
+}
+.data-grid-table tbody td,
+.product-grid-table tbody td,
+.mass-info-table tbody td,
+.mass-cost-table tbody td,
+.supplier-mass-table tbody td {
+    padding: 0.6rem 0.75rem;
+    vertical-align: middle;
+    border-color: #e9ecef !important;
+}
+/* Listras leves para leitura */
+.data-grid-table tbody tr:nth-child(even),
+.product-grid-table tbody tr:nth-child(even),
+.mass-info-table tbody tr:nth-child(even),
+.mass-cost-table tbody tr:nth-child(even),
+.supplier-mass-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+/* Hover em grids clicáveis (lista) */
+.data-grid-table tbody tr[role="button"]:hover,
+.product-grid-table tbody tr[role="button"]:hover {
+    background-color: rgba(13, 110, 253, 0.08) !important;
+    transition: background-color 0.15s ease;
+}
+.supplier-mass-table tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05) !important;
+    transition: background-color 0.15s ease;
+}
+
+/* Prod Sync – linhas mais baixas */
+.data-grid-table.prod-sync-table thead th,
+.data-grid-table.prod-sync-table tbody td {
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+}
+.data-grid-table.prod-sync-table tbody td .form-control-sm {
+    min-height: 1.4rem;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+}
+
+/* Prod Sync – produto mapeado mas inativo no ERP (ACTIVE ≠ Y), discreto */
+.data-grid-table.prod-sync-table tbody tr.prod-sync-row-erp-inactive {
+    background-color: rgba(220, 53, 69, 0.07);
+    box-shadow: inset 3px 0 0 rgba(220, 53, 69, 0.42);
+}
+.data-grid-table.prod-sync-table tbody tr.prod-sync-row-erp-inactive:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+.prod-sync-inactive-hint {
+    margin-left: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #b02a37;
+    white-space: nowrap;
+}
+.prod-sync-inactive-hint::before {
+    content: "· ";
+    color: #d9485f;
+}
+
+/* Pedidos não enviados – tabela de pedidos pendentes */
+.pedidos-nao-enviados-table {
+    font-size: 0.875rem;
+}
+.pedidos-nao-enviados-table thead th,
+.pedidos-nao-enviados-table tbody td {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    vertical-align: middle;
+}
+.pedidos-nao-enviados-table thead th {
+    background: #e8ecf4 !important;
+    color: #1a237e;
+    font-weight: 600;
+    border-bottom: 2px solid #c5cae9;
+}
+.pedidos-nao-enviados-table tbody tr:hover {
+    background-color: rgba(26, 35, 126, 0.06) !important;
+    transition: background-color 0.15s ease;
+}
+.pedidos-nao-enviados-table .order-link {
+    font-weight: 600;
+    color: #1a237e;
+    text-decoration: none;
+}
+.pedidos-nao-enviados-table .order-link:hover {
+    text-decoration: underline;
+    color: #0d47a1;
+}
+.pedidos-nao-enviados-table .order-type-badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+}
+.pedidos-nao-enviados-table .order-type-badge.order-type-animais {
+    color: #2e7d32;
+    background-color: rgba(76, 175, 80, 0.15);
+}
+.pedidos-nao-enviados-table .order-type-badge.order-type-produtos {
+    color: #1565c0;
+    background-color: rgba(33, 150, 243, 0.15);
+}
+.pedidos-nao-enviados-table .status-badge {
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+.pedidos-nao-enviados-table .valor-cell {
+    font-weight: 600;
+    color: #2e7d32;
+}
+
+/* Card que envolve o grid – bordas e sombra */
+.grid-card {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border: 1px solid #e9ecef;
+}
+
+/* ========== Produtos - Grid de busca (específicos) ========== */
+.product-grid-table .product-grid-link {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #052767;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.15s, color 0.15s;
+}
+.product-grid-table .product-grid-link:hover {
+    background-color: rgba(5, 39, 103, 0.1);
+    color: #031a47;
+}
+.product-grid-table .product-desc-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+.product-grid-table .product-desc-name {
+    font-weight: 500;
+    color: #212529;
+    line-height: 1.3;
+}
+.product-grid-table .product-desc-sci {
+    color: #6c757d;
+    font-style: italic;
+    font-size: 0.9em;
+    line-height: 1.25;
+}
+.product-grid-table .product-desc-size {
+    color: #868e96;
+    font-size: 0.85em;
+    line-height: 1.25;
+}
+.product-grid-table .product-price {
+    font-weight: 600;
+    color: #0d6efd;
+}
+.product-grid-table .cell-cod-interno,
+.mass-info-table .cell-cod-interno,
+.mass-cost-table .cell-cod-interno {
+    font-size: 0.75rem;
+}
+
+.product-grid-table .product-quarantine {
+    display: inline-block;
+    min-width: 1.2em;
+    font-weight: 700;
+    color: #856404;
+}
+
+/* ========== Modal de sucesso (padrão do projeto: 0,4s + fade-out) ========== */
+.success-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1050;
+    opacity: 1;
+    transition: opacity 0.55s ease;
+}
+.success-modal-backdrop.success-modal-closing {
+    opacity: 0;
+}
+.success-modal-dialog {
+    min-width: 280px;
+    max-width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+    opacity: 1;
+    transition: opacity 0.55s ease;
+}
+.success-modal-backdrop.success-modal-closing .success-modal-dialog {
+    opacity: 0;
+}
+.success-modal-content {
+    background: #fff;
+}
+.success-modal-header {
+    padding: 0.6rem 1rem;
+    background: #1a237e;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+.success-modal-body {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    color: #212529;
+}
+
+/* ========== Modal de ajuda (campo Plano pagto, etc.) ========== */
+.help-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1050;
+}
+.help-modal-dialog {
+    min-width: 280px;
+    max-width: 360px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.help-modal-content {
+    background: #fff;
+}
+.help-modal-header {
+    padding: 0.5rem 0.75rem;
+    background: #1a237e;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.help-modal-body {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    color: #212529;
+    line-height: 1.4;
+}
+.help-modal-footer {
+    padding: 0.5rem 1rem;
+    border-top: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+.help-icon-btn {
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    border: 1px solid #6c757d;
+    border-radius: 50%;
+    background: #fff;
+    color: #6c757d;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.help-icon-btn:hover {
+    background: #6c757d;
+    color: #fff;
+    border-color: #6c757d;
+}
+
+/* ========== Mass info (alterar em massa - descrição) ========== */
+.mass-info-table .mass-info-action-cell {
+    min-width: 6rem;
+    white-space: nowrap;
+    text-align: center;
+}
+.mass-info-table .mass-info-action-cell .btn,
+.mass-info-table .mass-info-action-placeholder {
+    display: inline-block;
+}
+.mass-info-table .mass-info-action-placeholder {
+    min-width: 5rem;
+    line-height: 1.75rem;
+}
+.mass-info-table .mass-info-feedback-detail {
+    white-space: normal;
+    text-align: left;
+    max-width: 18rem;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.35;
+}
+.mass-info-table input.form-control-sm,
+.mass-info-table select.form-select-sm {
+    min-height: 1.75rem;
+}
+.mass-info-table .mass-info-stock-min {
+    width: 52px;
+}
+.mass-info-table .mass-info-ativo {
+    width: 58px;
+    min-width: 58px;
+}
+.mass-info-table .mass-info-nome {
+    min-width: 280px;
+    width: 100%;
+}
+.mass-info-table .mass-info-cstb {
+    width: 72px;
+    min-width: 72px;
+}
+
+/* Fornecedores - Alterar em massa: fontes um pouco menores */
+.supplier-mass-table {
+    font-size: 0.8rem;
+}
+.supplier-mass-table thead th {
+    font-size: 0.7rem;
+}
+.supplier-mass-table input.form-control-sm,
+.supplier-mass-table select.form-select-sm {
+    font-size: 0.8rem;
+    min-height: 1.6rem;
+}
+.mass-info-fade {
+    animation: mass-info-fade-out 1.4s ease-out forwards;
+}
+@keyframes mass-info-fade-out {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* ========== Mass cost (alterar em massa - custos) ========== */
+
+/* Descrição: mais largura antes do ellipsis (alinha ao espaço ganho na grade) */
+.mass-cost-table .mass-cost-desc {
+    max-width: min(520px, 58vw);
+    vertical-align: bottom;
+}
+.mass-cost-table .mass-cost-num {
+    width: 66px;
+    min-width: 66px;
+}
+/* Custo e Preço Mercado: colunas um pouco maiores e alinhadas ao centro */
+.mass-cost-table th.mass-cost-th-custo,
+.mass-cost-table th.mass-cost-th-preco-mercado {
+    text-align: center;
+}
+.mass-cost-table td.mass-cost-cell-custo,
+.mass-cost-table td.mass-cost-cell-preco-mercado {
+    text-align: center;
+    vertical-align: middle;
+}
+.mass-cost-table .mass-cost-custo,
+.mass-cost-table .mass-cost-preco-mercado {
+    width: 100%;
+    min-width: 84px;
+    max-width: 98px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+    display: block;
+}
+.mass-cost-table .mass-cost-disc,
+.mass-cost-table .mass-cost-trns {
+    width: 46px;
+    min-width: 46px;
+}
+.mass-cost-table .mass-info-action-cell {
+    min-width: 32px;
+    width: 32px;
+    white-space: nowrap;
+    text-align: center;
+}
+.mass-cost-table .mass-info-action-cell .btn,
+.mass-cost-table .mass-info-action-placeholder {
+    display: inline-block;
+}
+.mass-cost-table .mass-info-action-placeholder {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    line-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.mass-cost-table input.form-control-sm {
+    min-height: 1.75rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+}
+
+/* Slightly tighter horizontal padding on the whole grid to help long descriptions fit */
+.mass-cost-table th,
+.mass-cost-table td {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+}
+.mass-cost-table .mass-info-stock-min {
+    width: 52px;
+}
+
+/* Icon-only action column: keep it narrow so room goes to product description */
+.mass-cost-table .mass-info-save-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none; /* remove btn-outline-primary border */
+    box-shadow: none;
+    background: transparent;
+    color: var(--bs-primary);
+    border-radius: 0;
+    transition: none;
+    cursor: pointer;
+    line-height: 0;
+}
+.mass-cost-table .mass-info-save-btn:focus,
+.mass-cost-table .mass-info-save-btn:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+.mass-cost-table .mass-info-save-btn:hover {
+    background: transparent;
+    border: none;
+}
+.mass-cost-table .mass-info-save-btn:active {
+    background: transparent;
+}
+.mass-cost-table .mass-info-save-btn svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    margin: 0;
+}
+
+/* ========== Autocomplete (clientes e fornecedores) ========== */
+.autocomplete-wrapper {
+    overflow: visible;
+}
+.supplier-autocomplete-item {
+    cursor: pointer;
+}
+.supplier-autocomplete-item:hover {
+    background-color: rgba(5, 39, 103, 0.08);
+}
+
+/* ========== Pedido – header compacto ========== */
+.order-header-compact .card-body {
+    font-size: 0.875rem;
+}
+.order-header-compact .badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.order-header-order-id {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1a237e;
+}
+.order-header-date {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #333;
+}
+.order-header-client-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1a237e;
+    line-height: 1.3;
+}
+
+/* ========== Pedido – grid carrinho compacto + ícones ========== */
+.pedido-cart-card .card-header {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+.pedido-cart-table {
+    font-size: 0.8125rem;
+}
+/* Especificidade maior que .data-grid-table tbody td para sobrescrever o padding */
+.pedido-cart-table thead th,
+.pedido-cart-table tbody td {
+    padding: 0.04rem 0.4rem;
+    vertical-align: middle;
+}
+.pedido-cart-tfoot td {
+    font-size: 0.875rem;
+}
+.pedido-cart-tfoot-detail td {
+    font-size: 0.75rem;
+}
+.pedido-cart-table .pedido-cart-actions {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+}
+.pedido-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    margin: 0 0.15rem;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+}
+.pedido-icon-btn-remove {
+    color: #dc3545;
+}
+.pedido-icon-btn-remove:hover {
+    color: #bb2d3b;
+    background-color: rgba(220, 53, 69, 0.12);
+}
+.pedido-icon-btn-edit {
+    color: #0d6efd;
+}
+.pedido-icon-btn-edit:hover {
+    color: #0a58ca;
+    background-color: rgba(13, 110, 253, 0.12);
+}
+
+.pedido-add-to-cart-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pedido-credit-discount-card .card-header,
+.pedido-credit-discount-card .card-body,
+.pedido-insert-product-card .card-header,
+.pedido-insert-product-card .card-body {
+    font-size: 0.875rem;
+}
+.pedido-credit-discount-card .card-header h6,
+.pedido-insert-product-card .card-header h6 {
+    font-size: 0.9rem;
+}
+.pedido-credit-discount-card .form-label,
+.pedido-insert-product-card .form-label {
+    font-size: 0.8125rem;
+}
+
+/* Nova venda – links dos pedidos: sublinhar só no hover */
+.nova-venda-order-link {
+    text-decoration: none;
+}
+.nova-venda-order-link:hover {
+    text-decoration: underline;
+}
+
+/* Consultar Pedido – apenas o formulário (lado esquerdo) */
+.consultar-pedido-criteria {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+}
+.consultar-pedido-criteria .form-label {
+    font-weight: 500;
+    color: #495057;
+}
+.consultar-pedido-other {
+    border-top: 1px dashed #dee2e6;
+    padding-top: 0.5rem;
+}
+.consultar-pedido-other .form-label {
+    font-weight: 500;
+}
+.consultar-pedido-client-table {
+    max-height: 180px;
+    overflow-y: auto;
+    border-radius: 0.375rem;
+}
+.consultar-pedido-client-table .table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #e9ecef;
+}
+.consultar-pedido-client-table tr[role="button"]:hover {
+    background-color: rgba(13, 110, 253, 0.08);
+}
+.consultar-pedido-client-table tr[role="button"].table-primary {
+    background-color: rgba(13, 110, 253, 0.15);
+}
+
+/* NFe Individual – fonte um pouco menor */
+.nfe-individual-page {
+    font-size: 0.9rem;
+}
+
+/* NFe Individual – pedido clicável na lista da direita */
+.nfe-individual-order-item {
+    cursor: pointer;
+}
+.nfe-individual-order-item:hover {
+    background-color: rgba(13, 110, 253, 0.06) !important;
+}
+
+/* Autocomplete produto – item destacado (setas) */
+.pedido-autocomplete-highlight {
+    background-color: rgba(13, 110, 253, 0.12);
+}
+
+/* ========== Layout de impressão (páginas Imprimir / Etiqueta): sem menus ========== */
+.print-layout {
+    min-height: 100vh;
+    background: #fff;
+}
+
+/* Faturamento diário (imprimir): colunas fixas — Cliente com mais largura */
+.daily-print-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.daily-print-table col.daily-col-pedido { width: 3.5%; }
+.daily-print-table col.daily-col-data { width: 6%; }
+.daily-print-table col.daily-col-enviado { width: 6%; }
+.daily-print-table col.daily-col-cliente { width: 45.5%; }
+.daily-print-table col.daily-col-usuario { width: 6.5%; }
+.daily-print-table col.daily-col-vend { width: 4%; }
+.daily-print-table col.daily-col-valor { width: 6.5%; }
+.daily-print-table col.daily-col-desc { width: 3.5%; }
+.daily-print-table col.daily-col-cred { width: 5%; }
+.daily-print-table col.daily-col-pagto { width: 10%; }
+.daily-print-table col.daily-col-nf { width: 3.5%; }
+
+.daily-print-table th,
+.daily-print-table td {
+    padding: 0.2rem 0.3rem;
+    vertical-align: top;
+}
+
+/* Textos longos: só em Cliente, usuário, vendedor e método de pagamento */
+.daily-print-table th:nth-child(4),
+.daily-print-table td:nth-child(4),
+.daily-print-table th:nth-child(5),
+.daily-print-table td:nth-child(5),
+.daily-print-table th:nth-child(6),
+.daily-print-table td:nth-child(6),
+.daily-print-table th:nth-child(10),
+.daily-print-table td:nth-child(10) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Demais colunas: compactas em uma linha */
+.daily-print-table th:nth-child(1),
+.daily-print-table td:nth-child(1),
+.daily-print-table th:nth-child(2),
+.daily-print-table td:nth-child(2),
+.daily-print-table th:nth-child(3),
+.daily-print-table td:nth-child(3),
+.daily-print-table th:nth-child(7),
+.daily-print-table td:nth-child(7),
+.daily-print-table th:nth-child(8),
+.daily-print-table td:nth-child(8),
+.daily-print-table th:nth-child(9),
+.daily-print-table td:nth-child(9),
+.daily-print-table th:nth-child(11),
+.daily-print-table td:nth-child(11) {
+    white-space: nowrap;
+}
+
+/* Daily revenue print: avoid clipping/truncation by page size */
+@media print {
+    .print-layout {
+        min-height: auto !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    .daily-print-report {
+        font-size: 0.75rem !important;
+    }
+
+    .daily-print-table {
+        width: 100% !important;
+    }
+
+    .daily-print-table thead {
+        display: table-header-group;
+    }
+
+    .daily-print-table tfoot {
+        display: table-row-group;
+    }
+
+    .daily-print-table th,
+    .daily-print-table td {
+        padding: 0.15rem 0.25rem;
+    }
+}
+
+/* Header da impressão (estilo legado cart_header.xsl): empresa, logo, PEDIDO #, DATA, Cliente, Endereço, etc. — compacto */
+.pedido-print-header-legacy { font-size: 0.9rem; line-height: 1.2; }
+.pedido-print-header-table { border-collapse: collapse; border-spacing: 0; }
+.pedido-print-header-table td { line-height: 1.25; vertical-align: top; }
+.pedido-print-header-empresa {
+    border: 1px solid #000;
+    padding: 0.1rem 0.35rem;
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+.pedido-print-header-spacer { height: 0.4rem; line-height: 0; font-size: 0; }
+.pedido-print-header-logo-td { width: 10%; vertical-align: top; padding: 0; }
+.pedido-print-header-logo { max-height: 48px; width: auto; display: block; }
+.pedido-print-header-cell { padding: 0.05rem 0.25rem; text-align: left; }
+
+/* Etiqueta para recorte (Imprimir / Imprimir Pedido / Packing slip / Etiquetas): logo Aquanimal, Pedido #, ML #, Destinatário */
+.pedido-print-label-block {
+    margin-top: 1.5rem;
+    font-size: 1rem;
+    text-align: left;
+}
+.pedido-print-label-table {
+    width: 50%;
+    font-size: 1rem;
+    border-collapse: collapse;
+    margin-left: 0;
+    margin-right: auto;
+}
+.pedido-print-label-table td {
+    text-align: left;
+}
+.pedido-print-label-logo img {
+    max-height: 60px;
+    width: auto;
+    display: block;
+    padding-right: 0.5rem;
+}
+.pedido-print-label-pedido {
+    font-weight: bold;
+    font-size: 1.1rem;
+    vertical-align: bottom;
+    padding-left: 0.25rem;
+    text-align: left !important;
+}
+.pedido-print-label-ml {
+    font-weight: 600;
+    padding-left: 0.25rem;
+    text-align: left !important;
+}
+.pedido-print-label-dest {
+    padding: 0.5rem;
+}
+@media print {
+    .pedido-print-label-table {
+        width: 50%;
+    }
+    .pedido-print-label-logo img {
+        max-height: 56px;
+    }
+}
+
+/* ========== Modal de impressão / etiqueta (Pedido.razor) ========== */
+.pedido-print-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.pedido-print-modal-dialog {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+.pedido-print-modal-header {
+    flex-shrink: 0;
+    background: #f8f9fa;
+}
+.pedido-print-modal-body {
+    flex: 1;
+    min-height: 0;
+    max-height: calc(90vh - 100px);
+}
+.pedido-print-modal-footer {
+    flex-shrink: 0;
+    background: #f8f9fa;
+}
+
+/* ========== Print: esconder botões/chrome; com modal ativo, só conteúdo do modal ========== */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+    /* Só quando imprimindo a partir do modal de impressão (classe adicionada por printModal.js) */
+    body.pedido-print-modal-active * {
+        visibility: hidden;
+    }
+    body.pedido-print-modal-active .pedido-print-modal-backdrop,
+    body.pedido-print-modal-active .pedido-print-modal-backdrop * {
+        visibility: visible;
+    }
+    body.pedido-print-modal-active .pedido-print-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        padding: 0;
+        align-items: flex-start;
+    }
+    body.pedido-print-modal-active .pedido-print-modal-dialog {
+        max-height: none;
+        box-shadow: none;
+        border: none;
+    }
+    body.pedido-print-modal-active .pedido-print-modal-header,
+    body.pedido-print-modal-active .pedido-print-modal-footer {
+        display: none !important;
+    }
+    body.pedido-print-modal-active .pedido-print-modal-body {
+        max-height: none;
+        overflow: visible;
+    }
+    body.pedido-print-modal-active .print-modal-content,
+    body.pedido-print-modal-active .print-modal-content * {
+        visibility: visible;
+    }
+}
+
+/* ========== Popup layout (ABC detalhes, sem menu) ========== */
+.popup-layout {
+    height: 100vh;
+    overflow-y: auto;
+}
+
+/* Prod Sync Busca popup */
+.prod-sync-busca {
+    max-width: 100%;
+}
+.prod-sync-busca .form-label-sm {
+    font-size: 0.8rem;
+}
+.prod-sync-busca-table-wrap {
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+/* ========== Prévia de temas (página Layout) ========== */
+.theme-preview { height: 80px; }
+.theme-preview .theme-bar { flex: 1; }
+.theme-preview .theme-header { background: linear-gradient(90deg, rgb(5, 39, 103) 0%, #1a237e 100%); }
+.theme-preview .theme-sidebar { background: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%); }
+.theme-preview .theme-content { background: #f7f7f7; }
+[data-theme-preview="ocean"] .theme-header { background: linear-gradient(90deg, #0d47a1 0%, #01579b 100%); }
+[data-theme-preview="ocean"] .theme-sidebar { background: linear-gradient(180deg, #0d47a1 0%, #0277bd 70%); }
+[data-theme-preview="ocean"] .theme-content { background: #e3f2fd; }
+[data-theme-preview="forest"] .theme-header { background: linear-gradient(90deg, #1b5e20 0%, #2e7d32 100%); }
+[data-theme-preview="forest"] .theme-sidebar { background: linear-gradient(180deg, #1b5e20 0%, #388e3c 70%); }
+[data-theme-preview="forest"] .theme-content { background: #e8f5e9; }
+[data-theme-preview="dark"] .theme-header { background: linear-gradient(90deg, #212121 0%, #424242 100%); }
+[data-theme-preview="dark"] .theme-sidebar { background: linear-gradient(180deg, #212121 0%, #37474f 70%); }
+[data-theme-preview="dark"] .theme-content { background: #303030; }
+[data-theme-preview="sunset"] .theme-header { background: linear-gradient(90deg, #e65100 0%, #ef6c00 100%); }
+[data-theme-preview="sunset"] .theme-sidebar { background: linear-gradient(180deg, #bf360c 0%, #d84315 70%); }
+[data-theme-preview="sunset"] .theme-content { background: #fff8e1; }
+[data-theme-preview="slate"] .theme-header { background: linear-gradient(90deg, #455a64 0%, #546e7a 100%); }
+[data-theme-preview="slate"] .theme-sidebar { background: linear-gradient(180deg, #37474f 0%, #607d8b 70%); }
+[data-theme-preview="slate"] .theme-content { background: #eceff1; }
+.theme-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
+/* ========== Prod. Pendentes report (ecoOrderList.xslt output) ========== */
+.report-pending-products .eco-order-list-report { font-size: 0.9rem; }
+
+.report-pending-products .eco-report-unmapped {
+	color: #b02a37;
+	background: #f8d7da;
+	border: 1px solid #f5c2c7;
+	padding: 0.5rem 0.75rem;
+	margin-bottom: 0.75rem;
+	border-radius: 4px;
+}
+.report-pending-products .eco-report-unmapped-title { font-weight: 600; }
+.report-pending-products .eco-report-unmapped-label { color: #495057; }
+
+.report-pending-products .eco-report-table {
+	width: 100%;
+	margin-bottom: 0;
+}
+.report-pending-products .eco-report-table td,
+.report-pending-products .eco-report-table th { padding: 0.35rem 0.5rem; vertical-align: middle; }
+.report-pending-products .eco-report-fornecedor-row td {
+	background: #f8f9fa;
+	font-weight: 600;
+	border-top: 2px solid #dee2e6;
+	border-bottom: 1px solid #dee2e6;
+}
+.report-pending-products .eco-report-header-row td {
+	background: #e9ecef;
+	font-weight: 600;
+	font-size: 0.8rem;
+	border: 1px solid #dee2e6;
+}
+.report-pending-products .eco-report-data-row td { border: 1px solid #dee2e6; }
+.report-pending-products .eco-report-bg-warning { background-color: #fff3cd; }
+.report-pending-products .eco-report-bg-danger { background-color: #f8d7da; }
+.report-pending-products .eco-report-bg-ok { background-color: #cfe2ff; }
+.report-pending-products .eco-report-bg-neutral { background-color: #fff; }
+
+.report-pending-products .eco-report-inner { width: 100%; margin: 0; border: 0; }
+.report-pending-products .eco-report-inner td { border: 0; padding: 0 0.25rem 0 0; line-height: 1.3; }
+.report-pending-products .eco-report-inner-label { color: #6c757d; font-size: 0.85em; white-space: nowrap; width: 1%; }
+.report-pending-products .eco-report-inner-value { font-size: 0.9em; }
+.report-pending-products .eco-report-col-produto { min-width: 200px; }
+.report-pending-products .eco-report-col-total { width: 80px; text-align: center; }
+.report-pending-products .eco-report-col-venda { width: 100px; text-align: center; }
+.report-pending-products .eco-report-col-qtd { width: 80px; text-align: center; }
+.report-pending-products .eco-report-num { text-align: center; }
+.report-pending-products .eco-report-small { font-size: 0.85em; color: #6c757d; font-weight: normal; display: block; margin-top: 0.1rem; }
+.report-pending-products .eco-report-sep-row td { padding: 0; border-left: 0; border-right: 0; border-bottom: 0; height: 0; line-height: 0; }
+.report-pending-products .eco-report-hr { margin: 0; border: 0; border-top: 1px solid #dee2e6; }
+
+/* ========== Relatório de Baixas (Contas a Receber) – fonte reduzida ========== */
+.relat-baixas-result { font-size: 0.8125rem; }
+.relat-baixas-result .card-header { font-size: 0.8125rem; padding: 0.4rem 0.75rem; }
+.relat-baixas-result .card-header h6 { font-size: 0.875rem; font-weight: 600; }
+.relat-baixas-result .table thead th { font-size: 0.75rem; padding: 0.35rem 0.5rem; }
+.relat-baixas-result .table tbody td { font-size: 0.8125rem; padding: 0.35rem 0.5rem; }
+.relat-baixas-result .table tfoot td { font-size: 0.8125rem; padding: 0.35rem 0.5rem; }
+
+/* Lista Import ML: fonte um pouco maior na lista e no cabeçalho de cada linha */
+.meli-import-order-list { font-size: 0.95rem; }
+.meli-import-order-list .card-header { font-size: 0.95rem; }
+.meli-import-order-list .card-header .btn,
+.meli-import-order-list .card-header .form-control,
+.meli-import-order-list .card-header span { font-size: 0.95rem; }
+/* Import ML: botões desabilitados em cinza mais claro */
+.btn-meli-disabled {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    color: #6c757d;
+}
+.btn-meli-disabled:hover { background-color: #e9ecef; border-color: #dee2e6; color: #6c757d; }
+
+/* Importar Venda (site): fonte um pouco maior */
+.site-importar-venda-list { font-size: 0.9rem; }
+.site-importar-venda-list .table thead th,
+.site-importar-venda-list .table tbody td { font-size: 0.9rem; }
+
+/* ========== Padrão: tabelas/listas com fonte reduzida (usar em TODAS as listas de dados) ========== */
+.table-list { font-size: 0.85rem; }
+.table-list thead th { font-size: 0.8rem; }
+.table-list tbody td { font-size: 0.85rem; }
+
+/* Papéis-Atividades: 5 colunas fixas + agrupamento lógico */
+.activity-group-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.activity-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    grid-auto-flow: row;
+    gap: 0.35rem 1rem;
+}
+.activity-grid .activity-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    cursor: pointer;
+}
+.activity-grid .activity-check span { font-size: 0.85rem; white-space: normal; }
+.activity-grid .activity-check input { margin-top: 0.2rem; flex-shrink: 0; }
+
+/* Lista de atalhos em 3 colunas verticais (Cadastro → Widgets) */
+.shortcuts-three-columns {
+    column-count: 3;
+    column-gap: 1.5rem;
+}
+.shortcuts-three-columns .form-check {
+    break-inside: avoid;
+    margin-bottom: 0.35rem;
+}
+
+/* Atalhos no dashboard: lista vertical com links de tamanho uniforme */
+.dashboard-shortcuts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.dashboard-shortcut-link {
+    display: block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    color: var(--bs-primary);
+    text-decoration: none;
+    border-radius: 0.25rem;
+    border: 1px solid transparent;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+.dashboard-shortcut-link:hover {
+    background-color: rgba(13, 110, 253, 0.08);
+    border-color: rgba(13, 110, 253, 0.3);
+    color: var(--bs-primary);
+}
+.dashboard-shortcut-link:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 2px;
+}
+
+/* ── erpcom3 date-picker popup ── */
+.erpcom3-cal-btn {
+    border: 1px solid #dee2e6;
+    border-left: none;
+    background: transparent;
+    color: #adb5bd;
+    padding: 0 .45rem;
+    line-height: 1;
+    border-radius: 0 .25rem .25rem 0;
+    transition: color .15s, background-color .15s;
+}
+.erpcom3-cal-btn:hover {
+    color: #0d6efd;
+    background-color: rgba(13,110,253,.05);
+}
+.erpcom3-cal-btn:focus {
+    outline: none;
+    box-shadow: none;
+}
+.erpcom3-datepicker-popup {
+    min-width: 15.5rem;
+    user-select: none;
+}
+.erpcom3-cal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .5rem;
+}
+.erpcom3-cal-month {
+    font-size: .875rem;
+    font-weight: 600;
+    color: #212529;
+    letter-spacing: .01em;
+}
+.erpcom3-cal-nav {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.35rem;
+    line-height: 1;
+    color: #6c757d;
+    padding: .1rem .45rem;
+    border-radius: .375rem;
+    transition: background .15s, color .15s;
+}
+.erpcom3-cal-nav:hover {
+    background: #e9ecef;
+    color: #212529;
+}
+.erpcom3-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: .1rem;
+    text-align: center;
+}
+.erpcom3-cal-wday {
+    font-size: .68rem;
+    font-weight: 600;
+    color: #adb5bd;
+    padding-bottom: .3rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.erpcom3-cal-day {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: .8125rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: auto;
+    transition: background .12s, color .12s;
+    color: #212529;
+    padding: 0;
+}
+.erpcom3-cal-day:hover {
+    background: #e9ecef;
+}
+.erpcom3-cal-day.erpcom3-today {
+    box-shadow: 0 0 0 1.5px #0d6efd;
+    color: #0d6efd;
+    font-weight: 600;
+}
+.erpcom3-cal-day.erpcom3-selected {
+    background: #0d6efd;
+    color: #fff;
+    font-weight: 600;
+}
+.erpcom3-cal-day.erpcom3-selected:hover {
+    background: #0b5ed7;
+}

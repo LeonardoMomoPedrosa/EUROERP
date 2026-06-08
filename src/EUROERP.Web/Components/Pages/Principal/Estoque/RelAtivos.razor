@@ -1,0 +1,235 @@
+@page "/principal/estoque/ativos-classe"
+@using EUROERP.Application.Stock
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Rel. Ativos</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Relatório de Ativos</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-auto">
+                <button class="btn btn-primary btn-sm" @onclick="LoadAsync" disabled="_loading">@(_loading ? "Carregando..." : "Consultar")</button>
+            </div>
+            @if (_filter.DrillLevel > 0)
+            {
+                <div class="col-md-auto">
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="BackToTopLevel">Voltar</button>
+                </div>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_result.Breadcrumb))
+        {
+            <div class="alert alert-light border py-2 mb-2">
+                @if (_filter.DrillLevel > 0)
+                {
+                    <strong>Nível:</strong>
+                    <a href="" @onclick:preventDefault="true" @onclick="BackToTopLevel">@GetBreadcrumbRoot()</a>
+                    @if (!string.IsNullOrWhiteSpace(GetBreadcrumbSuffix()))
+                    {
+                        <span> @GetBreadcrumbSuffix()</span>
+                    }
+                }
+                else
+                {
+                    <strong>Nível: </strong> @_result.Breadcrumb
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="alert alert-danger py-2">@_error</div>
+        }
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>@(_filter.DrillLevel == 0 ? "Grupo" : "Produto")</th>
+                        <th>Classe</th>
+                        <th class="text-end">Estoque</th>
+                        <th class="text-end">Total custo</th>
+                        <th class="text-end">Total venda</th>
+                        <th class="text-end">Margem %</th>
+                        @if (_filter.DrillLevel > 0)
+                        {
+                            <th class="text-end">q1</th>
+                            <th class="text-end">q2</th>
+                            <th class="text-end">q3</th>
+                            <th class="text-end">q4</th>
+                            <th class="text-end">q5</th>
+                            <th class="text-end">q6</th>
+                            <th class="text-end">q7</th>
+                            <th class="text-end">q8</th>
+                            <th class="text-end">q9</th>
+                            <th class="text-end">q10</th>
+                            <th class="text-end">qm</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _result.Rows.Count == 0)
+                    {
+                        <tr><td colspan="@GetGridColumnCount()" class="text-center text-muted py-3">Carregando...</td></tr>
+                    }
+                    else if (_result.Rows.Count == 0)
+                    {
+                        <tr><td colspan="@GetGridColumnCount()" class="text-center text-muted py-3">Nenhum ativo encontrado para os filtros selecionados.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in _result.Rows)
+                        {
+                            <tr role="button"
+                                class="@(row.CanDrillDown ? "" : "cursor-default")"
+                                @onclick="() => DrillDown(row)">
+                                <td>@row.Description</td>
+                                <td>@(row.ClassName ?? "—")</td>
+                                <td class="text-end">@row.Stock</td>
+                                <td class="text-end">@FormatMoney(row.TotalCost)</td>
+                                <td class="text-end">@FormatMoney(row.TotalPrice)</td>
+                                <td class="text-end">@row.MarginPercent.ToString("N2")</td>
+                                @if (_filter.DrillLevel > 0)
+                                {
+                                    <td class="text-end">@row.Q1</td>
+                                    <td class="text-end">@row.Q2</td>
+                                    <td class="text-end">@row.Q3</td>
+                                    <td class="text-end">@row.Q4</td>
+                                    <td class="text-end">@row.Q5</td>
+                                    <td class="text-end">@row.Q6</td>
+                                    <td class="text-end">@row.Q7</td>
+                                    <td class="text-end">@row.Q8</td>
+                                    <td class="text-end">@row.Q9</td>
+                                    <td class="text-end">@row.Q10</td>
+                                    <td class="text-end">@row.Qm.ToString("N0")</td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th>Total</th>
+                        <th></th>
+                        <th class="text-end">@_result.TotalStock.ToString("N0")</th>
+                        <th class="text-end">@FormatMoney(_result.TotalCost)</th>
+                        <th class="text-end">@FormatMoney(_result.TotalPrice)</th>
+                        <th></th>
+                        @if (_filter.DrillLevel > 0)
+                        {
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                        }
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        @if (!_loading && string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="border-top pt-2 pb-1 mt-2">
+                <a href="@GetPrintUrl()" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">
+                    &#128438; Versão para impressão
+                </a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private StockAssetsFilterDto _filter = new();
+    private StockAssetsResultDto _result = new();
+    private bool _loading;
+    private string? _error;
+
+    [Inject] private IStockAssetsReportService StockAssetsReportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _filter.ViewMode = StockAssetsViewMode.Products;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _result = await StockAssetsReportService.SearchAsync(_filter);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _result = new StockAssetsResultDto();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnViewModeChanged() => await LoadAsync();
+
+    private async Task DrillDown(StockAssetsRowDto row)
+    {
+        if (!row.CanDrillDown)
+            return;
+
+        _filter.DrillLevel = 1;
+        _filter.ClassId = row.ClassId;
+        _filter.GroupId = row.GroupId;
+        await LoadAsync();
+    }
+
+    private async Task BackToTopLevel()
+    {
+        _filter.DrillLevel = 0;
+        _filter.ClassId = null;
+        _filter.GroupId = null;
+        await LoadAsync();
+    }
+
+    private static string FormatMoney(decimal value) => $"R$ {value:N2}";
+
+    private int GetGridColumnCount() => _filter.DrillLevel > 0 ? 17 : 6;
+
+    private string GetBreadcrumbRoot()
+    {
+        var crumb = _result.Breadcrumb ?? string.Empty;
+        var idx = crumb.IndexOf(" > ", StringComparison.Ordinal);
+        return idx > 0 ? crumb[..idx] : crumb;
+    }
+
+    private string GetBreadcrumbSuffix()
+    {
+        var crumb = _result.Breadcrumb ?? string.Empty;
+        var idx = crumb.IndexOf(" > ", StringComparison.Ordinal);
+        return idx > 0 ? crumb[idx..] : string.Empty;
+    }
+
+    private string GetPrintUrl()
+    {
+        var url = $"{Navigation.BaseUri}principal/estoque/ativos-classe/imprimir?dl={_filter.DrillLevel}";
+        if (_filter.ClassId.HasValue)
+            url += $"&ci={_filter.ClassId.Value}";
+        if (_filter.GroupId.HasValue)
+            url += $"&gi={_filter.GroupId.Value}";
+        return url;
+    }
+}

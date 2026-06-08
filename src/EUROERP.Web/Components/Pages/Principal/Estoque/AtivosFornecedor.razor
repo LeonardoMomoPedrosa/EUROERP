@@ -1,0 +1,93 @@
+@page "/principal/estoque/ativos-fornecedor"
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Ativos por Fornecedor</PageTitle>
+
+<p class="text-muted small">Relatório de ativos por fornecedor (Eurobus: stock_supplier_value_search.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Fornecedor</label>
+                <input class="form-control form-control-sm" @bind="_supplierFilter" placeholder="Razão social" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="SearchSuppliers" disabled="@_loading">Buscar</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2 mt-2">@_error</div> }
+        <table class="table table-sm table-bordered data-grid-table mt-2 mb-0">
+            <thead class="table-light"><tr><th>Id</th><th>Razão Social</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var s in _suppliers)
+                {
+                    <tr>
+                        <td>@s.Id</td><td>@s.SocialName</td>
+                        <td><button type="button" class="btn btn-link btn-sm p-0" @onclick="() => LoadReport(s.Id)">Relatório</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_rows.Count > 0)
+{
+    <div class="card grid-card">
+        <div class="card-header"><h6 class="mb-0">Ativos — fornecedor #@_selectedSupplierId</h6></div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light"><tr><th>Grupo</th><th>Código</th><th>Produto</th><th class="text-end">Custo</th><th class="text-end">Venda</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _rows)
+                    {
+                        <tr>
+                            <td>@r.GroupName</td>
+                            <td>@r.LionCode</td>
+                            <td>@r.ProductName</td>
+                            <td class="text-end">@r.CostFinal.ToString("N2")</td>
+                            <td class="text-end">@r.Price.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="3">Total</th>
+                        <th class="text-end">@_rows.Sum(x => x.CostFinal).ToString("N2")</th>
+                        <th class="text-end">@_rows.Sum(x => x.Price).ToString("N2")</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private string _supplierFilter = "";
+    private string? _error;
+    private bool _loading;
+    private int _selectedSupplierId;
+    private IReadOnlyList<StockInSupplierDto> _suppliers = new List<StockInSupplierDto>();
+    private IReadOnlyList<StockAssetsBySupplierRowDto> _rows = new List<StockAssetsBySupplierRowDto>();
+
+    [Inject] private IStockInService StockInService { get; set; } = null!;
+    [Inject] private IStockAssetsBySupplierService AssetsBySupplierService { get; set; } = null!;
+
+    private async Task SearchSuppliers()
+    {
+        _loading = true;
+        _error = null;
+        try { _suppliers = await StockInService.GetSuppliersForStockInAsync(_supplierFilter); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadReport(int supplierId)
+    {
+        _selectedSupplierId = supplierId;
+        _error = null;
+        try { _rows = await AssetsBySupplierService.GetBySupplierAsync(supplierId); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

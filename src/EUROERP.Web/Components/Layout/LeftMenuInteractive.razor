@@ -1,0 +1,64 @@
+@using EUROERP.Web.Models.Menu
+@inject IMenuService MenuService
+@inject IMenuStateService MenuStateService
+@implements IDisposable
+@rendermode InteractiveServer
+
+<div class="sidebar-mobile-top-nav">
+    <ul class="sidebar-mobile-top-list">
+        @foreach (var item in _menuConfig.TopMenuItems)
+        {
+            var isActive = item.Id == MenuStateService.CurrentTopItemId;
+            <li>
+                <button type="button"
+                        class="sidebar-mobile-top-item @(isActive ? "active" : "")"
+                        @onclick="() => SelectTopItem(item)">
+                    @item.Label
+                </button>
+            </li>
+        }
+    </ul>
+</div>
+
+@if (_leftMenuItems.Count > 0)
+{
+    <nav class="left-menu-nav">
+        <ul class="left-menu-list">
+            @foreach (var item in _leftMenuItems)
+            {
+                <li class="left-menu-item">
+                    <LeftMenuItemNode Item="item" Level="0" />
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+@code {
+    private IReadOnlyList<MenuItemDto> _leftMenuItems = Array.Empty<MenuItemDto>();
+    private MenuConfigDto _menuConfig = new();
+
+    protected override void OnInitialized()
+    {
+        _menuConfig = MenuService.GetMenuConfig();
+        UpdateFromState();
+        MenuStateService.OnChange += OnStateChanged;
+    }
+
+    private void SelectTopItem(TopMenuItemDto item) => MenuStateService.SetCurrentTopItemId(item.Id);
+
+    public void Dispose() => MenuStateService.OnChange -= OnStateChanged;
+
+    private void OnStateChanged()
+    {
+        UpdateFromState();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateFromState()
+    {
+        var id = MenuStateService.CurrentTopItemId;
+        var topItem = _menuConfig.TopMenuItems.FirstOrDefault(x => x.Id == id);
+        _leftMenuItems = topItem?.Children ?? new List<MenuItemDto>();
+    }
+}

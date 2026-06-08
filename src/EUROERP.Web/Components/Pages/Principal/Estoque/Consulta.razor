@@ -1,0 +1,265 @@
+@page "/principal/estoque/consulta"
+@using EUROERP.Application.Stock
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Consulta</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consulta de Entrada de Estoque</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end mb-2">
+            <div class="col-auto">
+                <label class="form-label mb-0">Período</label>
+                <select class="form-select form-select-sm" style="width: auto;" @bind="_periodDays" @bind:after="LoadList">
+                    <option value="30">30 dias</option>
+                    <option value="60">60 dias</option>
+                    <option value="90">90 dias</option>
+                    <option value="120">120 dias</option>
+                </select>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>No.</th>
+                        <th>Data</th>
+                        <th>Fornecedor</th>
+                        <th>Fatura</th>
+                        <th class="text-end">Total</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _summaryList.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-3">Carregando...</td></tr>
+                    }
+                    else if (_summaryList.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted py-3">Nenhuma entrada no período.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in _summaryList)
+                        {
+                            <tr role="button" class="@(_selectedStockInId == row.Id ? "table-primary" : "")" @onclick="() => SelectRow(row)">
+                                <td>@row.Id</td>
+                                <td>@row.SysCreationDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@row.SupplierName</td>
+                                <td>@(row.ExternalPkid ?? "—")</td>
+                                <td class="text-end">@FormatCost(row.Cost, row.CurrencySymbol)</td>
+                                <td>@GetStatusLabel(row.Status)</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (_selectedStockInId is null)
+{
+    <p class="text-muted small">Selecione uma entrada na lista acima para ver os dados gerais e os itens.</p>
+}
+else
+{
+    @if (_header is null && !_loadingDetail)
+    {
+        <p class="text-muted small">Carregando...</p>
+    }
+    else if (_header is not null)
+    {
+        var totalComImpostos = _header.ProductsCost + (_header.ShipCost ?? 0) + (_header.IiCost ?? 0)
+            + (_header.IcmsCost ?? 0) + (_header.PisCost ?? 0) + (_header.CofinsCost ?? 0) - (_header.CreditAmount ?? 0);
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Dados Gerais da Entrada</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Usuário Responsável</label>
+                        <p class="mb-0">@(_header.UserId ?? "—")</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Entrada de NF</label>
+                        <p class="mb-0">@(_header.NfeInd ? "Sim" : "Não")</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Valor da NFE (R$)</label>
+                        <p class="mb-0">@((_header.NfeAmount ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Custo dos Produtos (R$)</label>
+                        <p class="mb-0">@_header.ProductsCost.ToString("N2")</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Frete (R$)</label>
+                        <p class="mb-0">@((_header.ShipCost ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">II (R$)</label>
+                        <p class="mb-0">@((_header.IiCost ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">ICMS (R$)</label>
+                        <p class="mb-0">@((_header.IcmsCost ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">PIS (R$)</label>
+                        <p class="mb-0">@((_header.PisCost ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">COFINS (R$)</label>
+                        <p class="mb-0">@((_header.CofinsCost ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Crédito (R$)</label>
+                        <p class="mb-0">@((_header.CreditAmount ?? 0).ToString("N2"))</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Total Rateio (R$)</label>
+                        <p class="mb-0">@_header.ProrateTotal.ToString("N2")</p>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label text-muted small mb-0">Total Geral (R$)</label>
+                        <p class="mb-0">@totalComImpostos.ToString("N2")</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Itens da Entrada</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Produto</th>
+                                <th class="text-center">Qtd</th>
+                                <th class="text-end">Custo unit. bruto</th>
+                                <th class="text-end">IPI %</th>
+                                <th class="text-end">Desc. %</th>
+                                <th class="text-end">Custo liq.</th>
+                                <th class="text-end">Transp.</th>
+                                <th class="text-end">Custo final</th>
+                                <th class="text-end">Custo total</th>
+                                <th class="text-end">Lucro %</th>
+                                <th class="text-end">Preço unit.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_details.Count == 0)
+                            {
+                                <tr><td colspan="11" class="text-center text-muted py-3">Nenhum item.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var d in _details)
+                                {
+                                    <tr>
+                                        <td>@d.ProductName @(string.IsNullOrEmpty(d.ExternalId) ? "" : $"({d.ExternalId})")</td>
+                                        <td class="text-center">@d.Quantity.ToString("0.###")</td>
+                                        <td class="text-end">@d.UnitCostGross.ToString("N2")</td>
+                                        <td class="text-end">@d.Ipi.ToString("N2")</td>
+                                        <td class="text-end">@d.Discount.ToString("N2")</td>
+                                        <td class="text-end">@d.UnitCostNet.ToString("N2")</td>
+                                        <td class="text-end">@d.CostTransport.ToString("N4")</td>
+                                        <td class="text-end">@d.UnitCostFinal.ToString("N2")</td>
+                                        <td class="text-end">@d.TotalCost.ToString("N2")</td>
+                                        <td class="text-end">@d.Profit.ToString("N2")</td>
+                                        <td class="text-end">@d.UnitMarketPrice.ToString("N2")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private int _periodDays = 30;
+    private IReadOnlyList<StockInSummaryRowDto> _summaryList = new List<StockInSummaryRowDto>();
+    private int? _selectedStockInId;
+    private StockInHeaderDto? _header;
+    private IReadOnlyList<StockInDetailItemDto> _details = new List<StockInDetailItemDto>();
+    private bool _loading;
+    private bool _loadingDetail;
+
+    [Inject] private IStockInService StockInService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+        
+    protected override async Task OnInitializedAsync() { await LoadList();
+    }
+
+    private async Task LoadList()
+    {
+        _loading = true;
+        try
+        {
+            _summaryList = await StockInService.GetStockInSummaryByDaysAsync(_periodDays);
+            if (_selectedStockInId is not null && _summaryList.All(r => r.Id != _selectedStockInId))
+                _selectedStockInId = null;
+            if (_selectedStockInId is null)
+            {
+                _header = null;
+                _details = new List<StockInDetailItemDto>();
+            }
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectRow(StockInSummaryRowDto row)
+    {
+        _selectedStockInId = row.Id;
+        _loadingDetail = true;
+        _header = null;
+        _details = new List<StockInDetailItemDto>();
+        try
+        {
+            _header = await StockInService.GetStockInHeaderAsync(row.Id);
+            _details = await StockInService.GetStockInDetailsAsync(row.Id);
+        }
+        finally
+        {
+            _loadingDetail = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatCost(decimal cost, string? symbol)
+    {
+        var s = symbol ?? "R$";
+        return $"{s} {cost:N2}";
+    }
+
+    private static string GetStatusLabel(char status)
+    {
+        return status switch
+        {
+            'N' => "Novo",
+            'I' => "Finalizado",
+            'A' => "Aprovado",
+            'R' => "Rejeitado",
+            'O' => "Reaberto",
+            'S' => "Alterou CT Forn.",
+            'T' => "Alterou CT Geral",
+            _ => status.ToString()
+        };
+    }
+}

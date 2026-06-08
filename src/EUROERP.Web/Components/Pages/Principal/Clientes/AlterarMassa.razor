@@ -1,0 +1,159 @@
+@page "/principal/clientes/alterar-massa"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Alterar em massa</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Alterar clientes em massa</h5></div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Filtrar por nome (opcional)</label>
+                <input type="text" class="form-control form-control-sm" @bind="_filterName" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Load" disabled="@_loading">Carregar</button>
+            </div>
+            <div class="col-md-auto">
+                <button type="button" class="btn btn-success btn-sm" @onclick="SaveSelected" disabled="@_saving || _rows.Count == 0">Atualizar marcados</button>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(_message)) { <div class="alert alert-info py-2">@_message</div> }
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+    </div>
+</div>
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 mass-info-table">
+                <thead class="table-light">
+                    <tr>
+                        <th></th>
+                        <th>Razão Social</th>
+                        <th>Fantasia</th>
+                        <th>Vendedor</th>
+                        <th>Limite R$</th>
+                        <th>Prazo (dias)</th>
+                        <th>Pagto. 1</th>
+                        <th>Pagto. 2</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td><input type="checkbox" @bind="row.Selected" /></td>
+                            <td>@row.Item.SocialName</td>
+                            <td>@row.Item.FantasyName</td>
+                            <td>
+                                <select class="form-select form-select-sm" @bind="row.SalesAgentUserId">
+                                    <option value="">—</option>
+                                    @foreach (var a in _salesAgents)
+                                    {
+                                        <option value="@a.Id">@a.Name</option>
+                                    }
+                                </select>
+                            </td>
+                            <td><input type="number" step="0.01" class="form-control form-control-sm" @bind="row.LimitAmount" /></td>
+                            <td><input type="number" class="form-control form-control-sm mass-info-stock-min" @bind="row.AvgPayTerm" /></td>
+                            <td>
+                                <select class="form-select form-select-sm" @bind="row.PaymentMethodId">
+                                    @foreach (var pm in _paymentMethods)
+                                    {
+                                        <option value="@pm.Id">@pm.Name</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm" @bind="row.PaymentMethodId2">
+                                    @foreach (var pm in _paymentMethods)
+                                    {
+                                        <option value="@pm.Id">@pm.Name</option>
+                                    }
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _filterName = "";
+    private string? _error;
+    private string? _message;
+    private bool _loading;
+    private bool _saving;
+    private List<MassRow> _rows = new();
+    private IReadOnlyList<UserIdNameDto> _salesAgents = new List<UserIdNameDto>();
+    private IReadOnlyList<PaymentMethodRefDto> _paymentMethods = new List<PaymentMethodRefDto>();
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IClientReferenceService ReferenceService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _salesAgents = await ReferenceService.GetSalesAgentsAsync();
+        _paymentMethods = await ReferenceService.GetPaymentMethodsAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var items = await ClientService.GetMassUpdateListAsync(_filterName);
+            _rows = items.Select(i => new MassRow
+            {
+                Item = i,
+                LimitAmount = i.LimitAmount,
+                AvgPayTerm = i.AvgPayTerm,
+                PaymentMethodId = i.PaymentMethodId,
+                PaymentMethodId2 = i.PaymentMethodId2,
+                SalesAgentUserId = i.SalesAgentUserId ?? ""
+            }).ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task SaveSelected()
+    {
+        _saving = true;
+        _error = null;
+        _message = null;
+        var ok = 0;
+        var fail = 0;
+        foreach (var row in _rows.Where(r => r.Selected))
+        {
+            var (success, msg) = await ClientService.UpdateMassRowAsync(new ClientMassUpdateDto
+            {
+                ClientId = row.Item.Id,
+                LimitAmount = row.LimitAmount,
+                AvgPayTerm = row.AvgPayTerm,
+                PaymentMethodId = row.PaymentMethodId,
+                PaymentMethodId2 = row.PaymentMethodId2,
+                SalesAgentUserId = string.IsNullOrWhiteSpace(row.SalesAgentUserId) ? null : row.SalesAgentUserId
+            });
+            if (success) ok++; else { fail++; _error = msg; }
+        }
+        _message = $"{ok} cliente(s) atualizado(s)." + (fail > 0 ? $" {fail} falha(s)." : "");
+        _saving = false;
+    }
+
+    private sealed class MassRow
+    {
+        public ClientMassItemDto Item { get; set; } = null!;
+        public bool Selected { get; set; }
+        public decimal LimitAmount { get; set; }
+        public byte AvgPayTerm { get; set; }
+        public byte PaymentMethodId { get; set; }
+        public byte PaymentMethodId2 { get; set; }
+        public string SalesAgentUserId { get; set; } = "";
+    }
+}

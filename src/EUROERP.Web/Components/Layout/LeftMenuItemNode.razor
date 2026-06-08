@@ -1,0 +1,42 @@
+@using EUROERP.Web.Models.Menu
+@inject ILayoutStateService LayoutState
+
+@if (Item.Children is { Count: > 0 })
+{
+    <div class="left-menu-node group" style="@GetLevelStyle()">
+        <div class="left-menu-node-header" @onclick="ToggleExpand">
+            <button type="button" class="left-menu-toggle" aria-label="@(_expanded ? "Recolher" : "Expandir")">
+                @(_expanded ? "−" : "+")
+            </button>
+            <span class="left-menu-node-label">@Item.Label</span>
+        </div>
+        <ul class="left-menu-sublist @(_expanded ? "" : "collapsed")">
+            @foreach (var child in Item.Children)
+            {
+                <li>
+                    <LeftMenuItemNode Item="child" Level="Level + 1" />
+                </li>
+            }
+        </ul>
+    </div>
+}
+else if (!string.IsNullOrEmpty(Item.Route))
+{
+    <NavLink class="left-menu-link" href="@Item.Route" style="@GetLevelStyle()" Match="NavLinkMatch.Prefix" @onclick="CloseMobileDrawer">
+        @Item.Label
+    </NavLink>
+}
+else
+{
+    <span class="left-menu-node-label" style="@GetLevelStyle()">@Item.Label</span>
+}
+
+@code {
+    [Parameter] public MenuItemDto Item { get; set; } = null!;
+    [Parameter] public int Level { get; set; }
+    private bool _expanded;
+
+    private string GetLevelStyle() => $"--level: {Level};";
+    private void ToggleExpand() => _expanded = !_expanded;
+    private void CloseMobileDrawer() => LayoutState.SetMobileDrawerOpen(false);
+}

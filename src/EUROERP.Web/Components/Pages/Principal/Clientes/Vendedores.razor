@@ -1,0 +1,54 @@
+@page "/principal/clientes/vendedores"
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Lista de vendedores</PageTitle>
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning">@_error</div> }
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light">
+                <tr><th>Vendedor</th><th>Id</th><th>Cliente</th><th>Telefone</th><th>Cidade/UF</th></tr>
+            </thead>
+            <tbody>
+                @if (_loading)
+                {
+                    <tr><td colspan="5" class="text-center text-muted py-3">Carregando...</td></tr>
+                }
+                else if (_rows.Count == 0)
+                {
+                    <tr><td colspan="5" class="text-center text-muted py-3">Nenhum cliente com vendedor associado.</td></tr>
+                }
+                else
+                {
+                    @foreach (var r in _rows)
+                    {
+                        <tr>
+                            <td>@r.SalesAgentUserName</td>
+                            <td>@r.ClientId</td>
+                            <td>@r.SocialName</td>
+                            <td>@(r.Phone1 ?? "-")</td>
+                            <td>@((r.City ?? "") + (string.IsNullOrEmpty(r.State) ? "" : " / " + r.State))</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<SalesAgentClientRowDto> _rows = new List<SalesAgentClientRowDto>();
+    private string? _error;
+    private bool _loading = true;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _rows = await ClientService.GetClientsBySalesAgentListAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+}

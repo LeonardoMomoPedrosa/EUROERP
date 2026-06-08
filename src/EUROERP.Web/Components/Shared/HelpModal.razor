@@ -1,0 +1,27 @@
+@* Modal de ajuda — exibido ao clicar em "?" ao lado de campos. Fecha ao clicar no backdrop ou no botão OK. *@
+@if (Show)
+{
+    <div class="help-modal-backdrop" @onclick="Dismiss">
+        <div class="help-modal-dialog" @onclick:stopPropagation="true">
+            <div class="help-modal-content">
+                <div class="help-modal-header d-flex justify-content-between align-items-center">
+                    <span>@Title</span>
+                    <button type="button" class="btn btn-link btn-sm text-white p-0 border-0" style="font-size: 1.2rem; text-decoration: none;" @onclick="Dismiss" aria-label="Fechar">×</button>
+                </div>
+                <div class="help-modal-body">@ChildContent</div>
+                <div class="help-modal-footer">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Dismiss">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public string Title { get; set; } = "Ajuda";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    private async Task Dismiss() => await OnClosed.InvokeAsync();
+}

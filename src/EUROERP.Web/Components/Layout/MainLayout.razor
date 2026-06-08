@@ -1,0 +1,49 @@
+﻿@inherits LayoutComponentBase
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ILayoutStateService LayoutState
+@implements IDisposable
+@rendermode InteractiveServer
+
+<div class="main-layout @(LayoutState.MobileDrawerOpen ? "main-layout-mobile-drawer-open" : "")">
+    <header class="main-layout-header">
+        <TopMenuInteractive />
+    </header>
+
+    @if (LayoutState.MobileDrawerOpen)
+    {
+        <div class="main-layout-sidebar-backdrop" @onclick="CloseMobileDrawer" aria-hidden="true"></div>
+    }
+
+    <div class="main-layout-body">
+        <aside id="main-layout-sidebar" class="main-layout-sidebar @(LayoutState.MobileDrawerOpen ? "main-layout-sidebar-mobile-open" : "")">
+            <LeftMenuInteractive />
+        </aside>
+        <main class="main-layout-content">
+            <article class="content px-4">
+                @Body
+            </article>
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        LayoutState.OnChange += OnLayoutStateChanged;
+    }
+
+    public void Dispose()
+    {
+        LayoutState.OnChange -= OnLayoutStateChanged;
+    }
+
+    private void OnLayoutStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void CloseMobileDrawer() => LayoutState.SetMobileDrawerOpen(false);
+}

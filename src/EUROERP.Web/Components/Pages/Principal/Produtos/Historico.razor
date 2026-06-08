@@ -1,0 +1,136 @@
+@page "/principal/produtos/historico"
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Principal - Produtos - Histórico</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Histórico do Produto</h5>
+    </div>
+    <div class="card-body">
+        <EditForm Model="_filter" OnValidSubmit="Search" OnInvalidSubmit="OnSubmitWithErrors">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger mb-2" />
+            <div class="row g-2 mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">Cód. do Produto</label>
+                    <InputNumber class="form-control form-control-sm" @bind-Value="_filter.ProductId" placeholder="ID do produto" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Quantidade de dias</label>
+                    <InputNumber class="form-control form-control-sm" @bind-Value="_filter.Days" placeholder="1 a 1000" />
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm @(_submitAttemptedWithErrors ? "btn-submit-has-errors" : null)" disabled="@_loading">@(_loading ? "Buscando..." : _submitAttemptedWithErrors ? "Buscar — Corrija os erros acima" : "Buscar")</button>
+        </EditForm>
+    </div>
+</div>
+
+@if (_searched)
+{
+    @if (_header is null)
+    {
+        <div class="alert alert-warning">Produto não encontrado.</div>
+    }
+    else
+    {
+        var periodFrom = DateTime.Today.AddDays(-_filter.Days).ToString("dd/MM/yyyy");
+        <div class="card mb-3">
+            <div class="card-body">
+                <p class="mb-0">
+                    <strong>@_header.Name @(_header.Size ?? "")</strong> — Saldo: <strong>@_header.Stock</strong>
+                </p>
+                <p class="mb-0 text-muted small">
+                    <strong>Período:</strong> @periodFrom até hoje.
+                </p>
+            </div>
+        </div>
+
+        <div class="mb-2 small">
+            <span class="me-3"><span class="d-inline-block rounded me-1" style="width:1rem;height:1rem;background:#FFCCCC;"></span> Entrada</span>
+            <span><span class="d-inline-block rounded me-1" style="width:1rem;height:1rem;background:#99CCFF;"></span> Saída</span>
+        </div>
+
+        <div class="card grid-card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:2rem;"></th>
+                                <th>Data</th>
+                                <th>Hora</th>
+                                <th>Usuário</th>
+                                <th class="text-center">Em estoque</th>
+                                <th>Atividade</th>
+                                <th>Cliente</th>
+                                <th class="text-center">Quantidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in _timeline)
+                            {
+                                <tr style="background-color: @(e.IsEntry ? "#FFCCCC" : "#99CCFF");">
+                                    <td>
+                                        @if (e.IsEntry)
+                                        { <span class="text-success" title="Entrada">↑</span> }
+                                        else
+                                        { <span class="text-primary" title="Saída">↓</span> }
+                                    </td>
+                                    <td>@e.Date</td>
+                                    <td>@e.Time</td>
+                                    <td>@e.UserId</td>
+                                    <td class="text-center">@e.Previous.ToString("N0")</td>
+                                    <td>@e.Memo</td>
+                                    <td>@(e.ClientName ?? "—")</td>
+                                    <td class="text-center">@(e.Quantity > 0 ? "+" : "")@e.Quantity.ToString("N0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_timeline.Count == 0)
+                {
+                    <p class="text-muted p-3 mb-0">Nenhum movimento no período.</p>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private ProductHistoryFilterDto _filter = new() { ProductId = 0, Days = 30 };
+    private ProductHistoryHeaderDto? _header;
+    private IReadOnlyList<ProductHistoryEntryDto> _timeline = Array.Empty<ProductHistoryEntryDto>();
+    private bool _searched;
+    private bool _loading;
+    private bool _submitAttemptedWithErrors;
+
+    [Inject] private IProductHistoryService HistoryService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {    }
+
+    private void OnSubmitWithErrors() { _submitAttemptedWithErrors = true; StateHasChanged(); }
+
+    private async Task Search()
+    {
+        _submitAttemptedWithErrors = false;
+        _loading = true;
+        _searched = true;
+        try
+        {
+            _header = await HistoryService.GetHeaderAsync(_filter.ProductId);
+            _timeline = _header is not null
+                ? await HistoryService.GetTimelineAsync(_filter.ProductId, _filter.Days)
+                : Array.Empty<ProductHistoryEntryDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

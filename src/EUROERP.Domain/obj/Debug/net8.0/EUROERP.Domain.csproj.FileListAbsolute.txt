@@ -1,0 +1,12 @@
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\bin\Debug\net8.0\EUROERP.Domain.deps.json
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\bin\Debug\net8.0\EUROERP.Domain.dll
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\bin\Debug\net8.0\EUROERP.Domain.pdb
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.AssemblyInfoInputs.cache
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.AssemblyInfo.cs
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.csproj.CoreCompileInputs.cache
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.sourcelink.json
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.dll
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\refint\EUROERP.Domain.dll
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\EUROERP.Domain.pdb
+C:\OPUSGit\EUROERP\src\EUROERP.Domain\obj\Debug\net8.0\ref\EUROERP.Domain.dll

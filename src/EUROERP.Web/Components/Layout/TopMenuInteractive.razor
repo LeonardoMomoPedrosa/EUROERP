@@ -1,0 +1,75 @@
+@using EUROERP.Web.Models.Menu
+@using EUROERP.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IMenuService MenuService
+@inject IMenuStateService MenuStateService
+@inject ILayoutStateService LayoutState
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+@rendermode InteractiveServer
+
+<div class="top-menu-bar">
+    <button type="button" class="mobile-hamburger-btn" @onclick="ToggleMobileDrawer" title="Menu" aria-label="Menu">
+        ☰
+    </button>
+    <button type="button" class="sidebar-toggle-btn" @onclick="ToggleSidebar" title="Minimizar menu" aria-label="Minimizar menu">
+        @(LayoutState.SidebarCollapsed ? "▶" : "◀")
+    </button>
+    <a class="top-menu-brand" href="/">@_brandName</a>
+    <nav class="top-menu-nav">
+        @foreach (var item in _menuConfig.TopMenuItems)
+        {
+            var isActive = item.Id == MenuStateService.CurrentTopItemId;
+            <button type="button"
+                    class="top-menu-item @(isActive ? "active" : "")"
+                    @onclick="() => SelectItem(item)">
+                @item.Label
+            </button>
+        }
+    </nav>
+    @if (_isAuthenticated)
+    {
+        <div class="top-menu-user-area">
+            <span class="top-menu-user-name" title="Usuário conectado">@(_userName ?? "—")</span>
+            <button type="button" class="top-menu-logout-btn" @onclick="DoLogout">Sair</button>
+        </div>
+    }
+</div>
+
+@code {
+    private MenuConfigDto _menuConfig = new();
+    private bool _isAuthenticated;
+    private string _brandName = "EUROERP";
+    private string? _userName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _brandName = Configuration["App:BrandName"] ?? "Eurobus";
+        _menuConfig = MenuService.GetMenuConfig();
+        if (_menuConfig.TopMenuItems.Count > 0 && string.IsNullOrEmpty(MenuStateService.CurrentTopItemId))
+            MenuStateService.SetCurrentTopItemId(_menuConfig.TopMenuItems[0].Id);
+
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = state.User.Identity?.IsAuthenticated ?? false;
+        _userName = state.User.Identity?.Name;
+    }
+
+    private void DoLogout() => Navigation.NavigateTo("/logout", forceLoad: true);
+
+    private void SelectItem(TopMenuItemDto item) => MenuStateService.SetCurrentTopItemId(item.Id);
+
+    private async Task ToggleSidebar()
+    {
+        LayoutState.ToggleSidebar();
+        try { await JS.InvokeVoidAsync("setSidebarCollapsed", LayoutState.SidebarCollapsed); } catch { }
+        StateHasChanged();
+    }
+
+    private void ToggleMobileDrawer()
+    {
+        LayoutState.SetMobileDrawerOpen(!LayoutState.MobileDrawerOpen);
+        StateHasChanged();
+    }
+}

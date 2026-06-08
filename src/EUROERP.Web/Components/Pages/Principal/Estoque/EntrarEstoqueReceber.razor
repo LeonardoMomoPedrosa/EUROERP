@@ -1,0 +1,149 @@
+@page "/principal/estoque/entrar-estoque/receber/{PurchaseId:int}/{SupplierId:int}"
+@rendermode InteractiveServer
+
+<PageTitle>Receber estoque - Compra @PurchaseId</PageTitle>
+
+@if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning py-2">@_error</div> }
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Dados da NF — Compra #@PurchaseId / Fornecedor @SupplierId</h5></div>
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-2"><label class="form-label">NF</label><input class="form-control form-control-sm" @bind="_receipt.ReceiptNo" /></div>
+            <div class="col-md-2"><label class="form-label">Data NF</label><input type="date" class="form-control form-control-sm" @bind="_receiptDate" /></div>
+            <div class="col-md-2"><label class="form-label">Total pedido</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.OrderAmount" /></div>
+            <div class="col-md-2"><label class="form-label">Total NF</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.ReceiptAmount" /></div>
+            <div class="col-md-2"><label class="form-label">GTA</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.GtaAmount" /></div>
+            <div class="col-md-2"><label class="form-label">Caixa</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.BoxAmount" /></div>
+            <div class="col-md-2"><label class="form-label">Frete</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.ShipAmount" /></div>
+            <div class="col-md-2"><label class="form-label">ICMS</label><input type="number" step="0.01" class="form-control form-control-sm" @bind="_receipt.IcmsAmount" /></div>
+            <div class="col-md-6"><label class="form-label">Observações</label><input class="form-control form-control-sm" @bind="_receipt.Memo" maxlength="300" /></div>
+        </div>
+    </div>
+</div>
+
+<div class="card grid-card mb-3">
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light">
+                <tr><th>Código</th><th>Produto</th><th class="text-end">Pedido</th><th class="text-end">Preço</th><th class="text-end">Recebido</th><th class="text-end">Novo preço</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _lines)
+                {
+                    <tr>
+                        <td>@(line.ExternalCode ?? line.ExternalPkid)</td>
+                        <td>@line.ProductName</td>
+                        <td class="text-end">@line.Ordered</td>
+                        <td class="text-end">@line.ConvertedPrice.ToString("N2")</td>
+                        <td class="text-end"><input type="number" class="form-control form-control-sm text-end" style="width:5rem" @bind="line.ReceivedInput" /></td>
+                        <td class="text-end"><input type="number" step="0.01" class="form-control form-control-sm text-end" style="width:6rem" @bind="line.NewPriceInput" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="SaveDraft" disabled="@_saving">Salvar rascunho</button>
+    <button type="button" class="btn btn-success btn-sm" @onclick="Finalize" disabled="@_saving">Finalizar entrada</button>
+    <a class="btn btn-outline-secondary btn-sm" href="/principal/estoque/entrar-estoque">Voltar</a>
+</div>
+
+<SuccessModal Show="@_showSuccess" Message="Entrada de estoque finalizada com sucesso!" OnClosed="OnSuccessClosed" />
+
+@code {
+    [Parameter] public int PurchaseId { get; set; }
+    [Parameter] public int SupplierId { get; set; }
+
+    private PurchaseSupplierReceiptDto _receipt = new();
+    private DateTime? _receiptDate;
+    private List<LineRow> _lines = new();
+    private string? _error;
+    private bool _saving;
+    private bool _showSuccess;
+
+    [Inject] private IPurchaseStockService PurchaseStockService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _receipt = await PurchaseStockService.GetSupplierReceiptAsync(PurchaseId, SupplierId) ?? new PurchaseSupplierReceiptDto();
+        _receiptDate = _receipt.ReceiptDate?.Date;
+        var lines = await PurchaseStockService.GetReceiveLinesAsync(PurchaseId, SupplierId);
+        _lines = lines.Select(l => new LineRow
+        {
+            ProductId = l.ProductId,
+            ProductName = l.ProductName,
+            ExternalCode = l.ExternalCode,
+            ExternalPkid = l.ExternalPkid,
+            Ordered = l.Ordered,
+            ConvertedPrice = l.ConvertedPrice,
+            ReceivedInput = l.Received,
+            NewPriceInput = l.NewPrice > 0 ? l.NewPrice : 0
+        }).ToList();
+    }
+
+    private PurchaseStockSaveDto BuildDto()
+    {
+        _receipt.ReceiptDate = _receiptDate;
+        return new PurchaseStockSaveDto
+        {
+            PurchaseId = PurchaseId,
+            SupplierId = SupplierId,
+            Receipt = _receipt,
+            Lines = _lines.Select(l => new PurchaseStockReceiveLineDto
+            {
+                ProductId = l.ProductId,
+                Received = l.ReceivedInput,
+                NewPrice = l.NewPriceInput
+            }).ToList()
+        };
+    }
+
+    private async Task SaveDraft()
+    {
+        _saving = true;
+        _error = null;
+        try { await PurchaseStockService.SaveReceiveDraftAsync(BuildDto()); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task Finalize()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var appId = Configuration["App:ApplicationId"] ?? "EUROERP";
+            await PurchaseStockService.FinalizeReceiveAsync(BuildDto(), userId, appId);
+            _showSuccess = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private void OnSuccessClosed()
+    {
+        _showSuccess = false;
+        Navigation.NavigateTo("/principal/estoque/entrar-estoque");
+    }
+
+    private sealed class LineRow
+    {
+        public int ProductId { get; set; }
+        public string ProductName { get; set; } = "";
+        public string? ExternalCode { get; set; }
+        public string? ExternalPkid { get; set; }
+        public int Ordered { get; set; }
+        public decimal ConvertedPrice { get; set; }
+        public int ReceivedInput { get; set; }
+        public decimal NewPriceInput { get; set; }
+    }
+}

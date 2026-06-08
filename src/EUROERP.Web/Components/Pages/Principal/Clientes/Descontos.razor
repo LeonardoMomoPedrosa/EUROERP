@@ -1,0 +1,331 @@
+@page "/principal/clientes/descontos"
+@using EUROERP.Application.Clients
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Clientes - Descontos</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Descontos de Clientes por Grupo de Produto</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Nome do cliente</label>
+                <div class="position-relative autocomplete-wrapper">
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           placeholder="Razão social ou nome fantasia..."
+                           @bind="_filter.Name"
+                           @bind:event="oninput"
+                           @bind:after="OnNameChanged"
+                           @onblur="OnNameBlur"
+                           autocomplete="off" />
+                    @if (_loadingSuggestions)
+                    {
+                        <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                    }
+                    @if (_showSuggestions)
+                    {
+                        <div class="supplier-autocomplete-dropdown position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm border-dark" style="z-index: 9999; max-height: 200px; overflow-y: auto; min-height: 2rem;" @onmousedown="OnDropdownMouseDown" @onmousedown:preventDefault>
+                            @if (_suggestions.Count == 0)
+                            {
+                                <div class="p-2 small text-muted">Nenhum cliente encontrado.</div>
+                            }
+                            else
+                            {
+                                @foreach (var c in _suggestions)
+                                {
+                                    <div class="supplier-autocomplete-item px-2 py-1 small cursor-pointer" @onmousedown="() => SelectClientFromAutocomplete(c)">
+                                        <div class="fw-semibold">@c.SocialName</div>
+                                        @if (!string.IsNullOrEmpty(c.FantasyName) && c.FantasyName != c.SocialName)
+                                        {
+                                            <div class="text-muted">@c.FantasyName</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(c.City) || !string.IsNullOrEmpty(c.State))
+                                        {
+                                            <div class="text-muted">@((string.IsNullOrEmpty(c.City) ? "" : c.City + " / ") + (c.State ?? ""))</div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-md-auto">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Buscar" disabled="@_loading">@(_loading ? "Buscando..." : "Busca")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card grid-card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Id</th>
+                                <th>Razão Social</th>
+                                <th>Nome Fantasia</th>
+                                <th>Localidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading && !_searched)
+                            {
+                                <tr>
+                                    <td colspan="4" class="text-muted text-center py-3">Carregando...</td>
+                                </tr>
+                            }
+                            else if (_list.Count > 0)
+                            {
+                                @foreach (var c in _list)
+                                {
+                                    <tr role="button" class="@(_selectedClient?.Id == c.Id ? "table-primary" : "")" @onclick="() => SelecionarCliente(c)">
+                                        <td>@c.Id</td>
+                                        <td>@c.SocialName</td>
+                                        <td>@c.FantasyName</td>
+                                        <td>@((c.City ?? "") + " / " + (c.State ?? ""))</td>
+                                    </tr>
+                                }
+                            }
+                            else if (_searched)
+                            {
+                                <tr>
+                                    <td colspan="4" class="text-muted text-center py-3">Nenhum cliente encontrado.</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted small mt-2">Clique em um cliente para carregar os descontos.</p>
+    </div>
+    <div class="col-md-6">
+        @if (_selectedClient != null)
+        {
+            <div class="card">
+                <div class="card-body">
+                    <p class="mb-2"><strong>Cliente:</strong> @_selectedClient.SocialName</p>
+                    @if (_loadingDiscounts)
+                    {
+                        <p class="text-muted">Carregando descontos...</p>
+                    }
+                    else if (_discountRows.Count > 0)
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-2 data-grid-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>GRUPO</th>
+                                        <th style="width: 120px;">DESCONTO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in _discountRows)
+                                    {
+                                        <tr>
+                                            <td>@row.ProductGroupName</td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number"
+                                                           class="form-control form-control-sm text-end"
+                                                           min="0"
+                                                           max="99"
+                                                           step="0.01"
+                                                           @bind="row.Discount" />
+                                                    <span class="input-group-text">%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" @onclick="Atualizar" disabled="@_saving">@(_saving ? "Salvando..." : "Atualiza")</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<SuccessModal Show="_showSuccessModal" Message="Alteração feita com sucesso." OnClosed="HideSuccessModal" />
+
+@code {
+    private readonly ClientFilterDto _filter = new();
+    private IReadOnlyList<ClientSummaryDto> _list = new List<ClientSummaryDto>();
+    private ClientSummaryDto? _selectedClient;
+    private List<ClientDiscountRowDto> _discountRows = new();
+    private string? _errorMessage;
+    private bool _loading;
+    private bool _searched;
+    private bool _loadingDiscounts;
+    private bool _saving;
+    private bool _showSuccessModal;
+
+    private IReadOnlyList<ClientSummaryDto> _suggestions = new List<ClientSummaryDto>();
+    private bool _showSuggestions;
+    private bool _loadingSuggestions;
+    private bool _selectingSuggestions;
+    private CancellationTokenSource? _debounceCts;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {        await Buscar();
+    }
+
+    private async Task Buscar()
+    {
+        _errorMessage = null;
+        _loading = true;
+        try
+        {
+            _list = await ClientService.GetListAsync(_filter);
+            _searched = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao buscar: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnNameChanged()
+    {
+        _showSuggestions = (_filter.Name?.Trim().Length ?? 0) >= 2;
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var ct = _debounceCts.Token;
+
+        if ((_filter.Name?.Trim().Length ?? 0) < 2)
+        {
+            _suggestions = new List<ClientSummaryDto>();
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300, ct);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        _loadingSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await ClientService.GetSuggestionsAsync(_filter.Name!.Trim(), 10, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                _suggestions = list;
+                _showSuggestions = true;
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                _loadingSuggestions = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OnNameBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingSuggestions)
+            _showSuggestions = false;
+        _selectingSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnDropdownMouseDown(MouseEventArgs _) => _selectingSuggestions = true;
+
+    private async Task SelectClientFromAutocomplete(ClientSummaryDto c)
+    {
+        _selectingSuggestions = true;
+        _showSuggestions = false;
+        _suggestions = new List<ClientSummaryDto>();
+        _filter.Name = c.SocialName;
+        await SelecionarCliente(c);
+    }
+
+    private async Task SelecionarCliente(ClientSummaryDto c)
+    {
+        _selectedClient = c;
+        _errorMessage = null;
+        _loadingDiscounts = true;
+        try
+        {
+            var rows = await ClientService.GetClientDiscountsAsync(c.Id);
+            _discountRows = rows.ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar descontos: " + ex.Message;
+            _discountRows.Clear();
+        }
+        finally
+        {
+            _loadingDiscounts = false;
+        }
+    }
+
+    private async Task Atualizar()
+    {
+        if (_selectedClient == null)
+            return;
+
+        _errorMessage = null;
+        foreach (var row in _discountRows)
+        {
+            if (row.Discount < 0 || row.Discount > 99)
+            {
+                _errorMessage = "Desconto deve estar entre 0 e 99%.";
+                return;
+            }
+        }
+
+        _saving = true;
+        try
+        {
+            await ClientService.SaveClientDiscountsAsync(_selectedClient.Id, _discountRows);
+            _showSuccessModal = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao salvar: " + ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void HideSuccessModal()
+    {
+        _showSuccessModal = false;
+    }
+}

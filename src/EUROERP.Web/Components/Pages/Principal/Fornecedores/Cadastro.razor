@@ -1,0 +1,241 @@
+@page "/principal/fornecedores/cadastro"
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Fornecedores - Cadastro</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Fornecedores</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Grupo de fornecedores</label>
+                <select class="form-select form-select-sm" @bind="_filter.GroupId" @bind:after="() => StateHasChanged()">
+                    <option value="0">Todos</option>
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Nome</label>
+                <div class="position-relative autocomplete-wrapper">
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           placeholder="Razão social ou nome fantasia..."
+                           @bind="_filter.Name"
+                           @bind:event="oninput"
+                           @bind:after="OnNameChanged"
+                           @onblur="OnNameBlur"
+                           autocomplete="off" />
+                    @if (_loadingSuggestions)
+                    {
+                        <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                    }
+                    @if (_showSuggestions)
+                    {
+                        <div class="supplier-autocomplete-dropdown position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm border-dark" style="z-index: 9999; max-height: 200px; overflow-y: auto; min-height: 2rem;" @onmousedown="OnDropdownMouseDown" @onmousedown:preventDefault>
+                            @if (_suggestions.Count == 0)
+                            {
+                                <div class="p-2 small text-muted">Nenhum fornecedor encontrado.</div>
+                            }
+                            else
+                            {
+                                @foreach (var s in _suggestions)
+                                {
+                                    <div class="supplier-autocomplete-item px-2 py-1 small cursor-pointer" @onmousedown="() => SelectSupplier(s)">
+                                        <div class="fw-semibold">@s.SocialName</div>
+                                        @if (!string.IsNullOrEmpty(s.City))
+                                        {
+                                            <div class="text-muted">@s.City</div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+            </div>
+            <div class="col-md-auto">
+                <a class="btn btn-success btn-sm" href="/principal/fornecedores/cadastro/novo">Novo fornecedor</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-warning">@_errorMessage</div>
+}
+
+<p class="text-muted small">Use os filtros e clique em Buscar. Clique em um fornecedor para editar.</p>
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Id</th>
+                        <th>Nome (Razão Social)</th>
+                        <th>Cidade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _suppliers.Count == 0)
+                    {
+                        <tr><td colspan="3" class="text-center text-muted py-4">Carregando...</td></tr>
+                    }
+                    else if (_suppliers.Count == 0)
+                    {
+                        <tr><td colspan="3" class="text-center text-muted py-4">Nenhum fornecedor encontrado. Ajuste os filtros e clique em Buscar.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var s in _suppliers)
+                        {
+                            <tr role="button" @onclick="() => AbrirEdicao(s.Id)">
+                                <td>@s.Id</td>
+                                <td>@s.SocialName</td>
+                                <td>@(s.City ?? "-")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly SupplierFilterDto _filter = new();
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private IReadOnlyList<SupplierSummaryDto> _suppliers = new List<SupplierSummaryDto>();
+    private string? _errorMessage;
+    private bool _loading;
+
+    private IReadOnlyList<SupplierSummaryDto> _suggestions = new List<SupplierSummaryDto>();
+    private bool _showSuggestions;
+    private bool _loadingSuggestions;
+    private bool _selectingSuggestions;
+    private CancellationTokenSource? _debounceCts;
+
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    protected override async Task OnInitializedAsync()
+    {        try
+        {
+            _groups = await ReferenceService.GetSupplierGroupsAsync();
+            if (_groups.Count > 0 && _filter.GroupId == 0)
+                _filter.GroupId = _groups[0].Id;
+            await LoadSuppliers();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar: " + ex.Message;
+        }
+    }
+
+    private async Task LoadSuppliers()
+    {
+        _loading = true;
+        try
+        {
+            _suppliers = await SupplierService.GetListAsync(_filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro na busca: " + ex.Message;
+            _suppliers = new List<SupplierSummaryDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Search()
+    {
+        _errorMessage = null;
+        await LoadSuppliers();
+    }
+
+    private async Task OnNameChanged()
+    {
+        _showSuggestions = _filter.Name.Trim().Length >= 2;
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var ct = _debounceCts.Token;
+
+        if (_filter.Name.Trim().Length < 2)
+        {
+            _suggestions = new List<SupplierSummaryDto>();
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300, ct);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        _loadingSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await SupplierService.GetSuggestionsAsync(_filter.Name.Trim(), _filter.GroupId, 10, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                _suggestions = list;
+                _showSuggestions = true;
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                _loadingSuggestions = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OnNameBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingSuggestions)
+            _showSuggestions = false;
+        _selectingSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnDropdownMouseDown(MouseEventArgs _) => _selectingSuggestions = true;
+
+    private void SelectSupplier(SupplierSummaryDto s)
+    {
+        _selectingSuggestions = true;
+        _showSuggestions = false;
+        _suggestions = new List<SupplierSummaryDto>();
+        Navigation.NavigateTo($"/principal/fornecedores/cadastro/{s.Id}");
+    }
+
+    private void AbrirEdicao(int id)
+    {
+        Navigation.NavigateTo($"/principal/fornecedores/cadastro/{id}");
+    }
+}

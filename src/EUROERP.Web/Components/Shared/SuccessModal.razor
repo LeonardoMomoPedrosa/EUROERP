@@ -1,0 +1,50 @@
+@* Padrão do projeto: exibir este modal por 0,4s quando a operação for bem sucedida; fade-out ao fechar. *@
+@if (Show)
+{
+    <div class="success-modal-backdrop @(_isClosing ? "success-modal-closing" : "")" @onclick="Dismiss">
+        <div class="success-modal-dialog" @onclick:stopPropagation="true">
+            <div class="success-modal-content">
+                <div class="success-modal-header">Sucesso</div>
+                <div class="success-modal-body">@Message</div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Exibe o modal quando true.</summary>
+    [Parameter] public bool Show { get; set; }
+    /// <summary>Mensagem exibida no corpo do modal.</summary>
+    [Parameter] public string Message { get; set; } = "Operação realizada com sucesso.";
+    /// <summary>Chamado quando o modal deve fechar (após 0,4s ou clique no fundo).</summary>
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    private bool _closeScheduled;
+    private bool _isClosing;
+
+    protected override void OnParametersSet()
+    {
+        if (Show && !_closeScheduled)
+        {
+            _closeScheduled = true;
+            _isClosing = false;
+            _ = CloseAfterDelay();
+        }
+        if (!Show)
+        {
+            _closeScheduled = false;
+            _isClosing = false;
+        }
+    }
+
+    private async Task CloseAfterDelay()
+    {
+        await Task.Delay(600);
+        _isClosing = true;
+        StateHasChanged();
+        await Task.Delay(550);
+        await OnClosed.InvokeAsync();
+    }
+
+    private async Task Dismiss() => await OnClosed.InvokeAsync();
+}

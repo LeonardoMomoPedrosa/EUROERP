@@ -1,0 +1,219 @@
+@page "/principal/fornecedores/alterar-massa"
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Fornecedores - Alterar em massa</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Selecione o grupo dos fornecedores a serem listados</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Grupo</label>
+                <select class="form-select form-select-sm" @bind="_selectedGroupId">
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id">@(g.Id == 0 ? "Selecione" : g.Name)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-auto">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Listar" disabled="@_loading">@(_loading ? "Listando..." : "Listar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-warning">@_errorMessage</div>
+}
+
+<div class="card grid-card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 mass-info-table supplier-mass-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Razão Social</th>
+                        <th>Grupo</th>
+                        <th>Pagto</th>
+                        <th class="text-end">Prazo (dias)</th>
+                        <th>Plano Pagto.</th>
+                        <th class="text-end">Dias Estoq.</th>
+                        <th class="text-center">Compra Geral</th>
+                        <th class="text-end">% C.Oper.</th>
+                        <th class="text-end">% D.Adm.</th>
+                        <th class="text-end">% D.Vendas</th>
+                        <th class="mass-info-action-cell"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading && _items.Count == 0)
+                    {
+                        <tr><td colspan="11" class="text-center text-muted py-4">Carregando...</td></tr>
+                    }
+                    else if (_items.Count == 0)
+                    {
+                        <tr><td colspan="11" class="text-center text-muted py-4">Selecione um grupo e clique em Listar.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in _items)
+                        {
+                            <tr>
+                                <td class="align-middle">@item.SocialName</td>
+                                <td>
+                                    <select class="form-select form-select-sm" style="min-width: 100px" @bind="item.SupplierGroupId">
+                                        @foreach (var g in _groups)
+                                        {
+                                            <option value="@g.Id">@(g.Id == 0 ? " " : g.Name)</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm" style="min-width: 90px" @bind="item.PaymentMethodId">
+                                        @foreach (var pm in _paymentMethods)
+                                        {
+                                            <option value="@(pm.Id == 0 ? "" : pm.Id.ToString())">@(pm.Id == 0 ? "Selecione" : pm.Name)</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end" style="width: 70px" min="0" max="300"
+                                           @bind="item.Payterm" />
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm" style="min-width: 90px" placeholder="ex: 30,60,90"
+                                           @bind="item.PaymentPlan" />
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end" style="width: 70px" min="0" max="300"
+                                           @bind="item.StockDays" />
+                                </td>
+                                <td class="text-center align-middle">
+                                    <input type="checkbox" class="form-check-input" @bind="item.GnrlOrdering" />
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end" style="width: 60px" min="0" max="100"
+                                           @bind="item.OperationPerc" />
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end" style="width: 60px" min="0" max="100"
+                                           @bind="item.AdminPerc" />
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end" style="width: 60px" min="0" max="100"
+                                           @bind="item.SalesPerc" />
+                                </td>
+                                <td class="mass-info-action-cell">
+                                    @if (_savingRowId == item.Id)
+                                    {
+                                        <span class="mass-info-action-placeholder text-muted small">Salvando...</span>
+                                    }
+                                    else if (_rowFeedback.TryGetValue(item.Id, out var feedback))
+                                    {
+                                        <span class="mass-info-action-placeholder small @(feedback.IsError ? "text-danger" : "text-success") mass-info-fade">@(feedback.IsError ? "Erro" : "Atualizado")</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SaveRow(item)">Salvar</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<IdNameDto> _groups = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _paymentMethods = new List<IdNameDto>();
+    private int _selectedGroupId;
+    private List<SupplierMassItemDto> _items = new();
+    private string? _errorMessage;
+    private bool _loading;
+    private int _savingRowId;
+    private readonly Dictionary<int, (string Message, bool IsError)> _rowFeedback = new();
+
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService ReferenceService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {        try
+        {
+            _groups = await ReferenceService.GetSupplierGroupsAsync();
+            _paymentMethods = await ReferenceService.GetPaymentMethodsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar referências: " + ex.Message;
+        }
+    }
+
+    private async Task Listar()
+    {
+        _errorMessage = null;
+        if (_selectedGroupId <= 0)
+        {
+            _errorMessage = "Selecione um grupo.";
+            return;
+        }
+        _loading = true;
+        _rowFeedback.Clear();
+        try
+        {
+            var list = await SupplierService.GetListByGroupIdsAsync(new[] { _selectedGroupId });
+            _items = list.ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao listar: " + ex.Message;
+            _items = new List<SupplierMassItemDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveRow(SupplierMassItemDto item)
+    {
+        _savingRowId = item.Id;
+        _rowFeedback.Remove(item.Id);
+        StateHasChanged();
+        var dto = new SupplierMassUpdateDto
+        {
+            Id = item.Id,
+            SupplierGroupId = item.SupplierGroupId,
+            PaymentMethodId = item.PaymentMethodId,
+            Payterm = item.Payterm,
+            PaymentPlan = item.PaymentPlan,
+            StockDays = item.StockDays,
+            GnrlOrdering = item.GnrlOrdering,
+            OperationPerc = item.OperationPerc,
+            AdminPerc = item.AdminPerc,
+            SalesPerc = item.SalesPerc
+        };
+        var (success, message) = await SupplierService.UpdateMassRowAsync(dto);
+        _rowFeedback[item.Id] = (message, !success);
+        _savingRowId = 0;
+        StateHasChanged();
+        _ = ClearRowFeedbackAfterDelay(item.Id);
+    }
+
+    private async Task ClearRowFeedbackAfterDelay(int id)
+    {
+        await Task.Delay(1400);
+        _rowFeedback.Remove(id);
+        await InvokeAsync(StateHasChanged);
+    }
+}

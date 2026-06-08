@@ -1,0 +1,63 @@
+@page "/principal/estoque/entrar-estoque"
+@rendermode InteractiveServer
+
+<PageTitle>Estoque - Entrar Estoque</PageTitle>
+
+<p class="text-muted small">Pedidos de compra pendentes de recebimento (Eurobus: purchase_stock_list.aspx).</p>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Pedidos pendentes</h5></div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light"><tr><th>Compra</th><th>Data</th><th>Fornecedor</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in _pending)
+                {
+                    <tr>
+                        <td>#@p.PurchaseId-@p.SupplierId</td>
+                        <td>@p.Date</td>
+                        <td>@p.SupplierName</td>
+                        <td><a href="/principal/estoque/entrar-estoque/receber/@p.PurchaseId/@p.SupplierId">Receber</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Últimas entradas de estoque</h5></div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 data-grid-table">
+            <thead class="table-light">
+                <tr><th>Compra</th><th>Pedido</th><th>Entrada</th><th>Dias</th><th>Usuário</th><th>Fornecedor</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var h in _history)
+                {
+                    <tr>
+                        <td>#@h.PurchaseId-@h.SupplierId</td>
+                        <td>@h.DateOrder</td>
+                        <td>@h.DateIn @(h.TimeIn)</td>
+                        <td>@h.Days</td>
+                        <td>@h.UserId</td>
+                        <td>@h.SupplierName</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<PurchaseStockPendingDto> _pending = new List<PurchaseStockPendingDto>();
+    private IReadOnlyList<PurchaseStockHistoryDto> _history = new List<PurchaseStockHistoryDto>();
+
+    [Inject] private IPurchaseStockService PurchaseStockService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _pending = await PurchaseStockService.GetPendingAsync();
+        _history = await PurchaseStockService.GetLastStockInsAsync();
+    }
+}
