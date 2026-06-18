@@ -1,0 +1,1163 @@
+@page "/vendas/os/{OrderId:int}"
+@using EUROERP.Application.Orders
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Ordem de Serviço #@OrderId</PageTitle>
+
+@if (_header == null && !_loadingHeader)
+{
+    <div class="alert alert-warning">OS não encontrada.</div>
+    return;
+}
+
+@if (_loadingHeader)
+{
+    <div class="text-muted">Carregando OS...</div>
+    return;
+}
+
+<div class="card mb-2 order-header-compact">
+    <div class="card-body py-2 px-3">
+        <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 mb-1 small">
+            <span class="order-header-order-id">#@_header!.OrderId</span>
+            @if (!string.IsNullOrWhiteSpace(_header.MlOrderId))
+            {
+                <span class="text-muted">ML <strong class="text-body">@_header.MlOrderId.Trim()</strong></span>
+            }
+            @if (_header.SiteOrderId is > 0)
+            {
+                <span class="text-muted">Site <strong class="text-body">#@_header.SiteOrderId</strong></span>
+            }
+            <span class="badge @GetOrderStatusBadgeClass(_header.Status)">@GetOrderStatusName(_header.Status)</span>
+            <span class="badge @GetOrderModeBadgeClass(_header.Mode)">@(!string.IsNullOrWhiteSpace(_header.ModeDescription) ? _header.ModeDescription : (_header.Mode == "Q" ? "Orçamento" : "Venda"))</span>
+            <span class="text-muted">Produtos</span>
+            <span class="order-header-date">@_header.OrderDate.ToString("dd/MM/yyyy")</span>
+            @if (_header.Status == "E" && _header.SentDate.HasValue)
+            {
+                <span class="text-muted">Enviado em <strong class="text-body">@_header.SentDate.Value.ToString("dd/MM/yyyy HH:mm")</strong></span>
+            }
+            <span class="vr d-none d-md-inline"></span>
+            <span class="text-muted">Vend.: @_header.SalesAgent</span>
+        </div>
+        <div class="order-header-client-name mb-1">
+            @_header.SocialName <span class="text-muted fw-normal small">(#@_header.ClientId — @_header.ClientName)</span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 mb-1 small text-muted">
+            <span>@_header.AddressStreet @_header.AddressNumber @(string.IsNullOrEmpty(_header.AddressBlock) ? "" : _header.AddressBlock) @(string.IsNullOrEmpty(_header.AddressComplement) ? "" : _header.AddressComplement)</span>
+            <span>CEP @_header.AddressZipCode</span>
+            <span>@_header.City / @_header.State</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_header.Phone1) || !string.IsNullOrWhiteSpace(_header.Phone2) || !string.IsNullOrWhiteSpace(_header.Phone3) || !string.IsNullOrWhiteSpace(_header.Celular))
+        {
+            <div class="small text-muted mb-1">
+                <strong>Telefones:</strong> @_header.Phone1 / @_header.Phone2 / @_header.Phone3 / @_header.Celular
+            </div>
+        }
+        <div class="d-flex flex-wrap align-items-center gap-3 pt-1 border-top border-secondary border-opacity-25 small">
+            <span><span class="text-muted">Limite</span> <strong class="text-body">R$ @_header.LimitAmount.ToString("N2")</strong></span>
+            <span><span class="text-muted">Devido</span> <strong class="text-body">R$ @_header.DueAmount.ToString("N2")</strong></span>
+            <span><span class="text-muted">Saldo</span> <strong class="@(_header.BalanceForPurchase >= 0 ? "text-success" : "text-danger")">R$ @_header.BalanceForPurchase.ToString("N2")</strong></span>
+        </div>
+    </div>
+</div>
+
+@if (_canEdit && _header != null)
+{
+    <div class="card mb-2">
+        <div class="card-body py-2 px-3 small">
+            <div class="row g-2 align-items-end">
+                @if (_header.CarId.HasValue && _header.CarId.Value > 0)
+                {
+                    <div class="col-md-4">
+                        <strong>Veículo:</strong> @_header.CarDescription — @_header.CarPlate
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label mb-0">KM atual</label>
+                        <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_carKm" />
+                    </div>
+                }
+                <div class="@(_header.CarId.HasValue && _header.CarId.Value > 0 ? "col-md-6" : "col-md-12")">
+                    <label class="form-label mb-0">Dados adicionais / problema</label>
+                    <textarea class="form-control form-control-sm" rows="2" @bind="_carProblem"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_canEdit)
+{
+    <div class="card mb-3 pedido-insert-product-card">
+        <div class="card-header"><h6 class="mb-0">Inserir novo produto</h6></div>
+        <div class="card-body">
+            <div class="row align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label">Produto (nome)</label>
+                    <div class="position-relative @(_showProductSuggestions && _productSuggestions.Count > 0 ? "pedido-suggestions-open" : null)">
+                        <input type="text"
+                               id="pedido-product-input"
+                               class="form-control form-control-sm"
+                               placeholder="Digite pelo menos 2 caracteres... (F2 busca)"
+                               @bind="_productSearch"
+                               @bind:event="oninput"
+                               @bind:after="OnProductSearchChanged"
+                               @onblur="OnProductSearchBlur"
+                               @onkeydown="OnProductKeydown"
+                               autocomplete="off" />
+                        @if (_loadingProductSuggestions)
+                        {
+                            <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                        }
+                        @if (_showProductSuggestions)
+                        {
+                            <div id="pedido-product-suggestions-list" class="position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm" style="z-index: 9999;" @onmousedown="OnProductDropdownMouseDown" @onmousedown:preventDefault>
+                                @if (_productSuggestions.Count == 0)
+                                {
+                                    <div class="p-2 small text-muted">Nenhum produto encontrado.</div>
+                                }
+                                else
+                                {
+                                    @for (var i = 0; i < _productSuggestions.Count; i++)
+                                    {
+                                        var p = _productSuggestions[i];
+                                        var isHighlighted = i == _productSuggestionHighlightIndex;
+                                        <div class="px-2 py-1 small cursor-pointer @(isHighlighted ? "pedido-autocomplete-highlight" : "")" @onmousedown="() => SelectProductSuggestion(p)" style="cursor: pointer;">
+                                            @p.Name — Estoque: @p.Stock — R$ @p.Price.ToString("N2")
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                @if (_selectedProductForSale != null)
+                {
+                    <div class="col-md-3">
+                        <label class="form-label">Preço unit.</label>
+                        <p class="form-control-plaintext small mb-0">@_selectedProductForSale.CurrencySymbol @(_selectedProductForSale.CostInd ? _selectedProductForSale.CostFinal.ToString("N2") : _selectedProductForSale.Price.ToString("N2")) — Desc. @_selectedProductForSale.Discount.ToString("N1")%</p>
+                    </div>
+                }
+                <div class="col-md-2">
+                    <label class="form-label">Quantidade</label>
+                    <input type="number" id="pedido-quantity-input" class="form-control form-control-sm" step="0.001" min="0.001" @bind="_quantity" @bind:event="oninput" @onkeydown="OnQuantityKeydown" />
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-primary btn-sm w-100 pedido-add-to-cart-btn" @onclick="AdicionarProduto" disabled="@(_selectedProductId == 0 || _quantity <= 0 || _addingProduct)" title="Adicionar Produto" aria-label="Adicionar Produto">
+                        @if (_addingProduct)
+                        {
+                            <span class="small">...</span>
+                        }
+                        else
+                        {
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M0 1.5A.5.5 0 0 1 .5 1H2a.5.5 0 0 1 .485.379L2.89 3H14.5a.5.5 0 0 1 .491.592l-1.5 8A.5.5 0 0 1 13 12H4a.5.5 0 0 1-.491-.408L2.01 3.607 1.61 2H.5a.5.5 0 0 1-.5-.5zM5 12a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-7 1a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>
+                        }
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_productMessage))
+            {
+                <div class="alert alert-danger py-2 small mt-2 mb-0">@_productMessage</div>
+            }
+        </div>
+    </div>
+}
+
+@* Modal Busca rica (F2) *@
+@if (_showBuscaRicaModal)
+{
+    <div class="modal-backdrop-pedido" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1050;" @onclick="FecharBuscaRica">
+        <div class="modal-dialog-pedido" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 600px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; z-index: 1051;" @onclick:stopPropagation="true" @onkeydown="OnBuscaRicaKeydown" tabindex="-1">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <h6 class="mb-0">Busca de produto (F2) — ESC para fechar</h6>
+                <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @onclick="FecharBuscaRica" aria-label="Fechar">×</button>
+            </div>
+            <div class="p-3 border-bottom">
+                <input type="text"
+                       class="form-control form-control-sm"
+                       placeholder="Digite pelo menos 2 caracteres..."
+                       @bind="_buscaRicaSearch"
+                       @bind:event="oninput"
+                       @bind:after="OnBuscaRicaSearchChanged"
+                       @onkeydown="OnBuscaRicaKeydown"
+                       autocomplete="off" />
+            </div>
+            <div class="p-0 flex-grow-1 overflow-auto" style="min-height: 200px;">
+                @if (_loadingBuscaRica)
+                {
+                    <div class="p-3 text-muted small">Buscando...</div>
+                }
+                else if ((_buscaRicaSearch?.Trim().Length ?? 0) < 2)
+                {
+                    <div class="p-3 text-muted small">Digite pelo menos 2 caracteres para buscar.</div>
+                }
+                else if (_buscaRicaSuggestions.Count == 0)
+                {
+                    <div class="p-3 text-muted small">Nenhum produto encontrado.</div>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Cód.</th>
+                                <th>Nome</th>
+                                <th>Estoque</th>
+                                <th>Preço</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in _buscaRicaSuggestions)
+                            {
+                                <tr role="button" @onclick="() => SelecionarProdutoBuscaRica(p)">
+                                    <td>@p.ProductId</td>
+                                    <td>@p.Name</td>
+                                    <td>@p.Stock</td>
+                                    <td>R$ @p.Price.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="p-3 border-top small text-muted">Clique em um produto para selecionar.</div>
+        </div>
+    </div>
+}
+
+<div class="card grid-card mb-3 pedido-cart-card">
+    <div class="card-header py-1"><h6 class="mb-0">Carrinho</h6></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 data-grid-table pedido-cart-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Nome</th>
+                        <th>Qtd</th>
+                        <th>Preço unit.</th>
+                        <th>Desc. %</th>
+                        <th>Total</th>
+                        @if (_canEdit)
+                        {
+                            <th class="pedido-cart-actions">Ações</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_details.Count == 0)
+                    {
+                        <tr><td colspan="@(_canEdit ? 7 : 6)" class="text-muted text-center py-2 small">Nenhum item no carrinho.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var d in _details)
+                        {
+                            <tr>
+                                <td class="small">@d.LionCode</td>
+                                <td class="small">@d.Name</td>
+                                <td class="small">@d.Quantity</td>
+                                <td class="small">@d.Price.ToString("N2")</td>
+                                <td class="small">@d.Discount.ToString("N1")</td>
+                                <td class="small">@d.TotalPrice.ToString("N2")</td>
+                                @if (_canEdit)
+                                {
+                                    <td class="pedido-cart-actions">
+                                        <button type="button" class="pedido-icon-btn pedido-icon-btn-remove" @onclick="() => RemoverItem(d)" title="Remover" aria-label="Remover">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                                        </button>
+                                        <button type="button" class="pedido-icon-btn pedido-icon-btn-edit" @onclick="() => EditarItem(d)" title="Editar" aria-label="Editar">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
+                                        </button>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (_details.Count > 0 && _header != null)
+                {
+                    <tfoot class="table-light pedido-cart-tfoot">
+                        <tr>
+                            <td colspan="5" class="text-end pt-1">Subtotal (itens)</td>
+                            <td class="pt-1">@_details.Sum(d => d.TotalPrice).ToString("N2")</td>
+                            @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                        </tr>
+                        @if ((_header.Credit ?? 0) != 0)
+                        {
+                            <tr class="pedido-cart-tfoot-detail">
+                                <td colspan="5" class="text-end pt-1">(-) Crédito</td>
+                                <td class="pt-1">@((_header.Credit ?? 0).ToString("N2"))</td>
+                                @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                            </tr>
+                        }
+                        @if ((_header.Discount ?? 0) != 0)
+                        {
+                            <tr class="pedido-cart-tfoot-detail">
+                                <td colspan="5" class="text-end pt-1">(-) Desconto (@((_header.Discount ?? 0).ToString("N1"))%)</td>
+                                <td class="pt-1">@(((_details.Sum(d => d.TotalPrice) - (_header.Credit ?? 0)) * ((_header.Discount ?? 0) / 100m)).ToString("N2"))</td>
+                                @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                            </tr>
+                        }
+                        @if ((_header.OtherExpenses ?? 0) != 0)
+                        {
+                            <tr class="pedido-cart-tfoot-detail">
+                                <td colspan="5" class="text-end pt-1">(+) Outras despesas</td>
+                                <td class="pt-1">@((_header.OtherExpenses ?? 0).ToString("N2"))</td>
+                                @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                            </tr>
+                        }
+                        @if ((_header.ShipmentCost ?? 0) != 0 && _header.ChargeShipment)
+                        {
+                            <tr class="pedido-cart-tfoot-detail">
+                                <td colspan="5" class="text-end pt-1">(+) Frete</td>
+                                <td class="pt-1">@((_header.ShipmentCost ?? 0).ToString("N2"))</td>
+                                @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                            </tr>
+                        }
+                        <tr>
+                            <td colspan="5" class="text-end pt-1"><strong>Total</strong></td>
+                            <td class="pt-1"><strong>@_header.OrderTotalAmount.ToString("N2")</strong></td>
+                            @if (_canEdit) { <td class="pedido-cart-actions pt-1"></td> }
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (_canEdit)
+{
+    <div class="card mb-3 pedido-credit-discount-card">
+        <div class="card-header"><h6 class="mb-0">Crédito, Desconto e Despesas</h6></div>
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Crédito (R$)</label>
+                    <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_credit" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Desconto (%)</label>
+                    <input type="number" class="form-control form-control-sm" step="0.01" min="0" max="100" @bind="_discount" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Outras despesas (R$)</label>
+                    <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_otherExpenses" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">Frete (R$)</label>
+                    <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_shipmentCost" />
+                </div>
+                <div class="col-6 col-md-2 d-flex align-items-end">
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" id="charge-shipment" @bind="_chargeShipment" />
+                        <label class="form-check-label small" for="charge-shipment">Faturar frete</label>
+                    </div>
+                </div>
+                <div class="col-12 col-md-auto">
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="AplicarCreditoDescontoAsync" disabled="@_aplicando">@(_aplicando ? "Aplicando..." : "Aplicar")</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_extraMessage))
+            {
+                <div class="alert alert-danger py-2 small mt-2 mb-0">@_extraMessage</div>
+            }
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3 pedido-footer-buttons">
+        <button type="button" class="btn btn-sm btn-danger" @onclick="CancelarCompra" disabled="@_busy">Cancelar Compra</button>
+        <button type="button" class="btn btn-sm btn-warning" @onclick="ZerarCarrinho" disabled="@_busy">ZERAR</button>
+        <button type="button" class="btn btn-sm btn-success" @onclick="Continuar" disabled="@_busy">Continuar</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Sair">Sair</button>
+    </div>
+}
+else
+{
+    <div class="d-flex flex-wrap gap-2 mb-3 pedido-footer-buttons align-items-center">
+        @if (_showClosedOrderActions)
+        {
+            <button type="button" class="btn btn-sm btn-warning" @onclick="ReabrirCompra" disabled="@_busy">Reabrir Compra</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(1)">Imprimir</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(2)">Imprimir Pedido</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(3)">Packing Slip</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalEtiqueta()">Etiquetas</button>
+        }
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Sair">Sair</button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+@* Modal de impressão / etiqueta (preserva a janela atual). *@
+@if (_printModalOpen)
+{
+    <div class="pedido-print-modal-backdrop" @onclick="FecharModalImpressao">
+        <div class="pedido-print-modal-dialog" @onclick:stopPropagation="true">
+            <div class="pedido-print-modal-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                <span class="fw-bold small">@(_printModalKind == "label" ? "Etiqueta" : (_printModalType == 1 ? "Imprimir" : _printModalType == 2 ? "Imprimir Pedido" : "Packing Slip"))</span>
+                <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @onclick="FecharModalImpressao" aria-label="Fechar">×</button>
+            </div>
+            <div class="pedido-print-modal-body p-3 overflow-auto">
+                @if (_printModalLoading)
+                {
+                    <p class="text-muted small">Carregando...</p>
+                }
+                else if (_printModalKind == "print" && _printModalData != null)
+                {
+                    <div class="print-modal-content pedido-print-container">
+                        @if (_printModalType != 3)
+                        {
+                            <div class="pedido-print-header-legacy mb-2">
+                                <table border="0" cellspacing="0" cellpadding="0" class="w-100 pedido-print-header-table">
+                                    <tr>
+                                        <td colspan="6" class="pedido-print-header-empresa">Aquanimal — Rua Nazaré, 166 - Vila Madalena - CEP: 05448-000 - São Paulo / SP</td>
+                                    </tr>
+                                    <tr class="pedido-print-header-spacer"><td colspan="6" class="pedido-print-header-spacer">&#160;</td></tr>
+                                    <tr>
+                                        <td rowspan="7" class="pedido-print-header-logo-td"><img src="/images/lionbw.jpg" alt="Aquanimal" class="pedido-print-header-logo" /></td>
+                                        <td rowspan="7">&#160;</td>
+                                        <td class="pedido-print-header-cell"><b>OS #</b> &#160; @_printModalData.OrderId</td>
+                                        <td class="pedido-print-header-cell"><b>DATA:</b> &#160; @_printModalData.OrderDate.ToString("dd/MM/yyyy")</td>
+                                        <td class="pedido-print-header-cell"><b>Usuário</b> &#160; @_printModalData.SalesAgent</td>
+                                        <td class="pedido-print-header-cell"><b>Vendedor:</b> &#160; @_printModalData.SalesAgent</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="4" class="pedido-print-header-cell"><b>Cliente:</b> &#160; @_printModalData.ClientId - @_printModalData.SocialName / @_printModalData.ClientName</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2" class="pedido-print-header-cell"><b>CNPJ/CPF:</b> &#160; @_printModalData.CnpjPf</td>
+                                        <td colspan="2" class="pedido-print-header-cell"><b>Inc. Est.:</b> &#160; @_printModalData.StateInscr</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="4" class="pedido-print-header-cell"><b>Endereço:</b> &#160; @_printModalData.AddressStreet &#160; @_printModalData.AddressNumber &#160; @_printModalData.AddressComplement — @_printModalData.City / @_printModalData.State &#160; CEP: @_printModalData.AddressZipCode</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="4" class="pedido-print-header-cell"><b>Telefones:</b> &#160; @_printModalData.Phone1</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2" class="pedido-print-header-cell"><b>Obs:</b> &#160; @_printModalData.Memo</td>
+                                        <td class="pedido-print-header-cell"><b>NF #</b> &#160; @(_printModalData.Receipt?.ToString() ?? "—")</td>
+                                        <td class="pedido-print-header-cell">@_printModalData.MlOrderId</td>
+                                    </tr>
+                                </table>
+                                <br />
+                            </div>
+                        }
+                        <table class="table table-sm table-bordered pedido-print-table mb-3">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Cód.</th><th>Descrição</th><th class="text-end">Qtd</th><th class="text-end">Preço</th><th class="text-end">Desc.%</th><th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var line in _printModalData.Details)
+                                {
+                                    <tr>
+                                        <td class="small">@line.LionCode</td><td class="small">@line.Name</td><td class="small text-end">@line.Quantity</td>
+                                        <td class="small text-end">@line.Price.ToString("N2")</td><td class="small text-end">@line.Discount.ToString("N1")</td><td class="small text-end">@line.TotalPrice.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            @if (_printModalType != 3)
+                            {
+                                <tfoot class="table-light">
+                                    @if (_printModalData.Credit != 0) { <tr><td colspan="5" class="text-end">(-) Crédito</td><td class="text-end">@_printModalData.Credit.ToString("N2")</td></tr> }
+                                    @if (_printModalData.Discount != 0) { <tr><td colspan="5" class="text-end">(-) Desconto @_printModalData.Discount.ToString("N1")%</td><td class="text-end">—</td></tr> }
+                                    @if (_printModalData.OtherExpenses != 0) { <tr><td colspan="5" class="text-end">(+) Outras despesas</td><td class="text-end">@_printModalData.OtherExpenses.ToString("N2")</td></tr> }
+                                    @if (_printModalData.ShipmentCost != 0) { <tr><td colspan="5" class="text-end">(+) Frete</td><td class="text-end">@_printModalData.ShipmentCost.ToString("N2")</td></tr> }
+                                    <tr class="fw-bold"><td colspan="5" class="text-end">Total</td><td class="text-end">@_printModalData.CurrencySymbol @_printModalData.Total.ToString("N2")</td></tr>
+                                </tfoot>
+                            }
+                        </table>
+                        @if (_printModalType == 1 && _printModalData.PaymentDetails.Count > 0)
+                        {
+                            <div class="pedido-print-payment mb-3">
+                                <div class="small fw-bold">Detalhes do pagamento</div>
+                                <table class="table table-sm table-bordered pedido-print-table">
+                                    <thead class="table-light"><tr><th class="small">Parc.</th><th class="small">Forma</th><th class="small text-end">Valor</th><th class="small">Vencimento</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var p in _printModalData.PaymentDetails)
+                                        {
+                                            <tr><td class="small">@p.TermNo</td><td class="small">@p.PaymentMethodName</td><td class="small text-end">@p.Amount.ToString("N2")</td><td class="small">@p.DueDate.ToString("dd/MM/yyyy")</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        <div class="mt-4 text-end">
+                            <hr /><div class="small text-muted">_________________________________________</div>
+                            <div class="small text-muted" style="margin-right: 90px;">Assinatura do Cliente</div>
+                        </div>
+                        <div class="mt-4 pedido-print-label-block">
+                            <table class="pedido-print-label-table" border="1">
+                                <tr><td>
+                                    <table border="0" class="w-100">
+                                        <tr valign="top">
+                                            <td rowspan="2" class="pedido-print-label-logo"><img src="/images/lionbw.jpg" alt="Aquanimal" /></td>
+                                            <td valign="bottom" class="pedido-print-label-pedido">OS #@_printModalData.OrderId</td>
+                                        </tr>
+                                        <tr valign="top">
+                                            <td class="pedido-print-label-ml">@if (!string.IsNullOrEmpty(_printModalData.MlOrderId)) { <span>@_printModalData.MlOrderId</span> }</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="2" class="pedido-print-label-dest">
+                                                <strong>Destinatário:</strong><br />
+                                                @_printModalData.SocialName<br />
+                                                @_printModalData.AddressStreet @_printModalData.AddressNumber
+                                                @if (!string.IsNullOrWhiteSpace(_printModalData.AddressComplement)) { <br />@_printModalData.AddressComplement }
+                                                <br />@_printModalData.AddressBlock<br />
+                                                @_printModalData.City / @_printModalData.State<br />
+                                                CEP: @_printModalData.AddressZipCode<br />
+                                                Telefone: @_printModalData.Phone1
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td></tr>
+                            </table>
+                        </div>
+                    </div>
+                }
+                else if (_printModalKind == "label" && _printModalLabelData != null)
+                {
+                    <div class="print-modal-content pedido-label-container">
+                        <div class="pedido-print-label-block">
+                            <table class="pedido-print-label-table" border="1">
+                                <tr><td>
+                                    <table border="0" class="w-100">
+                                        <tr valign="top">
+                                            <td rowspan="2" class="pedido-print-label-logo"><img src="/images/lionbw.jpg" alt="Aquanimal" /></td>
+                                            <td valign="bottom" class="pedido-print-label-pedido">OS #@_printModalLabelData.OrderId</td>
+                                        </tr>
+                                        <tr valign="top">
+                                            <td class="pedido-print-label-ml">@if (!string.IsNullOrEmpty(_printModalLabelData.MlOrderId)) { <span>ML #@_printModalLabelData.MlOrderId</span> }</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="2" class="pedido-print-label-dest">
+                                                <strong>Destinatário:</strong><br />
+                                                @_printModalLabelData.SocialName<br />
+                                                @_printModalLabelData.AddressStreet @_printModalLabelData.AddressNumber
+                                                @if (!string.IsNullOrWhiteSpace(_printModalLabelData.AddressComplement)) { <br />@_printModalLabelData.AddressComplement }
+                                                <br />@_printModalLabelData.AddressBlock<br />
+                                                @_printModalLabelData.City / @_printModalLabelData.State<br />
+                                                CEP: @_printModalLabelData.AddressZipCode<br />
+                                                Telefone: @_printModalLabelData.Phone
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td></tr>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="pedido-print-modal-footer px-3 py-2 border-top no-print">
+                <button type="button" class="btn btn-sm btn-primary" @onclick="ImprimirNoModal">Imprimir</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="FecharModalImpressao">Fechar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int OrderId { get; set; }
+
+    private OrderHeaderDto? _header;
+    private List<OrderDetailItemDto> _details = new();
+    private bool _loadingHeader;
+    private bool _canEdit;
+    private bool _showClosedOrderActions;
+
+    private bool _printModalOpen;
+    private string? _printModalKind;
+    private int _printModalType;
+    private bool _printModalLoading;
+    private OrderForPrintDto? _printModalData;
+    private OrderLabelDto? _printModalLabelData;
+
+    private string _productSearch = "";
+    private int _selectedProductId;
+    private ProductForSaleDto? _selectedProductForSale;
+    private List<ProductForSaleSuggestionDto> _productSuggestions = new();
+    private bool _showProductSuggestions;
+    private int _productSuggestionHighlightIndex = -1;
+    private bool _loadingProductSuggestions;
+    private bool _selectingProductSuggestions;
+    private CancellationTokenSource? _productDebounceCts;
+    private decimal _quantity = 1;
+    private bool _addingProduct;
+    private string? _productMessage;
+
+    private bool _showBuscaRicaModal;
+    private string _buscaRicaSearch = "";
+    private List<ProductForSaleSuggestionDto> _buscaRicaSuggestions = new();
+    private bool _loadingBuscaRica;
+    private CancellationTokenSource? _buscaRicaDebounceCts;
+
+    private decimal? _credit;
+    private decimal? _discount;
+    private decimal? _otherExpenses;
+    private decimal? _shipmentCost;
+    private bool _chargeShipment = true;
+    private decimal? _carKm;
+    private string? _carProblem;
+    private string? _extraMessage;
+    private bool _busy;
+    private bool _aplicando;
+    private string? _errorMessage;
+
+    private string? _currentUserId;
+    private string? _applicationId;
+    private bool _productInputFocusedOnce;
+
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserId = state.User.Identity?.Name ?? "SYS";
+        _applicationId = Configuration["Authentication:ApplicationName"] ?? "LionSystem";
+        await CarregarPedidoAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_loadingHeader && _canEdit && !_productInputFocusedOnce)
+        {
+            _productInputFocusedOnce = true;
+            await Task.Delay(50);
+            await FocusProductInputAsync();
+        }
+    }
+
+    private async Task CarregarPedidoAsync()
+    {
+        _loadingHeader = true;
+        _errorMessage = null;
+        try
+        {
+            _header = await OrderService.GetOrderHeaderAsync(OrderId);
+            if (_header == null)
+                return;
+            _canEdit = _header.Status == "I" || _header.Status == "R";
+            _showClosedOrderActions = _header.Status == "F" || _header.Status == "E";
+            _credit = _header.Credit;
+            _discount = _header.Discount;
+            _otherExpenses = _header.OtherExpenses;
+            _shipmentCost = _header.ShipmentCost;
+            _chargeShipment = _header.ChargeShipment;
+            _carKm = _header.CarKm;
+            _carProblem = _header.CarProblem;
+            await CarregarDetalhesAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar pedido: " + ex.Message;
+        }
+        finally
+        {
+            _loadingHeader = false;
+        }
+    }
+
+    private async Task CarregarDetalhesAsync()
+    {
+        try
+        {
+            _details = (await OrderService.GetOrderDetailsAsync(OrderId)).ToList();
+            if (_header != null)
+            {
+                _header = await OrderService.GetOrderHeaderAsync(OrderId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar itens: " + ex.Message;
+        }
+    }
+
+    private async Task OnProductSearchChanged()
+    {
+        _showProductSuggestions = (_productSearch?.Trim().Length ?? 0) >= 2;
+        _productDebounceCts?.Cancel();
+        _productDebounceCts = new CancellationTokenSource();
+        var ct = _productDebounceCts.Token;
+        if ((_productSearch?.Trim().Length ?? 0) < 2)
+        {
+            _productSuggestions = new List<ProductForSaleSuggestionDto>();
+            _productSuggestionHighlightIndex = -1;
+            _selectedProductId = 0;
+            _selectedProductForSale = null;
+            StateHasChanged();
+            return;
+        }
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        _loadingProductSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await OrderService.GetProductSuggestionsForSaleAsync(_productSearch!.Trim(), OrderId, 20, ct);
+            if (!ct.IsCancellationRequested) { _productSuggestions = list.ToList(); _showProductSuggestions = true; _productSuggestionHighlightIndex = _productSuggestions.Count > 0 ? 0 : -1; }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested) { _loadingProductSuggestions = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task OnProductSearchBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingProductSuggestions)
+        {
+            _showProductSuggestions = false;
+            _productSuggestionHighlightIndex = -1;
+        }
+        _selectingProductSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnProductDropdownMouseDown(MouseEventArgs _) => _selectingProductSuggestions = true;
+
+    private async Task SelectProductSuggestion(ProductForSaleSuggestionDto p)
+    {
+        _selectingProductSuggestions = true;
+        _showProductSuggestions = false;
+        _productSearch = p.Name;
+        _selectedProductId = p.ProductId;
+        _productMessage = null;
+        if (_header != null)
+        {
+            _selectedProductForSale = await OrderService.GetProductForSaleAsync(p.ProductId, OrderId, _header.ClientId);
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnProductKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            if (_showBuscaRicaModal)
+            {
+                FecharBuscaRica();
+                return;
+            }
+            LimparSelecaoProduto();
+            _productSuggestionHighlightIndex = -1;
+            StateHasChanged();
+            return;
+        }
+        if (e.Key == "F2")
+        {
+            _showBuscaRicaModal = true;
+            _buscaRicaSearch = _productSearch ?? "";
+            if (_buscaRicaSearch.Trim().Length >= 2)
+                await BuscarBuscaRicaAsync();
+            StateHasChanged();
+            return;
+        }
+        if (_showProductSuggestions && _productSuggestions.Count > 0)
+        {
+            if (e.Key == "ArrowDown" || e.Key == "Down")
+            {
+                _productSuggestionHighlightIndex = Math.Min(_productSuggestionHighlightIndex + 1, _productSuggestions.Count - 1);
+                StateHasChanged();
+                return;
+            }
+            if (e.Key == "ArrowUp" || e.Key == "Up")
+            {
+                _productSuggestionHighlightIndex = Math.Max(_productSuggestionHighlightIndex - 1, 0);
+                StateHasChanged();
+                return;
+            }
+            if (e.Key == "Enter" && _productSuggestionHighlightIndex >= 0 && _productSuggestionHighlightIndex < _productSuggestions.Count)
+            {
+                var p = _productSuggestions[_productSuggestionHighlightIndex];
+                await SelectProductSuggestion(p);
+                _showProductSuggestions = false;
+                _productSuggestionHighlightIndex = -1;
+                await FocusQuantityAsync();
+                return;
+            }
+        }
+        if (e.Key == "Enter" && _selectedProductId != 0)
+        {
+            _showProductSuggestions = false;
+            _productSuggestionHighlightIndex = -1;
+            await FocusQuantityAsync();
+        }
+    }
+
+    private async Task OnBuscaRicaSearchChanged()
+    {
+        _buscaRicaDebounceCts?.Cancel();
+        _buscaRicaDebounceCts = new CancellationTokenSource();
+        var ct = _buscaRicaDebounceCts.Token;
+        if ((_buscaRicaSearch?.Trim().Length ?? 0) < 2)
+        {
+            _buscaRicaSuggestions = new List<ProductForSaleSuggestionDto>();
+            StateHasChanged();
+            return;
+        }
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        await BuscarBuscaRicaAsync();
+    }
+
+    private async Task BuscarBuscaRicaAsync()
+    {
+        if ((_buscaRicaSearch?.Trim().Length ?? 0) < 2) return;
+        _loadingBuscaRica = true;
+        StateHasChanged();
+        try
+        {
+            var list = await OrderService.GetProductSuggestionsForSaleAsync(_buscaRicaSearch!.Trim(), OrderId, 30);
+            _buscaRicaSuggestions = list.ToList();
+        }
+        catch (Exception)
+        {
+            _buscaRicaSuggestions = new List<ProductForSaleSuggestionDto>();
+        }
+        finally
+        {
+            _loadingBuscaRica = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FecharBuscaRica()
+    {
+        _showBuscaRicaModal = false;
+        _buscaRicaSearch = "";
+        _buscaRicaSuggestions = new List<ProductForSaleSuggestionDto>();
+    }
+
+    private void OnBuscaRicaKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            FecharBuscaRica();
+    }
+
+    private async Task SelecionarProdutoBuscaRica(ProductForSaleSuggestionDto p)
+    {
+        await SelectProductSuggestion(p);
+        FecharBuscaRica();
+    }
+
+    private async Task OnQuantityKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            LimparSelecaoProduto();
+            await FocusProductInputAsync();
+            return;
+        }
+        if (e.Key == "Enter")
+        {
+            await AdicionarProduto();
+            await FocusProductInputAsync();
+        }
+    }
+
+    private async Task FocusQuantityAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "document.querySelector('#pedido-quantity-input')?.focus()");
+        }
+        catch { /* ignore */ }
+    }
+
+    private async Task FocusProductInputAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('pedido-product-input')?.focus()");
+        }
+        catch { /* ignore */ }
+    }
+
+    private void LimparSelecaoProduto()
+    {
+        _showProductSuggestions = false;
+        _selectedProductId = 0;
+        _selectedProductForSale = null;
+        _productSearch = "";
+        _productMessage = null;
+        _quantity = 1;
+        StateHasChanged();
+    }
+
+    private async Task AdicionarProduto()
+    {
+        if (_header == null || _selectedProductId == 0) return;
+        _productMessage = null;
+        if (_quantity <= 0) { _productMessage = "Informe quantidade maior que zero."; return; }
+        _addingProduct = true;
+        try
+        {
+            await OrderService.AddOrderDetailAsync(OrderId, _selectedProductId, _quantity, _header.ClientId, _applicationId!, _currentUserId!);
+            _quantity = 1;
+            _selectedProductId = 0;
+            _selectedProductForSale = null;
+            _productSearch = "";
+            await CarregarDetalhesAsync();
+            await FocusProductInputAsync();
+        }
+        catch (Exception ex)
+        {
+            _productMessage = ex.Message;
+        }
+        finally
+        {
+            _addingProduct = false;
+        }
+    }
+
+    private async Task RemoverItem(OrderDetailItemDto d)
+    {
+        if (_header == null) return;
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Remover este item do carrinho?")) return;
+        _busy = true;
+        try
+        {
+            await OrderService.RemoveOrderDetailAsync(OrderId, d.ProductId, _header.ClientId);
+            await CarregarDetalhesAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task EditarItem(OrderDetailItemDto d)
+    {
+        if (_header == null) return;
+        _busy = true;
+        try
+        {
+            await OrderService.RemoveOrderDetailAsync(OrderId, d.ProductId, _header.ClientId);
+            _selectedProductId = d.ProductId;
+            _productSearch = d.Name;
+            _quantity = d.Quantity;
+            _selectedProductForSale = await OrderService.GetProductForSaleAsync(d.ProductId, OrderId, _header.ClientId);
+            await CarregarDetalhesAsync();
+            await FocusQuantityAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ZerarCarrinho()
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Zerar todo o carrinho e devolver estoque?")) return;
+        _busy = true;
+        _errorMessage = null;
+        try
+        {
+            await OrderService.ResetOrderAsync(OrderId);
+            await CarregarPedidoAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CancelarCompra()
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Cancelar o pedido e devolver todo o estoque?")) return;
+        _busy = true;
+        _errorMessage = null;
+        try
+        {
+            await OrderService.CancelOrderAsync(OrderId, _applicationId!, _currentUserId!);
+            Navigation.NavigateTo("/vendas/nova-os", forceLoad: false);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task AplicarCreditoDescontoAsync()
+    {
+        _extraMessage = null;
+        var discount = _discount ?? 0;
+        if (discount < 0 || discount > 100) { _extraMessage = "Desconto deve estar entre 0 e 100."; return; }
+        _aplicando = true;
+        try
+        {
+            await OrderService.UpdateOrderExtraTaxesAsync(OrderId, discount, _credit ?? 0, _otherExpenses ?? 0, _shipmentCost ?? 0, _chargeShipment);
+            await OrderService.UpdateOrderCarKmAndProblemAsync(OrderId, _carKm, _carProblem);
+            await CarregarDetalhesAsync();
+            if (_header != null)
+            {
+                _credit = _header.Credit;
+                _discount = _header.Discount;
+                _otherExpenses = _header.OtherExpenses;
+                _shipmentCost = _header.ShipmentCost;
+                _chargeShipment = _header.ChargeShipment;
+            }
+        }
+        catch (Exception ex)
+        {
+            _extraMessage = ex.Message;
+        }
+        finally
+        {
+            _aplicando = false;
+        }
+    }
+
+    private async Task Continuar()
+    {
+        _extraMessage = null;
+        var discount = _discount ?? 0;
+        if (discount < 0 || discount > 100) { _extraMessage = "Desconto deve estar entre 0 e 100."; return; }
+        _busy = true;
+        try
+        {
+            await OrderService.UpdateOrderExtraTaxesAsync(OrderId, discount, _credit ?? 0, _otherExpenses ?? 0, _shipmentCost ?? 0, _chargeShipment);
+            await OrderService.UpdateOrderCarKmAndProblemAsync(OrderId, _carKm, _carProblem);
+            Navigation.NavigateTo($"/vendas/os/{OrderId}/pagamento", forceLoad: false);
+        }
+        catch (Exception ex)
+        {
+            _extraMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReabrirCompra()
+    {
+        if (_header == null) return;
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja mesmo reabrir esta compra?");
+        if (!confirmed) return;
+        _busy = true;
+        _errorMessage = null;
+        try
+        {
+            await OrderService.ReopenOrderAsync(OrderId);
+            Navigation.NavigateTo($"/vendas/os/{OrderId}", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task AbrirModalImpressao(int printType)
+    {
+        _printModalOpen = true;
+        _printModalKind = "print";
+        _printModalType = printType;
+        _printModalData = null;
+        _printModalLabelData = null;
+        _printModalLoading = true;
+        StateHasChanged();
+        try
+        {
+            _printModalData = await OrderService.GetOrderForPrintAsync(OrderId, (byte)printType);
+        }
+        finally
+        {
+            _printModalLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AbrirModalEtiqueta()
+    {
+        _printModalOpen = true;
+        _printModalKind = "label";
+        _printModalType = 0;
+        _printModalData = null;
+        _printModalLabelData = null;
+        _printModalLoading = true;
+        StateHasChanged();
+        try
+        {
+            _printModalLabelData = await OrderService.GetOrderLabelAsync(OrderId);
+        }
+        finally
+        {
+            _printModalLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FecharModalImpressao()
+    {
+        _printModalOpen = false;
+        _printModalKind = null;
+        _printModalData = null;
+        _printModalLabelData = null;
+    }
+
+    private async Task ImprimirNoModal()
+    {
+        await JSRuntime.InvokeVoidAsync("printModalContent");
+    }
+
+    private void Sair()
+    {
+        Navigation.NavigateTo("/vendas/nova-os", forceLoad: false);
+    }
+
+    private static string GetOrderModeBadgeClass(string mode) => mode == "Q" ? "bg-secondary" : "bg-success";
+
+    private static string GetOrderStatusBadgeClass(string status) => status switch
+    {
+        "I" => "bg-warning text-dark",
+        "R" => "bg-info text-dark",
+        "F" => "bg-secondary",
+        "C" => "bg-danger",
+        "E" => "bg-primary",
+        _ => "bg-secondary"
+    };
+
+    private static string GetOrderStatusName(string status) => status switch
+    {
+        "I" => "Incompleto",
+        "R" => "Reaberto",
+        "F" => "Fechado",
+        "C" => "Cancelado",
+        "E" => "Enviado",
+        _ => "Indefinido"
+    };
+}

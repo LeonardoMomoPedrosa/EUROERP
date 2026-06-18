@@ -1,0 +1,18 @@
+@page "/vendas/os/{OrderId:int}/pagamento"
+@rendermode InteractiveServer
+
+<PageTitle>Pagamento — OS #@OrderId</PageTitle>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Pagamento da Ordem de Serviço #@OrderId</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Tela de pagamento (Story 8.3) será implementada em seguida.</p>
+        <a class="btn btn-sm btn-outline-secondary" href="/vendas/os/@OrderId">Voltar à OS</a>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+}

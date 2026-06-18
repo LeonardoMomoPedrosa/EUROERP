@@ -1,0 +1,416 @@
+@page "/vendas/nova-os"
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Orders
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Ordem de Serviço</PageTitle>
+
+<style>
+    .nova-os-mode-options label {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin-bottom: 0;
+        cursor: pointer;
+        line-height: 1.25;
+    }
+    .nova-os-mode-options input[type="radio"] {
+        margin: 0;
+        flex-shrink: 0;
+    }
+</style>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Ordem de Serviço</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label class="form-label">Nome do Cliente</label>
+                    <div class="position-relative autocomplete-wrapper">
+                        <input type="text"
+                               class="form-control form-control-sm"
+                               placeholder="Razão social..."
+                               @bind="_clientName"
+                               @bind:event="oninput"
+                               @bind:after="OnNameChanged"
+                               @onblur="OnNameBlur"
+                               autocomplete="off" />
+                        @if (_loadingSuggestions)
+                        {
+                            <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                        }
+                        @if (_showSuggestions)
+                        {
+                            <div class="supplier-autocomplete-dropdown position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm border-dark" style="z-index: 9999; max-height: 200px; overflow-y: auto; min-height: 2rem;" @onmousedown="OnDropdownMouseDown" @onmousedown:preventDefault>
+                                @if (_suggestions.Count == 0)
+                                {
+                                    <div class="p-2 small text-muted">Nenhum cliente encontrado.</div>
+                                }
+                                else
+                                {
+                                    @foreach (var c in _suggestions)
+                                    {
+                                        <div class="supplier-autocomplete-item px-2 py-1 small cursor-pointer" @onmousedown="async () => await SelectClientFromAutocomplete(c)">
+                                            <div class="fw-semibold">@c.SocialName</div>
+                                            @if (!string.IsNullOrEmpty(c.City) || !string.IsNullOrEmpty(c.State))
+                                            {
+                                                <div class="text-muted">@((string.IsNullOrEmpty(c.City) ? "" : c.City + " / ") + (c.State ?? ""))</div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="() => Buscar()" disabled="@_loading">@(_loading ? "Buscando..." : "Busca")</button>
+                </div>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Razão Social</th>
+                                <th>Localidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_loading && !_searched)
+                            {
+                                <tr><td colspan="2" class="text-muted text-center py-3">Carregando...</td></tr>
+                            }
+                            else if (_clientList.Count > 0)
+                            {
+                                @foreach (var c in _clientList)
+                                {
+                                    <tr role="button" class="@(_selectedClient?.Id == c.Id ? "table-primary" : "")" @onclick="() => SelecionarCliente(c)">
+                                        <td>@c.SocialName</td>
+                                        <td>@((c.City ?? "") + " / " + (c.State ?? ""))</td>
+                                    </tr>
+                                }
+                            }
+                            else if (_searched)
+                            {
+                                <tr><td colspan="2" class="text-muted text-center py-3">Nenhum cliente encontrado.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="row g-2 mb-2 align-items-end">
+                    <div class="col-md-6">
+                        <label class="form-label mb-1">Vendedor</label>
+                        <select class="form-select form-select-sm" @bind="_selectedSalesAgent">
+                            <option value="">Selecione</option>
+                            @foreach (var a in _salesAgents)
+                            {
+                                <option value="@a.UserName">@a.UserName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label mb-1">Modo</label>
+                        <div class="nova-os-mode-options d-flex flex-column gap-1">
+                            <label for="modeSale">
+                                <input type="radio" name="orderMode" id="modeSale"
+                                       checked="@(_orderMode == "S")" @onchange="@(() => SetOrderMode("S"))" />
+                                <span>Venda</span>
+                            </label>
+                            <label for="modeQuote">
+                                <input type="radio" name="orderMode" id="modeQuote"
+                                       checked="@(_orderMode == "Q")" @onchange="@(() => SetOrderMode("Q"))" />
+                                <span>Orçamento</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                @if (_validationMessage != null)
+                {
+                    <div class="alert alert-danger py-2 small">@_validationMessage</div>
+                }
+                @if (_selectedClient != null && _canCreate)
+                {
+                    <div class="mb-2">
+                        <button type="button" class="btn btn-success btn-sm" @onclick="CriarOs" disabled="@_creating">
+                            @(_creating ? "Criando..." : "Nova OS para " + _selectedClient.SocialName)
+                        </button>
+                    </div>
+                }
+            </div>
+            <div class="col-md-6">
+                <h6 class="mb-2">Últimos Pedidos</h6>
+                @if (_lastOrders.Count == 0 && !_loadingLastOrders)
+                {
+                    <p class="text-muted small">Nenhum pedido recente.</p>
+                }
+                else if (_loadingLastOrders)
+                {
+                    <p class="text-muted small">Carregando...</p>
+                }
+                else
+                {
+                    @foreach (var o in _lastOrders)
+                    {
+                        <div class="alert alert-info py-2 mb-2" style="background-color: ghostwhite; font-size: 0.9rem;" role="alert">
+                            <span style="color: @GetOrderModeColor(o.Mode)"><b>@o.ModeDescription</b></span><br />
+                            Pedido: <a href="/vendas/os/@o.OrderId" class="fw-bold">@o.OrderId</a><br />
+                            Cliente: @o.FantasyName<br />
+                            Status: <span style="color: @GetOrderStatusColor(o.Status)">@GetOrderStatusName(o.Status)</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+@code {
+    private string? _clientName;
+    private bool _loading;
+    private bool _searched;
+    private string? _errorMessage;
+    private string? _validationMessage;
+    private bool _creating;
+    private bool _canCreate;
+    private string _orderMode = "";
+
+    private IReadOnlyList<ClientSummaryDto> _suggestions = new List<ClientSummaryDto>();
+    private bool _showSuggestions;
+    private bool _loadingSuggestions;
+    private bool _selectingSuggestions;
+    private CancellationTokenSource? _debounceCts;
+
+    private List<ClientSummaryDto> _clientList = new();
+    private ClientSummaryDto? _selectedClient;
+
+    private List<SalesAgentDto> _salesAgents = new();
+    private string? _selectedSalesAgent;
+
+    private List<LastOrderDto> _lastOrders = new();
+    private bool _loadingLastOrders;
+    private string? _currentUserName;
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserName = state.User.Identity?.Name;
+        await CarregarVendedoresAsync();
+        await CarregarUltimosPedidosAsync();
+    }
+
+    private void SetOrderMode(string mode)
+    {
+        _orderMode = mode;
+        _validationMessage = null;
+    }
+
+    private async Task CarregarVendedoresAsync()
+    {
+        try
+        {
+            _salesAgents = (await OrderService.GetSalesAgentsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar vendedores: " + ex.Message;
+        }
+    }
+
+    private async Task CarregarUltimosPedidosAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserName)) return;
+        _loadingLastOrders = true;
+        try
+        {
+            _lastOrders = (await OrderService.GetLastOrdersBySalesAgentAsync(_currentUserName)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar últimos pedidos: " + ex.Message;
+        }
+        finally
+        {
+            _loadingLastOrders = false;
+        }
+    }
+
+    private async Task Buscar(int? selectClientId = null)
+    {
+        _errorMessage = null;
+        _validationMessage = null;
+        _selectedClient = null;
+        _canCreate = false;
+        _loading = true;
+        try
+        {
+            _clientList = (await ClientService.GetListAsync(new ClientFilterDto { Name = _clientName })).ToList();
+            _searched = true;
+            if (selectClientId is int clientId)
+            {
+                var match = _clientList.FirstOrDefault(x => x.Id == clientId);
+                if (match != null)
+                    await SelecionarClienteAsync(match);
+            }
+            else if (_clientList.Count == 1)
+            {
+                await SelecionarClienteAsync(_clientList[0]);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao buscar: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnNameChanged()
+    {
+        _showSuggestions = (_clientName?.Trim().Length ?? 0) >= 2;
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var ct = _debounceCts.Token;
+        if ((_clientName?.Trim().Length ?? 0) < 2)
+        {
+            _suggestions = new List<ClientSummaryDto>();
+            StateHasChanged();
+            return;
+        }
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        _loadingSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await ClientService.GetSuggestionsAsync(_clientName!.Trim(), 15, ct);
+            if (!ct.IsCancellationRequested) { _suggestions = list; _showSuggestions = true; }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested) { _loadingSuggestions = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task OnNameBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingSuggestions) _showSuggestions = false;
+        _selectingSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnDropdownMouseDown(MouseEventArgs _) => _selectingSuggestions = true;
+
+    private async Task SelectClientFromAutocomplete(ClientSummaryDto c)
+    {
+        _selectingSuggestions = true;
+        _showSuggestions = false;
+        _suggestions = new List<ClientSummaryDto>();
+        _clientName = c.SocialName;
+        await Buscar(c.Id);
+    }
+
+    private async Task SelecionarCliente(ClientSummaryDto c) => await SelecionarClienteAsync(c);
+
+    private async Task SelecionarClienteAsync(ClientSummaryDto c)
+    {
+        _selectedClient = c;
+        _validationMessage = null;
+        _canCreate = false;
+        try
+        {
+            if (await OrderService.IsClientDelinquentAsync(c.Id))
+            {
+                _validationMessage = "O Cliente tem parcelas vencidas!";
+                return;
+            }
+            _canCreate = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao verificar cliente: " + ex.Message;
+        }
+    }
+
+    private async Task CriarOs()
+    {
+        if (_selectedClient == null || !_canCreate) return;
+        if (_orderMode is not ("S" or "Q"))
+        {
+            _validationMessage = "Escolha o modo do pedido!";
+            return;
+        }
+
+        var salesAgent = !string.IsNullOrWhiteSpace(_selectedSalesAgent) ? _selectedSalesAgent : _currentUserName;
+        if (string.IsNullOrWhiteSpace(salesAgent))
+        {
+            _validationMessage = "Selecione o vendedor.";
+            return;
+        }
+
+        _validationMessage = null;
+        _errorMessage = null;
+        _creating = true;
+        try
+        {
+            var appId = Configuration["App:ApplicationId"] ?? Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+            var userId = _currentUserName ?? "SYS";
+            var orderId = await OrderService.CreateOrderAsync(
+                new CreateOrderDto
+                {
+                    ClientId = _selectedClient.Id,
+                    SalesAgent = salesAgent,
+                    OrderType = "P",
+                    Mode = _orderMode
+                },
+                appId, userId);
+            Navigation.NavigateTo($"/vendas/os/{orderId}");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao criar OS: " + ex.Message;
+        }
+        finally
+        {
+            _creating = false;
+        }
+    }
+
+    private static string GetOrderStatusName(string status) => status switch
+    {
+        "I" => "Incompleto",
+        "R" => "Reaberto",
+        "F" => "Fechado",
+        "C" => "Cancelado",
+        "E" => "Enviado",
+        _ => "Indefinido"
+    };
+
+    private static string GetOrderStatusColor(string status) => status switch
+    {
+        "I" => "#FF8800",
+        "R" => "green",
+        "F" => "black",
+        "C" => "red",
+        "E" => "blue",
+        _ => "black"
+    };
+
+    private static string GetOrderModeColor(string mode) => mode == "Q" ? "GREEN" : "blue";
+}

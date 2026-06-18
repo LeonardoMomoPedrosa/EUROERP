@@ -132,11 +132,11 @@ Note: Eurobus uses single “Geral” list (no separate Animais page).
 
 ## EPIC 8 — Service orders / OS (Vendas)
 
-**Story 8.1 — Nova OS — first screen** — **STATUS: Pending**  
+**Story 8.1 — Nova OS — first screen** — **STATUS: Done** *(Eurobus)*  
 Client + sales agent selection; recent OS list.  
 Legacy: `Eurobus4/principal/sales/new_sale_create_order_number.aspx`
 
-**Story 8.2 — OS editor (open status)** — **STATUS: Pending**  
+**Story 8.2 — OS editor (open status)** — **STATUS: Done** *(Eurobus)*  
 Cart, discounts, F2 product search, credit/shipment amounts.  
 Legacy: `Eurobus4/principal/sales/new_sale.aspx` and related components
 

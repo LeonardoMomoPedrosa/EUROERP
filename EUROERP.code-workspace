@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../LionAquaGitRef"
+		},
+		{
+			"path": "../ERPCOM3"
+		},
+		{
+			"path": "../Eurobus4"
+		}
+	],
+	"settings": {}
+}
