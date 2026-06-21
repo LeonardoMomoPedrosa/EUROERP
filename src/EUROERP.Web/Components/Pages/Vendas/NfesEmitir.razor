@@ -19,6 +19,7 @@
             {
                 <span>Emissão via Simpliss (Santana de Parnaíba) — layout nacional DPS, certificado digital.</span>
             }
+            A impressão da NFS-e consulta o webservice Simpliss (ou XML local), gera o DANFSe em PDF e abre para impressão.
         </p>
         <div class="row g-2 align-items-end mb-3">
             <div class="col-md-3">
@@ -27,10 +28,11 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Número RPS</label>
-                <input type="text" class="form-control form-control-sm" @bind="_rpsNumber" placeholder="Automático" />
+                <input type="text" class="form-control form-control-sm" @bind="_rpsNumber" readonly="@(!_isReprint)" />
             </div>
-            <div class="col-md-2">
-                <button type="button" class="btn btn-primary btn-sm w-100" @onclick="CarregarPreview" disabled="@_loading">@(_loading ? "..." : "Carregar")</button>
+            <div class="col-auto">
+                <label class="form-label d-block invisible" aria-hidden="true">&nbsp;</label>
+                <button type="button" class="btn btn-primary btn-sm px-2" @onclick="CarregarPreview" disabled="@_loading">@(_loading ? "..." : "Carregar")</button>
             </div>
         </div>
 
@@ -43,6 +45,16 @@
                 @if (!string.IsNullOrEmpty(_preview.NfesNo))
                 {
                     <div class="text-danger mt-1"><strong>NFES já emitida:</strong> @_preview.NfesNo</div>
+                    @if (!string.IsNullOrEmpty(_preview.PrintUrl))
+                    {
+                        <div class="mt-2">
+                            @if (!string.IsNullOrEmpty(_preview.NfesChaveAcesso))
+                            {
+                                <div class="mb-1"><strong>Chave NFS-e:</strong> <span class="font-monospace user-select-all">@_preview.NfesChaveAcesso</span></div>
+                            }
+                            <a class="btn btn-outline-primary btn-sm" href="@_preview.PrintUrl" target="_blank" rel="noopener noreferrer">Imprimir NFS-e (PDF)</a>
+                        </div>
+                    }
                 }
                 @if (!string.IsNullOrEmpty(_preview.BlockReason) && !_preview.CanEmit)
                 {
@@ -62,7 +74,19 @@
 
 @if (!string.IsNullOrEmpty(_message))
 {
-    <div class="alert @(_success ? "alert-success" : "alert-danger")">@_message</div>
+    <div class="alert @(_success ? "alert-success" : "alert-danger")">
+        @_message
+        @if (_success && !string.IsNullOrEmpty(_printUrl))
+        {
+            <div class="mt-2">
+                @if (!string.IsNullOrEmpty(_nfesChaveAcesso))
+                {
+                    <div class="mb-1"><strong>Chave NFS-e:</strong> <span class="font-monospace user-select-all">@_nfesChaveAcesso</span></div>
+                }
+                <a class="btn btn-outline-primary btn-sm" href="@_printUrl" target="_blank" rel="noopener noreferrer">Imprimir NFS-e (PDF)</a>
+            </div>
+        }
+    </div>
 }
 
 @code {
@@ -73,9 +97,20 @@
     private bool _emitting;
     private string? _message;
     private bool _success;
+    private string? _printUrl;
+    private string? _nfesChaveAcesso;
     private bool _isReprint => _rpsNumber.TrimStart().StartsWith("R", StringComparison.OrdinalIgnoreCase);
 
     [Inject] private INfesEmissionService NfesService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await RefreshRpsNumberAsync();
+
+    private async Task RefreshRpsNumberAsync()
+    {
+        if (_isReprint)
+            return;
+        _rpsNumber = (await NfesService.GetNextRpsNumberAsync()).ToString();
+    }
 
     private async Task OnOrderIdChanged()
     {
@@ -107,8 +142,10 @@
                 _success = false;
                 return;
             }
-            if (string.IsNullOrWhiteSpace(_rpsNumber))
-                _rpsNumber = (await NfesService.GetNextRpsNumberAsync()).ToString();
+            if (!_isReprint)
+                await RefreshRpsNumberAsync();
+            else if (string.IsNullOrWhiteSpace(_rpsNumber) && !string.IsNullOrWhiteSpace(_preview.RpsNo))
+                _rpsNumber = "R" + _preview.RpsNo;
         }
         catch (Exception ex)
         {
@@ -126,6 +163,8 @@
         if (!TryGetOrderId(out var orderId)) return;
         _emitting = true;
         _message = null;
+        _printUrl = null;
+        _nfesChaveAcesso = null;
         try
         {
             var result = await NfesService.EmitAsync(new EmitNfesRequest
@@ -134,11 +173,16 @@
                 RpsNumber = _rpsNumber
             });
             _success = result.Success;
+            _printUrl = result.PrintUrl;
+            _nfesChaveAcesso = result.NfesChaveAcesso;
             _message = result.Success
-                ? result.Message + (string.IsNullOrEmpty(result.CheckCode) ? "" : $" Código verificação: {result.CheckCode}")
+                ? result.Message
                 : result.Message;
             if (result.Success)
+            {
                 _preview = await NfesService.GetOrderPreviewAsync(orderId);
+                await RefreshRpsNumberAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -151,11 +195,13 @@
         }
     }
 
-    private void Limpar()
+    private async Task Limpar()
     {
         _orderIdText = "";
-        _rpsNumber = "";
         _preview = null;
         _message = null;
+        _printUrl = null;
+        _nfesChaveAcesso = null;
+        await RefreshRpsNumberAsync();
     }
 }

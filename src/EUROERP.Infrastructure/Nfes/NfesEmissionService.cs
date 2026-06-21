@@ -25,6 +25,7 @@ public class NfesEmissionService : INfesEmissionService
     private readonly INfesConfigProvider _configProvider;
     private readonly PrefeituraSpNfesBackend _prefeituraSpBackend;
     private readonly SimplissNfesBackend _simplissBackend;
+    private readonly INfesSimplissClient _simplissClient;
     private readonly ILogger<NfesEmissionService> _logger;
 
     public NfesEmissionService(
@@ -32,12 +33,14 @@ public class NfesEmissionService : INfesEmissionService
         INfesConfigProvider configProvider,
         PrefeituraSpNfesBackend prefeituraSpBackend,
         SimplissNfesBackend simplissBackend,
+        INfesSimplissClient simplissClient,
         ILogger<NfesEmissionService> logger)
     {
         _connection = connection;
         _configProvider = configProvider;
         _prefeituraSpBackend = prefeituraSpBackend;
         _simplissBackend = simplissBackend;
+        _simplissClient = simplissClient;
         _logger = logger;
     }
 
@@ -61,7 +64,11 @@ public class NfesEmissionService : INfesEmissionService
 
                 ISNULL(o.NFES_NO, '') AS NfesNo,
 
-                ISNULL(o.RPS_NO, '') AS RpsNo
+                ISNULL(o.RPS_NO, '') AS RpsNo,
+
+                ISNULL(o.NFES_CHECK_CODE, '') AS NfesCheckCode,
+
+                ISNULL(o.NFE_RECEIPT, '') AS NfeReceiptChave
 
             FROM [ORDER] o
 
@@ -101,9 +108,15 @@ public class NfesEmissionService : INfesEmissionService
 
             RpsNo = string.IsNullOrWhiteSpace(row.RpsNo) || row.RpsNo == "0" ? null : row.RpsNo.Trim(),
 
+            NfesCheckCode = string.IsNullOrWhiteSpace(row.NfesCheckCode) ? null : row.NfesCheckCode.Trim(),
+
+            NfesChaveAcesso = ResolveSimplissChave(row.NfeReceiptChave, row.NfesCheckCode, nfesConfig.UseSimpliss),
+
             Provider = nfesConfig.Provider
 
         };
+
+        preview.PrintUrl = BuildPrintUrl(nfesConfig, orderId, preview.NfesNo, preview.NfesCheckCode, preview.NfesChaveAcesso);
 
 
 
@@ -147,6 +160,54 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
+    private async Task<int> ResolveRpsNumberAsync(string requestRps, bool reprint, CancellationToken cancellationToken)
+
+    {
+
+        if (!reprint)
+
+            return await GetNextRpsNumberAsync(cancellationToken).ConfigureAwait(false);
+
+
+
+        var rpsText = requestRps.Trim();
+
+        if (rpsText.StartsWith("R", StringComparison.OrdinalIgnoreCase))
+
+            rpsText = rpsText[1..];
+
+        if (int.TryParse(rpsText, out var rpsNumber) && rpsNumber > 0)
+
+            return rpsNumber;
+
+
+
+        return await GetNextRpsNumberAsync(cancellationToken).ConfigureAwait(false);
+
+    }
+
+
+
+    private async Task SetSysControlRpsNoAsync(int nextRps, IDbTransaction? tx, CancellationToken cancellationToken)
+
+    {
+
+        const string sql = "UPDATE SYS_CONTROL SET value = @Value WHERE CODE = 'RPS_NO'";
+
+        await _connection.ExecuteAsync(
+
+            new CommandDefinition(sql, new { Value = nextRps.ToString(CultureInfo.InvariantCulture) }, tx, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    }
+
+
+
+    private static bool IsDuplicateDpsError(string? message) =>
+
+        message?.Contains("E0014", StringComparison.OrdinalIgnoreCase) == true;
+
+
+
     public async Task<EmitNfesResult> EmitAsync(EmitNfesRequest request, CancellationToken cancellationToken = default)
 
     {
@@ -167,15 +228,7 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
-        var rpsText = request.RpsNumber.Trim();
-
-        if (rpsText.StartsWith("R", StringComparison.OrdinalIgnoreCase))
-
-            rpsText = rpsText[1..];
-
-        if (!int.TryParse(rpsText, out var rpsNumber) || rpsNumber <= 0)
-
-            rpsNumber = await GetNextRpsNumberAsync(cancellationToken).ConfigureAwait(false);
+        var rpsNumber = await ResolveRpsNumberAsync(request.RpsNumber, reprint, cancellationToken).ConfigureAwait(false);
 
 
 
@@ -189,35 +242,71 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
-            using var tx = _connection.BeginTransaction();
-
-            try
+            for (var attempt = 0; attempt < 2; attempt++)
 
             {
 
-                var result = await EmitCoreAsync(request.OrderId, rpsNumber, reprint, tx, cancellationToken).ConfigureAwait(false);
+                using var tx = _connection.BeginTransaction();
 
-                if (result.Success)
+                try
 
-                    tx.Commit();
+                {
 
-                else
+                    var result = await EmitCoreAsync(request.OrderId, rpsNumber, reprint, tx, cancellationToken).ConfigureAwait(false);
+
+                    if (result.Success)
+
+                    {
+
+                        tx.Commit();
+
+                        return result;
+
+                    }
+
+
 
                     tx.Rollback();
 
-                return result;
+
+
+                    if (attempt == 0 && !reprint && IsDuplicateDpsError(result.Message))
+
+                    {
+
+                        rpsNumber++;
+
+                        _logger.LogWarning(
+
+                            "NFES E0014 on order {OrderId}; retrying with RPS {RpsNumber} (counter advances only after success)",
+
+                            request.OrderId, rpsNumber);
+
+                        continue;
+
+                    }
+
+
+
+                    return result;
+
+                }
+
+                catch
+
+                {
+
+                    tx.Rollback();
+
+                    throw;
+
+                }
 
             }
 
-            catch
 
-            {
 
-                tx.Rollback();
-
-                throw;
-
-            }
+            return Fail("Não foi possível emitir a NFS-e após tentativa com novo número RPS.");
 
         }
 
@@ -312,9 +401,23 @@ public class NfesEmissionService : INfesEmissionService
 
         const string updOrder = @"
 
-            UPDATE [ORDER] SET RPS_NO = @RpsNo, NFES_NO = @NfesNo, NFES_CHECK_CODE = @CheckCode
+            UPDATE [ORDER] SET RPS_NO = @RpsNo, NFES_NO = @NfesNo, NFES_CHECK_CODE = @CheckCode,
+
+                NFE_RECEIPT = CASE
+
+                    WHEN @ChaveAcesso IS NOT NULL AND @ChaveAcesso <> ''
+
+                         AND (NFE_RECEIPT IS NULL OR LTRIM(RTRIM(NFE_RECEIPT)) = '')
+
+                    THEN @ChaveAcesso
+
+                    ELSE NFE_RECEIPT
+
+                END
 
             WHERE PKId = @OrderId";
+
+        var chaveAcesso = nfesConfig.UseSimpliss ? NfesTextHelper.FitDb(outcome.ChaveAcesso, 100) : null;
 
         await _connection.ExecuteAsync(
 
@@ -324,11 +427,13 @@ public class NfesEmissionService : INfesEmissionService
 
                 OrderId = orderId,
 
-                RpsNo = outcome.RpsNo,
+                RpsNo = NfesTextHelper.FitDb(outcome.RpsNo, 15),
 
-                NfesNo = outcome.NfesNo,
+                NfesNo = NfesTextHelper.FitDb(outcome.NfesNo, 15),
 
-                CheckCode = outcome.CheckCode ?? ""
+                CheckCode = NfesTextHelper.FitDb(outcome.CheckCode, 20),
+
+                ChaveAcesso = string.IsNullOrEmpty(chaveAcesso) ? null : chaveAcesso
 
             }, tx, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -388,11 +493,7 @@ public class NfesEmissionService : INfesEmissionService
 
         {
 
-            const string updRps = "UPDATE SYS_CONTROL SET value = @NextRps WHERE CODE = 'RPS_NO'";
-
-            await _connection.ExecuteAsync(
-
-                new CommandDefinition(updRps, new { NextRps = (rpsNumber + 1).ToString(CultureInfo.InvariantCulture) }, tx, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            await SetSysControlRpsNoAsync(rpsNumber + 1, tx, cancellationToken).ConfigureAwait(false);
 
         }
 
@@ -411,6 +512,10 @@ public class NfesEmissionService : INfesEmissionService
             RpsNo = outcome.RpsNo,
 
             CheckCode = outcome.CheckCode,
+
+            NfesChaveAcesso = outcome.ChaveAcesso,
+
+            PrintUrl = BuildPrintUrl(nfesConfig, orderId, outcome.NfesNo, outcome.CheckCode, outcome.ChaveAcesso, outcome.PdfUrl),
 
             XmlResponsePath = outcome.XmlPath
 
@@ -613,7 +718,115 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
+    public async Task<NfesPrintPdfResult> GetDanfsePdfAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        var preview = await GetOrderPreviewAsync(orderId, cancellationToken).ConfigureAwait(false);
+        if (preview == null)
+            return FailPrint("Pedido não encontrado.");
+
+        var nfesConfig = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (!nfesConfig.UseSimpliss)
+            return FailPrint("Impressão via ERP disponível apenas para NFS-e Simpliss (layout nacional).");
+
+        var chave = preview.NfesChaveAcesso;
+        if (string.IsNullOrWhiteSpace(chave))
+            return FailPrint("Pedido sem chave de acesso NFS-e para impressão.");
+
+        string? xml = await TryLoadLocalNfseXmlAsync(orderId, nfesConfig, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(xml))
+        {
+            var consult = await _simplissClient.GetNfseByChaveAsync(chave, cancellationToken).ConfigureAwait(false);
+            if (!consult.Success || string.IsNullOrWhiteSpace(consult.NfseXml))
+                return FailPrint(consult.ErrorMessage ?? "Não foi possível obter a NFS-e no webservice Simpliss.");
+
+            xml = consult.NfseXml;
+            await TrySaveLocalNfseXmlAsync(orderId, nfesConfig, xml, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var pdf = NfesDanfsePdfGenerator.Generate(xml);
+            var fileName = $"danfse_{orderId}_{preview.NfesNo ?? "nfse"}.pdf";
+            return new NfesPrintPdfResult { Success = true, PdfBytes = pdf, FileName = fileName };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DANFSe PDF generation failed for order {OrderId}", orderId);
+            return FailPrint($"Falha ao gerar PDF: {ex.Message}");
+        }
+    }
+
+    private static async Task<string?> TryLoadLocalNfseXmlAsync(int orderId, NfesConfigSnapshot config, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(config.XmlPath))
+            return null;
+
+        var path = Path.Combine(config.XmlPath, "S" + orderId, orderId + "-nfse.xml");
+        if (!File.Exists(path))
+            return null;
+
+        return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task TrySaveLocalNfseXmlAsync(int orderId, NfesConfigSnapshot config, string xml, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(config.XmlPath))
+            return;
+
+        try
+        {
+            var folder = Path.Combine(config.XmlPath, "S" + orderId);
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, orderId + "-nfse.xml");
+            if (!File.Exists(path))
+                await File.WriteAllTextAsync(path, xml, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Non-fatal: printing still succeeded.
+        }
+    }
+
+    private static string? BuildPrintUrl(
+        NfesConfigSnapshot config,
+        int orderId,
+        string? nfesNo,
+        string? checkCode,
+        string? chaveAcesso,
+        string? pdfUrl = null)
+    {
+        if (config.UseSimpliss && !string.IsNullOrWhiteSpace(chaveAcesso) && chaveAcesso.StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
+            return $"/api/nfes/imprimir?orderId={orderId}";
+
+        return NfesPrintUrlBuilder.Build(config, nfesNo, checkCode, pdfUrl, chaveAcesso);
+    }
+
+    private static NfesPrintPdfResult FailPrint(string message) =>
+        new() { Success = false, Message = message };
+
     private static EmitNfesResult Fail(string message) => new() { Success = false, Message = message };
+
+
+
+    private static string? ResolveSimplissChave(string? nfeReceipt, string? checkCode, bool useSimpliss)
+
+    {
+
+        if (!useSimpliss)
+
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(nfeReceipt) && nfeReceipt.TrimStart().StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
+
+            return nfeReceipt.Trim();
+
+        if (!string.IsNullOrWhiteSpace(checkCode) && checkCode.TrimStart().StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
+
+            return checkCode.Trim();
+
+        return null;
+
+    }
 
 
 
@@ -632,6 +845,10 @@ public class NfesEmissionService : INfesEmissionService
         public string? NfesNo { get; init; }
 
         public string? RpsNo { get; init; }
+
+        public string? NfesCheckCode { get; init; }
+
+        public string? NfeReceiptChave { get; init; }
 
     }
 

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using EUROERP.Application;
 using EUROERP.Application.Address;
 using EUROERP.Application.Auth;
+using EUROERP.Application.Nfes;
 using EUROERP.Application.Products;
 using EUROERP.Infrastructure;
 using EUROERP.Infrastructure.Address;
@@ -127,6 +128,18 @@ app.MapGet("/api/productlist/export/excel", async (HttpRequest request, IProduct
     var prefix = mode == "stock" ? "saldos" : "precos";
     var fileName = $"{prefix}_{DateTime.Today:yyyyMMdd}.xlsx";
     return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+}).RequireAuthorization();
+
+app.MapGet("/api/nfes/imprimir", async (HttpRequest request, INfesEmissionService nfesService) =>
+{
+    if (!int.TryParse(request.Query["orderId"], out var orderId) || orderId <= 0)
+        return Results.BadRequest("Informe orderId válido.");
+
+    var result = await nfesService.GetDanfsePdfAsync(orderId);
+    if (!result.Success || result.PdfBytes == null)
+        return Results.Problem(detail: result.Message, statusCode: StatusCodes.Status400BadRequest);
+
+    return Results.File(result.PdfBytes, "application/pdf");
 }).RequireAuthorization();
 
 app.MapRazorComponents<App>()

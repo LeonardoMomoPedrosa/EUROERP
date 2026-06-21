@@ -12,3 +12,6 @@
 *.nupkg
 **/packages/*
 !**/packages/build/
+
+# Secrets / keys
+*.pem

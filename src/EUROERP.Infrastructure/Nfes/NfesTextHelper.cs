@@ -20,6 +20,9 @@ internal static class NfesTextHelper
     public static string Substring(string input, int len) =>
         input.Length > len ? input[..len] : input;
 
+    public static string FitDb(string? value, int maxLen) =>
+        string.IsNullOrEmpty(value) ? "" : Substring(value.Trim(), maxLen);
+
     public static string CleanDigits(string input)
     {
         var result = input.Replace(" - ", "", StringComparison.Ordinal)
@@ -31,6 +34,10 @@ internal static class NfesTextHelper
             .Replace(".", "", StringComparison.Ordinal);
         return result.Trim();
     }
+
+    /// <summary>Brazil (UTC-3) emission instant, slightly in the past to satisfy E0008 (dhEmi &lt;= dhProc).</summary>
+    public static DateTimeOffset GetBrazilEmissionInstant(int skewSeconds = 60) =>
+        DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-3)).AddSeconds(-skewSeconds);
 
     public static string CleanStringToXml(string input, int len)
     {
