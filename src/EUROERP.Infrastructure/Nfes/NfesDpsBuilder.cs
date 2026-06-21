@@ -34,9 +34,9 @@ internal static class NfesDpsBuilder
         var nDps = BuildNDps(work.RpsNumber);
         var idDps = $"DPS{codMun}{tpInscPrestador}{emitCnpj.PadLeft(14, '0')[^14..]}{serie}{nDps}";
         var discriminacao = BuildDiscriminacao(work);
-        var now = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(-3)).AddSeconds(-5);
-        var dhEmi = now.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
-        var dCompet = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var emission = NfesTextHelper.GetBrazilEmissionInstant();
+        var dhEmi = emission.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
+        var dCompet = emission.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var cMunTomador = NfesTextHelper.CleanDigits(work.Client.CMun ?? codMun);
         var cepTomador = NfesTextHelper.CleanDigits(work.Client.AddressZipCode ?? "0").PadLeft(8, '0')[^8..];
         var email = NfesTextHelper.Substring((work.Client.Email ?? "").Split('/')[0].Trim(), 80);

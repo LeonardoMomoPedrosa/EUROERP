@@ -100,12 +100,15 @@ public sealed class PrefeituraSpNfesBackend : INfesEmissionBackend
             return NfesEmissionOutcome.Fail("Resposta sem chave NFES.");
 
         var chaveNfe = response.ChaveNFeRPS[0];
+        var nfesNo = chaveNfe.ChaveNFe.NumeroNFe.ToString(CultureInfo.InvariantCulture);
+        var checkCode = chaveNfe.ChaveNFe.CodigoVerificacao ?? "";
         return new NfesEmissionOutcome
         {
             Success = true,
-            NfesNo = chaveNfe.ChaveNFe.NumeroNFe.ToString(CultureInfo.InvariantCulture),
+            NfesNo = nfesNo,
             RpsNo = chaveNfe.ChaveRPS.NumeroRPS.ToString(CultureInfo.InvariantCulture),
-            CheckCode = chaveNfe.ChaveNFe.CodigoVerificacao ?? "",
+            CheckCode = checkCode,
+            PdfUrl = NfesPrintUrlBuilder.Build(config, nfesNo, checkCode, chaveAcesso: null),
             XmlPath = xmlPath,
             Message = "NFe de Serviços enviada com sucesso."
         };

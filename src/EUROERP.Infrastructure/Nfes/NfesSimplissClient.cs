@@ -68,6 +68,16 @@ internal static class NfesDpsXmlSupport
 public interface INfesSimplissClient
 {
     Task<SimplissEmitResponse> EmitDpsAsync(string signedDpsXml, CancellationToken cancellationToken = default);
+    Task<SimplissConsultResponse> GetNfseByChaveAsync(string chaveAcesso, CancellationToken cancellationToken = default);
+}
+
+public sealed class SimplissConsultResponse
+{
+    public bool Success { get; init; }
+    public string? ChaveAcesso { get; init; }
+    public string? NfseXml { get; init; }
+    public string? PdfUrl { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 public sealed class SimplissEmitResponse
@@ -76,6 +86,7 @@ public sealed class SimplissEmitResponse
     public string? ChaveAcesso { get; init; }
     public string? IdDps { get; init; }
     public string? NfseXml { get; init; }
+    public string? PdfUrl { get; init; }
     public string? ErrorMessage { get; init; }
 }
 
@@ -93,22 +104,98 @@ public class NfesSimplissClient : INfesSimplissClient
     public async Task<SimplissEmitResponse> EmitDpsAsync(string signedDpsXml, CancellationToken cancellationToken = default)
     {
         var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var baseUrl = config.IsTestEnvironment ? config.ApiBaseUrlHomolog : config.ApiBaseUrl;
-        baseUrl = baseUrl.TrimEnd('/');
-        var url = baseUrl + (string.IsNullOrWhiteSpace(config.ApiEmitPath) ? "/nfse" : config.ApiEmitPath);
+        var baseUrl = ResolveApiBaseUrl(config);
+        var emitPath = string.IsNullOrWhiteSpace(config.ApiEmitPath) ? "/nfse" : config.ApiEmitPath;
+        var url = baseUrl + emitPath;
 
         var payload = JsonSerializer.Serialize(new { dpsXmlGZipB64 = NfesDpsXmlSupport.ToGzipBase64(signedDpsXml) });
-        var cert = _certificateProvider.GetCertificate();
-
-        using var handler = new HttpClientHandler();
-        handler.ClientCertificates.Add(cert);
-        handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-
-        using var client = new HttpClient(handler);
+        using var client = CreateHttpClient(config);
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
         var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
+        return MapEmitResponse(response, responseText);
+    }
+
+    public async Task<SimplissConsultResponse> GetNfseByChaveAsync(string chaveAcesso, CancellationToken cancellationToken = default)
+    {
+        chaveAcesso = chaveAcesso?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(chaveAcesso))
+            return new SimplissConsultResponse { Success = false, ErrorMessage = "Chave de acesso NFS-e não informada." };
+
+        var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var baseUrl = ResolveApiBaseUrl(config);
+        var emitPath = string.IsNullOrWhiteSpace(config.ApiEmitPath) ? "/nfse" : config.ApiEmitPath.TrimEnd('/');
+        var url = $"{baseUrl}{emitPath}/{Uri.EscapeDataString(chaveAcesso)}";
+
+        using var client = CreateHttpClient(config);
+        using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        SimplissApiResponse? body;
+        try
+        {
+            body = JsonSerializer.Deserialize<SimplissApiResponse>(responseText, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            return new SimplissConsultResponse
+            {
+                Success = false,
+                ErrorMessage = $"Resposta inválida ({(int)response.StatusCode}): {ex.Message}"
+            };
+        }
+
+        if (body?.Erros is { Count: > 0 })
+        {
+            var msg = string.Join(Environment.NewLine, body.Erros.Select(e =>
+                $"Erro {e.Codigo}: {e.Descricao} {e.Complemento}".Trim()));
+            return new SimplissConsultResponse { Success = false, ErrorMessage = msg };
+        }
+
+        if (!response.IsSuccessStatusCode)
+            return new SimplissConsultResponse
+            {
+                Success = false,
+                ErrorMessage = $"HTTP {(int)response.StatusCode}: {responseText}"
+            };
+
+        string? xml = null;
+        if (!string.IsNullOrWhiteSpace(body?.NfseXmlGZipB64))
+        {
+            try { xml = NfesDpsXmlSupport.FromGzipBase64(body.NfseXmlGZipB64); }
+            catch (Exception ex)
+            {
+                return new SimplissConsultResponse { Success = false, ErrorMessage = $"XML NFS-e inválido: {ex.Message}" };
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(xml))
+            return new SimplissConsultResponse { Success = false, ErrorMessage = "Webservice não retornou XML da NFS-e." };
+
+        return new SimplissConsultResponse
+        {
+            Success = true,
+            ChaveAcesso = body?.ChaveAcesso?.Trim() ?? chaveAcesso,
+            NfseXml = xml,
+            PdfUrl = body?.UrlPdf
+        };
+    }
+
+    private static string ResolveApiBaseUrl(NfesConfigSnapshot config) =>
+        (config.IsTestEnvironment ? config.ApiBaseUrlHomolog : config.ApiBaseUrl).TrimEnd('/');
+
+    private HttpClient CreateHttpClient(NfesConfigSnapshot config)
+    {
+        var cert = _certificateProvider.GetCertificate();
+        var handler = new HttpClientHandler();
+        handler.ClientCertificates.Add(cert);
+        handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        return new HttpClient(handler);
+    }
+
+    private static SimplissEmitResponse MapEmitResponse(HttpResponseMessage response, string responseText)
+    {
         SimplissApiResponse? body;
         try
         {
@@ -130,7 +217,7 @@ public class NfesSimplissClient : INfesSimplissClient
                 ErrorMessage = $"Resposta vazia ({(int)response.StatusCode})."
             };
 
-        if (body?.Erros is { Count: > 0 })
+        if (body.Erros is { Count: > 0 })
         {
             var msg = string.Join(Environment.NewLine, body.Erros.Select(e =>
                 $"Erro {e.Codigo}: {e.Descricao} {e.Complemento}".Trim()));
@@ -157,7 +244,8 @@ public class NfesSimplissClient : INfesSimplissClient
             Success = true,
             ChaveAcesso = body.ChaveAcesso,
             IdDps = body.IdDps,
-            NfseXml = xml
+            NfseXml = xml,
+            PdfUrl = body.UrlPdf
         };
     }
 
@@ -199,6 +287,14 @@ public class NfesSimplissClient : INfesSimplissClient
 
 internal static class NfesNfseXmlParser
 {
+    public static string? ParseChaveAcesso(string nfseXml)
+    {
+        var doc = new XmlDocument();
+        doc.LoadXml(nfseXml);
+        var id = doc.GetElementsByTagName("infNFSe").Cast<XmlElement>().FirstOrDefault()?.GetAttribute("Id");
+        return string.IsNullOrWhiteSpace(id) ? null : id.Trim();
+    }
+
     public static (string? Numero, string? CodigoVerificacao) ParseAuthorizedNfse(string nfseXml)
     {
         var doc = new XmlDocument();
