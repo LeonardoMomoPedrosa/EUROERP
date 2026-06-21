@@ -41,8 +41,9 @@ Compared to Aquanimal / ERPCOM3 menu:
 | **Atendimento (CALL)** | `principal/call/*` |
 | **Clientes: Créditos, Frota, Higienização** | `clients/credit`, `clients/car`, `clients/higienic_list*` |
 | **Entrada em lote** | `stock/stock_in2.aspx` |
-| **NFe: Cancelar NFES (batch)** | `sales/nfe/cancel_nfes.aspx` |
 | **NFe: Enviar NFe** | `receipt.aspx` (Eurobus) vs `receiptSync.aspx` (Aquanimal) — follow **Eurobus4** |
+| **NFe: NFES (NFS-e serviços)** | `receipt.aspx` → `printNFEServices` — Prefeitura SP, not SEFAZ; **interim EUROERP target** while legacy handles rest |
+| **NFe: Cancelar NFES (batch)** | `sales/nfe/cancel_nfes.aspx` |
 | **Mercados (users)** | `manager/members/userMarket.aspx` — table `MARKET*` |
 
 ## Shared with ERPCOM3 (reuse patterns)

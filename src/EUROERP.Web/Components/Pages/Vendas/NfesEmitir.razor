@@ -1,0 +1,161 @@
+@page "/vendas/nfe/nfes"
+@using EUROERP.Application.Nfes
+@rendermode InteractiveServer
+
+<PageTitle>Enviar NFES</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">NFe de Serviços (NFES)</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Informe o número da OS fechada no Eurobus (status Fechado ou Enviado).
+            @if (_preview?.Provider is not null)
+            {
+                <span>Provedor: <strong>@_preview.Provider</strong> (Santana de Parnaíba — Simpliss / layout nacional DPS).</span>
+            }
+            else
+            {
+                <span>Emissão via Simpliss (Santana de Parnaíba) — layout nacional DPS, certificado digital.</span>
+            }
+        </p>
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-3">
+                <label class="form-label">Número da OS</label>
+                <input type="text" inputmode="numeric" class="form-control form-control-sm" @bind="_orderIdText" @bind:after="OnOrderIdChanged" placeholder="Ex: 24783" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Número RPS</label>
+                <input type="text" class="form-control form-control-sm" @bind="_rpsNumber" placeholder="Automático" />
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-primary btn-sm w-100" @onclick="CarregarPreview" disabled="@_loading">@(_loading ? "..." : "Carregar")</button>
+            </div>
+        </div>
+
+        @if (_preview != null)
+        {
+            <div class="border rounded p-3 mb-3 small bg-light">
+                <div><strong>Cliente:</strong> @_preview.ClientName <span class="text-muted">(#@_preview.ClientId)</span></div>
+                <div><strong>Status:</strong> @_preview.Status</div>
+                <div><strong>Total serviços:</strong> <span class="text-success fw-semibold">R$ @_preview.ServiceTotal.ToString("N2")</span></div>
+                @if (!string.IsNullOrEmpty(_preview.NfesNo))
+                {
+                    <div class="text-danger mt-1"><strong>NFES já emitida:</strong> @_preview.NfesNo</div>
+                }
+                @if (!string.IsNullOrEmpty(_preview.BlockReason) && !_preview.CanEmit)
+                {
+                    <div class="text-warning mt-1">@_preview.BlockReason</div>
+                }
+            </div>
+        }
+
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-success btn-sm" @onclick="Emitir" disabled="@(_emitting || _preview == null || (!_preview.CanEmit && !_isReprint))">
+                @(_emitting ? "Enviando..." : "Enviar NFE de Serviços")
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Limpar">Limpar</button>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_success ? "alert-success" : "alert-danger")">@_message</div>
+}
+
+@code {
+    private string _orderIdText = "";
+    private string _rpsNumber = "";
+    private NfesOrderPreviewDto? _preview;
+    private bool _loading;
+    private bool _emitting;
+    private string? _message;
+    private bool _success;
+    private bool _isReprint => _rpsNumber.TrimStart().StartsWith("R", StringComparison.OrdinalIgnoreCase);
+
+    [Inject] private INfesEmissionService NfesService { get; set; } = null!;
+
+    private async Task OnOrderIdChanged()
+    {
+        if (!TryGetOrderId(out _))
+        {
+            _preview = null;
+            return;
+        }
+        await CarregarPreview();
+    }
+
+    private bool TryGetOrderId(out int orderId)
+    {
+        orderId = 0;
+        return int.TryParse(_orderIdText.Trim(), out orderId) && orderId > 0;
+    }
+
+    private async Task CarregarPreview()
+    {
+        if (!TryGetOrderId(out var orderId)) return;
+        _loading = true;
+        _message = null;
+        try
+        {
+            _preview = await NfesService.GetOrderPreviewAsync(orderId);
+            if (_preview == null)
+            {
+                _message = "OS não encontrada.";
+                _success = false;
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(_rpsNumber))
+                _rpsNumber = (await NfesService.GetNextRpsNumberAsync()).ToString();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _success = false;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Emitir()
+    {
+        if (!TryGetOrderId(out var orderId)) return;
+        _emitting = true;
+        _message = null;
+        try
+        {
+            var result = await NfesService.EmitAsync(new EmitNfesRequest
+            {
+                OrderId = orderId,
+                RpsNumber = _rpsNumber
+            });
+            _success = result.Success;
+            _message = result.Success
+                ? result.Message + (string.IsNullOrEmpty(result.CheckCode) ? "" : $" Código verificação: {result.CheckCode}")
+                : result.Message;
+            if (result.Success)
+                _preview = await NfesService.GetOrderPreviewAsync(orderId);
+        }
+        catch (Exception ex)
+        {
+            _success = false;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _emitting = false;
+        }
+    }
+
+    private void Limpar()
+    {
+        _orderIdText = "";
+        _rpsNumber = "";
+        _preview = null;
+        _message = null;
+    }
+}

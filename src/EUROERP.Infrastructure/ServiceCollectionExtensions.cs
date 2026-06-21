@@ -8,6 +8,10 @@ using EUROERP.Application.Orders;
 using EUROERP.Application.Stock;
 using EUROERP.Application.Suppliers;
 using EUROERP.Application.Warranty;
+using EUROERP.Application.Config;
+using EUROERP.Application.Nfes;
+using EUROERP.Infrastructure.Config;
+using EUROERP.Infrastructure.Nfes;
 using EUROERP.Infrastructure.Address;
 using EUROERP.Infrastructure.Auth;
 using EUROERP.Infrastructure.Clients;
@@ -50,6 +54,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
         services.AddScoped<IPurchaseStockService, PurchaseStockService>();
         services.AddScoped<ICityResolutionService, CityResolutionService>();
+        services.AddScoped<ISysControlService, SysControlService>();
+        services.AddScoped<NfesConfigService>();
+        services.AddScoped<INfesConfigService>(sp => sp.GetRequiredService<NfesConfigService>());
+        services.AddScoped<INfesConfigProvider>(sp => sp.GetRequiredService<NfesConfigService>());
+        services.AddScoped<INfesCertificateProvider, NfesCertificateProvider>();
+        services.AddScoped<INfesPrefeituraClient, NfesPrefeituraClient>();
+        services.AddScoped<INfesSimplissClient, NfesSimplissClient>();
+        services.AddScoped<PrefeituraSpNfesBackend>();
+        services.AddScoped<SimplissNfesBackend>();
+        services.AddScoped<INfesEmissionService, NfesEmissionService>();
         return services;
     }
 }

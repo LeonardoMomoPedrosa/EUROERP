@@ -1,0 +1,230 @@
+@page "/diretoria/admin/nfes-config"
+@using EUROERP.Application.Nfes
+@rendermode InteractiveServer
+
+<PageTitle>Configuração NFES</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Configuração NFES (SYS_CONTROL)</h5>
+        <a class="btn btn-outline-primary btn-sm" href="/vendas/nfe/nfes">Ir para Enviar NFES</a>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">
+            Parâmetros gravados na tabela <code>SYS_CONTROL</code> (máx. 50 caracteres por valor).
+            Se um código não existir no banco, usa <code>appsettings</code> como padrão até salvar.
+        </p>
+
+        @if (_loading)
+        {
+            <p class="text-muted">Carregando...</p>
+        }
+        else
+        {
+            <EditForm Model="_model" OnValidSubmit="Salvar">
+                <div class="row g-3">
+                    <div class="col-12"><h6 class="border-bottom pb-1">Provedor e ambiente</h6></div>
+                    <div class="col-md-4">
+                        <label class="form-label">Provedor</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="_model.Provider">
+                            <option value="Simpliss">Simpliss (layout nacional DPS)</option>
+                            <option value="PrefeituraSp">Prefeitura de São Paulo (RPS)</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ambiente</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="_model.Environment">
+                            <option value="test">Homologação / teste</option>
+                            <option value="prod">Produção</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Código IBGE município</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.CodigoMunicipio" maxlength="50" />
+                    </div>
+
+                    <div class="col-12 mt-2"><h6 class="border-bottom pb-1">Emitente</h6></div>
+                    <div class="col-md-4">
+                        <label class="form-label">CNPJ</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.EmitCnpj" maxlength="50" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Inscrição municipal</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.EmitIMun" maxlength="50" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Série DPS / RPS</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.SerieDps" maxlength="50" />
+                    </div>
+
+                    <div class="col-12 mt-2"><h6 class="border-bottom pb-1">Webservice</h6></div>
+                    <div class="col-md-6">
+                        <label class="form-label">URL API produção (Simpliss)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.ApiBaseUrl" maxlength="50" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">URL API homologação</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.ApiBaseUrlHomolog" maxlength="50" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Caminho emissão (ex. /nfse)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.ApiEmitPath" maxlength="50" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">URL Prefeitura SP (lote RPS)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.LoteNfeUrl" maxlength="50" />
+                    </div>
+
+                    <div class="col-12 mt-2"><h6 class="border-bottom pb-1">Certificado e arquivos</h6></div>
+                    <div class="col-md-6">
+                        <label class="form-label">Caminho certificado PFX</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.CertPath" maxlength="50" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Senha do certificado</label>
+                        <InputText type="password" class="form-control form-control-sm" @bind-Value="_model.CertPassword" maxlength="50"
+                                   placeholder="@(_model.CertPasswordConfigured ? "(configurada — deixe em branco para manter)" : "")" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Pasta XML</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.XmlPath" maxlength="50" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Pasta schemas</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.SchemaPath" maxlength="50" />
+                    </div>
+
+                    <div class="col-12 mt-2"><h6 class="border-bottom pb-1">Serviço e tributação</h6></div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cód. tributação nacional (cTribNac)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.CodigoTributacaoNacional" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cód. tributação municipal (cTribMun)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.CodigoTributacaoMunicipal" maxlength="50"
+                                   placeholder="opcional — em branco omite a tag no XML" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Código NBS</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.CodigoNbs" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cód. serviço SP (legado)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.ServiceCode" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Alíquota ISS (%)</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.ServiceTax" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Opção Simples Nacional</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="_model.OpSimpNac">
+                            <option value="1">1 — Não optante</option>
+                            <option value="2">2 — MEI</option>
+                            <option value="3">3 — ME/EPP</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Regime especial tributação</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.RegEspTrib" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">% tot. trib. Simples</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.PercentualTotTribSn" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Versão DPS</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.VersaoDps" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Versão aplicativo</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.VersaoAplicativo" maxlength="50" />
+                    </div>
+
+                    <div class="col-12 mt-2"><h6 class="border-bottom pb-1">IBS/CBS (reforma tributária)</h6></div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="_model.IncludeIbsCbs" id="ibsCbs" />
+                            <label class="form-check-label" for="ibsCbs">Incluir grupo IBSCBS</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">cIndOp</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.IbsCbsIndOp" maxlength="50" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">CST</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.IbsCbsCst" maxlength="50" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">cClassTrib</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="_model.IbsCbsClassTrib" maxlength="50" />
+                    </div>
+                </div>
+
+                <div class="mt-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Recarregar" disabled="@_saving">Recarregar</button>
+                </div>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_success ? "alert-success" : "alert-danger")">@_message</div>
+}
+
+@code {
+    private NfesConfigDto _model = new();
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private bool _success;
+
+    [Inject] private INfesConfigService ConfigService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await Recarregar();
+
+    private async Task Recarregar()
+    {
+        _loading = true;
+        _message = null;
+        try
+        {
+            _model = await ConfigService.GetConfigAsync();
+        }
+        catch (Exception ex)
+        {
+            _success = false;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Salvar()
+    {
+        _saving = true;
+        _message = null;
+        try
+        {
+            await ConfigService.SaveConfigAsync(_model);
+            _model = await ConfigService.GetConfigAsync();
+            _success = true;
+            _message = "Configuração NFES salva em SYS_CONTROL.";
+        }
+        catch (Exception ex)
+        {
+            _success = false;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

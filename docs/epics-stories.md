@@ -195,9 +195,18 @@ Legacy: `Eurobus4/principal/sales/send/send_order.aspx`
 
 ## EPIC 12 — NFe
 
+**Interim (Eurobus bridge):** OS lifecycle stays in **legacy Eurobus** until Epics 8–11 are done. EUROERP may ship **NFES only** first — same DB (`LionEBDev`), user enters order # closed in legacy (`F`/`E`), emits NFS-e via Prefeitura SP. Product NFe (SEFAZ) remains in legacy until full Story 12.1.
+
 **Story 12.1 — Enviar NFe (individual)** — **STATUS: Pending**  
 Legacy: `Eurobus4/principal/sales/nfe/receipt.aspx` *(Eurobus flow — not receiptSync)*  
-SEFAZ, certificate, validation, PDF — pattern ERPCOM3 Epic 10 Story 10.1
+SEFAZ, certificate, validation, PDF — pattern ERPCOM3 Epic 10 Story 10.1  
+*Deferred while legacy handles product NFe; see 12.1-NFES for interim scope.*
+
+**Story 12.1-NFES — Enviar NFES (NFS-e serviços)** — **STATUS: Done** *(Eurobus bridge)*  
+Legacy: `Eurobus4/principal/sales/nfe/receipt.aspx` → `printNFEServices`.  
+**EUROERP:** provider por município — **Simpliss / layout nacional DPS** para Santana de Parnaíba (`Nfes:Provider=Simpliss`, IBGE `3547304`); **Prefeitura SP RPS** opcional (`PrefeituraSp`).  
+Not in ERPCOM3/Aquanimal. Updates `ORDER.NFES_NO`, `NFES_CHECK_CODE`, `RPS_NO`.  
+Requires order **F** or **E** with service total &gt; 0 (legacy closes OS / BTR). No EUROERP Epic 8.3 dependency if OS is finished in legacy.
 
 **Story 12.2 — NFe Outras / Outras (novo)** — **STATUS: Pending**  
 Legacy: `Eurobus4/principal/receiptin_nfe/dataInput.aspx`, `dataInput2.aspx`
