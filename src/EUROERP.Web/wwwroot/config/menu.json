@@ -197,7 +197,8 @@
           ]
         },
         { "label": "Alíq. ICMS", "route": "/diretoria/icms" },
-        { "label": "Configuração NFES", "route": "/diretoria/admin/nfes-config" }
+        { "label": "Configuração NFES", "route": "/diretoria/admin/nfes-config" },
+        { "label": "Cancel Manual NFES", "route": "/diretoria/admin/nfes-cancel-manual" }
       ]
     },
     {

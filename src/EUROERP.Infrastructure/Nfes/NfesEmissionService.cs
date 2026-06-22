@@ -759,7 +759,7 @@ public class NfesEmissionService : INfesEmissionService
 
         try
         {
-            var pdf = NfesDanfsePdfGenerator.Generate(xml);
+            var pdf = NfesDanfsePdfGenerator.Generate(xml, nfesConfig);
             var fileName = $"danfse_{orderId}_{preview.NfesNo ?? "nfse"}.pdf";
             return new NfesPrintPdfResult { Success = true, PdfBytes = pdf, FileName = fileName };
         }
@@ -809,7 +809,7 @@ public class NfesEmissionService : INfesEmissionService
         string? chaveAcesso,
         string? pdfUrl = null)
     {
-        if (config.UseSimpliss && !string.IsNullOrWhiteSpace(chaveAcesso) && chaveAcesso.StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
+        if (config.UseSimpliss && orderId > 0 && !string.IsNullOrWhiteSpace(chaveAcesso))
             return $"/api/nfes/imprimir?orderId={orderId}";
 
         return NfesPrintUrlBuilder.Build(config, nfesNo, checkCode, pdfUrl, chaveAcesso);

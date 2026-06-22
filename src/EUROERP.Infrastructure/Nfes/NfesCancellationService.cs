@@ -36,11 +36,9 @@ public sealed class NfesCancellationService : INfesCancellationService
         if (request.NfesNo < 1)
             return Fail("Informe o número da NFS-e de serviços.");
 
-        var memo = request.Memo?.Trim() ?? "";
-        if (memo.Length < 15)
-            return Fail("O motivo deve ter no mínimo 15 caracteres.");
-        if (memo.Length > 200)
-            return Fail("O motivo deve ter no máximo 200 caracteres.");
+        var memo = NormalizeMemo(request.Memo);
+        if (memo == null)
+            return Fail("O motivo deve ter entre 15 e 200 caracteres.");
 
         var order = await LoadOrderByNfesNoAsync(request.NfesNo, cancellationToken).ConfigureAwait(false);
         if (order == null)
@@ -61,11 +59,12 @@ public sealed class NfesCancellationService : INfesCancellationService
             using var tx = _connection.BeginTransaction();
             try
             {
-                await InsertReceiptCancelAsync(request, userId, applicationId, tx, cancellationToken).ConfigureAwait(false);
+                await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, tx, cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (config.UseSimpliss)
                 {
-                    var cancelOutcome = await CancelSimplissAsync(config, order, memo, request.MotivoCode, cancellationToken)
+                    var cancelOutcome = await CancelSimplissForOrderAsync(config, order, memo, request.MotivoCode, cancellationToken)
                         .ConfigureAwait(false);
                     if (!cancelOutcome.Success)
                     {
@@ -78,7 +77,8 @@ public sealed class NfesCancellationService : INfesCancellationService
                 }
                 else
                 {
-                    var cancelOutcome = await CancelPrefeituraSpAsync(config, order, cancellationToken).ConfigureAwait(false);
+                    var cancelOutcome = await CancelPrefeituraSpAsync(config, order.NfesNo ?? "", order.NfesCheckCode ?? "", cancellationToken)
+                        .ConfigureAwait(false);
                     if (!cancelOutcome.Success)
                     {
                         tx.Rollback();
@@ -109,6 +109,117 @@ public sealed class NfesCancellationService : INfesCancellationService
         }
     }
 
+    public async Task<CancelNfesResult> CancelManualAsync(CancelNfesManualRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.NfesNo < 1)
+            return Fail("Informe o número da NFS-e de serviços.");
+
+        var memo = NormalizeMemo(request.Memo);
+        if (memo == null)
+            return Fail("O motivo deve ter entre 15 e 200 caracteres.");
+
+        if (request.RegisterLocalCancel
+            && await IsReceiptCanceledAsync(request.NfesNo, cancellationToken).ConfigureAwait(false))
+            return Fail($"Não é possível cancelar. A nota {request.NfesNo} já foi cancelada localmente.");
+
+        var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var userId = FitUserId(request.UserId);
+        var applicationId = FitApplicationId(request.ApplicationId);
+
+        string? chaveSimpliss = null;
+        if (config.UseSimpliss)
+        {
+            chaveSimpliss = NormalizeChaveAcesso(request.ChaveAcesso);
+            if (chaveSimpliss == null)
+                return Fail("Informe a chave de acesso NFS-e (50 dígitos).");
+        }
+        else if (string.IsNullOrWhiteSpace(request.CodigoVerificacao?.Trim()))
+        {
+            return Fail("Informe o código de verificação da NFS-e.");
+        }
+
+        int? orderId = request.OrderId;
+        if (orderId is > 0 && !await OrderExistsAsync(orderId.Value, cancellationToken).ConfigureAwait(false))
+            return Fail($"Pedido (OS) #{orderId} não encontrado.");
+
+        try
+        {
+            if (_connection.State != ConnectionState.Open)
+                _connection.Open();
+
+            using var tx = _connection.BeginTransaction();
+            try
+            {
+                string? eventoXml = null;
+
+                if (config.UseSimpliss)
+                {
+                    var cancelOutcome = await CancelSimplissWithChaveAsync(config, chaveSimpliss!, memo, request.MotivoCode, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!cancelOutcome.Success)
+                    {
+                        tx.Rollback();
+                        return Fail(cancelOutcome.ErrorMessage ?? "Falha ao cancelar NFS-e no Simpliss.");
+                    }
+
+                    eventoXml = cancelOutcome.EventoXml;
+                }
+                else
+                {
+                    var cancelOutcome = await CancelPrefeituraSpAsync(
+                            config,
+                            request.NfesNo.ToString(),
+                            request.CodigoVerificacao.Trim(),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!cancelOutcome.Success)
+                    {
+                        tx.Rollback();
+                        return Fail(cancelOutcome.Message);
+                    }
+                }
+
+                if (request.RegisterLocalCancel)
+                {
+                    await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, tx, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (orderId is > 0)
+                {
+                    await ClearOrderNfesFieldsAsync(orderId.Value, request.NfesNo, tx, cancellationToken).ConfigureAwait(false);
+                    await TrySaveCancelEventXmlAsync(orderId.Value, config, eventoXml, cancellationToken).ConfigureAwait(false);
+                }
+
+                tx.Commit();
+
+                _logger.LogWarning(
+                    "Manual NFES cancel succeeded for NFS-e {NfesNo} by user {UserId}. OrderId={OrderId}, RegisterLocal={RegisterLocal}",
+                    request.NfesNo,
+                    userId,
+                    orderId,
+                    request.RegisterLocalCancel);
+
+                return new CancelNfesResult
+                {
+                    Success = true,
+                    Message = "Cancelamento manual efetuado com sucesso.",
+                    OrderId = orderId
+                };
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual NFES cancel failed for NFS-e {NfesNo}", request.NfesNo);
+            return Fail(ex.Message);
+        }
+    }
+
     public async Task<IReadOnlyList<NfesCanceledReceiptDto>> GetTodayCanceledAsync(CancellationToken cancellationToken = default)
     {
         const string sql = @"
@@ -122,7 +233,7 @@ public sealed class NfesCancellationService : INfesCancellationService
         return rows.ToList();
     }
 
-    private async Task<SimplissCancelResponse> CancelSimplissAsync(
+    private async Task<SimplissCancelResponse> CancelSimplissForOrderAsync(
         NfesConfigSnapshot config,
         NfesOrderNfesRow order,
         string memo,
@@ -140,6 +251,16 @@ public sealed class NfesCancellationService : INfesCancellationService
                 ErrorMessage = "Pedido sem chave de acesso NFS-e (NFE_RECEIPT). Não é possível cancelar via Simpliss."
             };
 
+        return await CancelSimplissWithChaveAsync(config, chave, memo, motivoCode, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<SimplissCancelResponse> CancelSimplissWithChaveAsync(
+        NfesConfigSnapshot config,
+        string chave,
+        string memo,
+        string motivoCode,
+        CancellationToken cancellationToken)
+    {
         var pedRegXml = NfesCancelEventBuilder.Build(config, chave, memo, motivoCode);
         var cert = _certificateProvider.GetCertificate();
         var signedDoc = NfesDpsXmlSupport.SignPedRegEvento(pedRegXml, cert);
@@ -150,11 +271,12 @@ public sealed class NfesCancellationService : INfesCancellationService
 
     private async Task<(bool Success, string Message)> CancelPrefeituraSpAsync(
         NfesConfigSnapshot config,
-        NfesOrderNfesRow order,
+        string nfesNo,
+        string nfesCheckCode,
         CancellationToken cancellationToken)
     {
         var cert = _certificateProvider.GetCertificate();
-        var pedido = NfesPrefeituraCancelBuilder.Build(config, order.NfesNo ?? "", order.NfesCheckCode ?? "", cert);
+        var pedido = NfesPrefeituraCancelBuilder.Build(config, nfesNo, nfesCheckCode, cert);
         var xmlDoc = NfesXmlSupport.SerializePedidoCancelamento(pedido);
         xmlDoc = NfesXmlSupport.SignRpsDocument(xmlDoc, cert);
         var signedXml = xmlDoc.OuterXml.Replace("utf-16", "utf-8", StringComparison.Ordinal);
@@ -195,8 +317,19 @@ public sealed class NfesCancellationService : INfesCancellationService
         return exists == 1;
     }
 
+    private async Task<bool> OrderExistsAsync(int orderId, CancellationToken cancellationToken)
+    {
+        const string sql = "SELECT 1 FROM [ORDER] WHERE PKId = @OrderId";
+        var exists = await _connection.ExecuteScalarAsync<int?>(
+            new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+        return exists == 1;
+    }
+
     private static async Task InsertReceiptCancelAsync(
-        CancelNfesRequest request,
+        int nfesNo,
+        DateTime cancelDate,
+        string memo,
         string userId,
         string applicationId,
         IDbTransaction tx,
@@ -213,10 +346,10 @@ public sealed class NfesCancellationService : INfesCancellationService
             {
                 UserId = userId,
                 ApplicationId = applicationId,
-                CancelDate = request.CancelDate.Date,
-                ReceiptNo = request.NfesNo,
-                Memo = request.Memo.Trim(),
-                ReceiptForm = request.NfesNo
+                CancelDate = cancelDate.Date,
+                ReceiptNo = nfesNo,
+                Memo = memo,
+                ReceiptForm = nfesNo
             }, tx, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
@@ -238,6 +371,20 @@ public sealed class NfesCancellationService : INfesCancellationService
         await tx.Connection!.ExecuteAsync(
             new CommandDefinition(delReceipt, new { ReceiptNo = receiptNo, OrderId = orderId }, tx, cancellationToken: cancellationToken))
             .ConfigureAwait(false);
+    }
+
+    private static string? NormalizeMemo(string? memo)
+    {
+        var text = memo?.Trim() ?? "";
+        return text.Length is >= 15 and <= 200 ? text : null;
+    }
+
+    private static string? NormalizeChaveAcesso(string? chave)
+    {
+        var digits = NfesTextHelper.CleanDigits(chave?.Trim() ?? "");
+        if (digits.Length < 50)
+            return null;
+        return digits.Length == 50 ? digits : digits[^50..];
     }
 
     private static string? ResolveChaveAcesso(string? nfeReceipt, string? checkCode)

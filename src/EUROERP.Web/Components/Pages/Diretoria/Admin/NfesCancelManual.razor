@@ -1,0 +1,222 @@
+@page "/diretoria/admin/nfes-cancel-manual"
+@using EUROERP.Application.Nfes
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Cancel Manual NFES</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Cancel Manual NFES</h5>
+            <a class="btn btn-outline-secondary btn-sm" href="/vendas/nfe/cancelar-lote">Cancelamento normal</a>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning py-2 small mb-3">
+                Uso administrativo quando o pedido ou a chave NFS-e não estão no sistema.
+                O cancelamento é enviado ao provedor municipal antes de qualquer atualização local.
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted small">Carregando configuração...</p>
+            }
+            else if (_config != null)
+            {
+                <div class="row g-2 mb-3 pb-3 border-bottom">
+                    <div class="col-12"><h6 class="small text-muted mb-1">Emitente (configuração NFES)</h6></div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-0">Provedor</label>
+                        <input class="form-control form-control-sm" value="@_config.Provider" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-0">Ambiente</label>
+                        <input class="form-control form-control-sm" value="@EnvironmentLabel" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-0">CNPJ</label>
+                        <input class="form-control form-control-sm font-monospace" value="@_config.EmitCnpj" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small text-muted mb-0">Inscrição municipal</label>
+                        <input class="form-control form-control-sm font-monospace" value="@_config.EmitIMun" readonly />
+                    </div>
+                </div>
+
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small text-muted mb-0" for="manualCancelDate">Data cancelamento</label>
+                        <input id="manualCancelDate" type="date" class="form-control form-control-sm" @bind="_cancelDate" style="width: 11rem;" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small text-muted mb-0">Número NFS-e</label>
+                        <input type="text" inputmode="numeric" class="form-control form-control-sm text-end" @bind="_nfesNoText" placeholder="Nº" style="width: 7rem;" />
+                    </div>
+
+                    @if (_useSimpliss)
+                    {
+                        <div class="col-md-5">
+                            <label class="form-label small text-muted mb-0">Chave de acesso NFS-e (50 dígitos)</label>
+                            <input type="text" class="form-control form-control-sm font-monospace" @bind="_chaveAcesso" maxlength="60" placeholder="chNFSe" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small text-muted mb-0">Cód. motivo</label>
+                            <select class="form-select form-select-sm" @bind="_motivoCode" style="width: 14rem;">
+                                <option value="1">1 — Erro na emissão</option>
+                                <option value="2">2 — Serviço não prestado</option>
+                                <option value="9">9 — Outros</option>
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted mb-0">Código de verificação</label>
+                            <input type="text" class="form-control form-control-sm font-monospace" @bind="_codigoVerificacao" maxlength="50" />
+                        </div>
+                    }
+
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-0">Motivo (mín. 15 caracteres)</label>
+                        <textarea class="form-control form-control-sm" @bind="_memo" rows="2" maxlength="200" placeholder="Justificativa do cancelamento"></textarea>
+                    </div>
+
+                    <div class="col-auto">
+                        <label class="form-label small text-muted mb-0">Pedido (OS) #</label>
+                        <input type="text" inputmode="numeric" class="form-control form-control-sm text-end" @bind="_orderIdText" placeholder="Opcional" style="width: 7rem;" />
+                    </div>
+
+                    <div class="col-auto">
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" id="registerLocal" @bind="_registerLocalCancel" />
+                            <label class="form-check-label small" for="registerLocal">Registrar em RECEIPT_CANCEL</label>
+                        </div>
+                    </div>
+
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-danger btn-sm" @onclick="OnCancelar" disabled="@_submitting">
+                            @(_submitting ? "Aguarde..." : "Cancelar NFS-e manualmente")
+                        </button>
+                    </div>
+                </div>
+
+                @if (_result != null)
+                {
+                    <div class="mt-3 pt-3 border-top small @(_result.Success ? "text-success" : "text-danger")">
+                        @_result.Message
+                        @if (_result.Success && _result.OrderId is int orderId)
+                        {
+                            <span class="d-block mt-1 text-muted">Pedido (OS) atualizado: #@orderId</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private NfesConfigDto? _config;
+    private bool _loading = true;
+    private bool _useSimpliss = true;
+    private DateTime _cancelDate = DateTime.Today;
+    private string _nfesNoText = "";
+    private string _chaveAcesso = "";
+    private string _codigoVerificacao = "";
+    private string _memo = "";
+    private string _motivoCode = "9";
+    private string _orderIdText = "";
+    private bool _registerLocalCancel = true;
+    private bool _submitting;
+    private CancelNfesResult? _result;
+    private string? _userId;
+
+    [Inject] private INfesCancellationService CancellationService { get; set; } = null!;
+    [Inject] private INfesConfigService ConfigService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    private string EnvironmentLabel =>
+        _config?.Environment.Equals("prod", StringComparison.OrdinalIgnoreCase) == true
+            || _config?.Environment.Equals("production", StringComparison.OrdinalIgnoreCase) == true
+            ? "Produção"
+            : "Homologação / teste";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+
+        try
+        {
+            _config = await ConfigService.GetConfigAsync();
+            _useSimpliss = !_config.Provider.Equals("PrefeituraSp", StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnCancelar()
+    {
+        _result = null;
+
+        if (!int.TryParse(_nfesNoText.Trim(), out var nfesNo) || nfesNo < 1)
+        {
+            _result = new CancelNfesResult { Success = false, Message = "Informe o número da NFS-e de serviços." };
+            return;
+        }
+
+        var memo = _memo?.Trim() ?? "";
+        if (memo.Length < 15)
+        {
+            _result = new CancelNfesResult { Success = false, Message = "O motivo deve ter no mínimo 15 caracteres." };
+            return;
+        }
+
+        int? orderId = null;
+        if (!string.IsNullOrWhiteSpace(_orderIdText))
+        {
+            if (!int.TryParse(_orderIdText.Trim(), out var parsedOrderId) || parsedOrderId < 1)
+            {
+                _result = new CancelNfesResult { Success = false, Message = "Pedido (OS) inválido." };
+                return;
+            }
+
+            orderId = parsedOrderId;
+        }
+
+        _submitting = true;
+        try
+        {
+            _result = await CancellationService.CancelManualAsync(new CancelNfesManualRequest
+            {
+                CancelDate = _cancelDate.Date,
+                NfesNo = nfesNo,
+                Memo = memo,
+                MotivoCode = _motivoCode,
+                ChaveAcesso = _chaveAcesso,
+                CodigoVerificacao = _codigoVerificacao,
+                OrderId = orderId,
+                RegisterLocalCancel = _registerLocalCancel,
+                UserId = _userId ?? "SYS",
+                ApplicationId = "EUROERP"
+            });
+
+            if (_result.Success)
+            {
+                _nfesNoText = "";
+                _chaveAcesso = "";
+                _codigoVerificacao = "";
+                _memo = "";
+                _motivoCode = "9";
+                _orderIdText = "";
+                _cancelDate = DateTime.Today;
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

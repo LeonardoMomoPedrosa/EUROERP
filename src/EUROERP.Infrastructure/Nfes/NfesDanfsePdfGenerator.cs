@@ -8,10 +8,11 @@ namespace EUROERP.Infrastructure.Nfes;
 
 internal static class NfesDanfsePdfGenerator
 {
-    public static byte[] Generate(string nfseXml)
+    public static byte[] Generate(string nfseXml, NfesConfigSnapshot? emitConfig = null)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         var model = NfesDanfseModel.Parse(nfseXml);
+        model = model.ApplyEmitConfig(emitConfig);
 
         var document = Document.Create(container =>
         {
@@ -250,6 +251,42 @@ internal sealed class NfesDanfseModel
             ConsultaUrl = consultaUrl,
             Prestador = prestador,
             Tomador = tomador
+        };
+    }
+
+    public NfesDanfseModel ApplyEmitConfig(NfesConfigSnapshot? emitConfig)
+    {
+        if (emitConfig == null || !NfesEmitAddress.HasAddress(emitConfig))
+            return this;
+
+        var phone = NfesTextHelper.CleanDigits(emitConfig.EmitTelefone ?? "");
+        return new NfesDanfseModel
+        {
+            ChaveAcesso = ChaveAcesso,
+            NumeroNfse = NumeroNfse,
+            DataEmissao = DataEmissao,
+            LocalEmissao = LocalEmissao,
+            LocalPrestacao = LocalPrestacao,
+            Competencia = Competencia,
+            CodigoTributacaoNacional = CodigoTributacaoNacional,
+            DescricaoTributacaoNacional = DescricaoTributacaoNacional,
+            DescricaoServico = DescricaoServico,
+            ValorServicos = ValorServicos,
+            BaseCalculo = BaseCalculo,
+            AliquotaIss = AliquotaIss,
+            ValorIss = ValorIss,
+            ValorLiquido = ValorLiquido,
+            ConsultaUrl = ConsultaUrl,
+            Prestador = new NfesDanfseParty
+            {
+                Documento = Prestador.Documento,
+                InscricaoMunicipal = Prestador.InscricaoMunicipal,
+                Nome = Prestador.Nome,
+                Endereco = NfesEmitAddress.Format(emitConfig),
+                Email = Prestador.Email,
+                Telefone = phone.Length >= 8 ? phone : Prestador.Telefone
+            },
+            Tomador = Tomador
         };
     }
 
