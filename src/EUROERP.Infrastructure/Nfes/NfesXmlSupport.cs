@@ -19,6 +19,17 @@ internal static class NfesXmlSupport
         return doc;
     }
 
+    public static XmlDocument SerializePedidoCancelamento(PedidoCancelamentoNFe pedido)
+    {
+        var serializer = new XmlSerializer(typeof(PedidoCancelamentoNFe));
+        var doc = new XmlDocument { PreserveWhitespace = false };
+        using var ms = new MemoryStream();
+        serializer.Serialize(ms, pedido);
+        ms.Position = 0;
+        doc.Load(ms);
+        return doc;
+    }
+
     public static T Deserialize<T>(string xml) where T : class
     {
         var doc = new XmlDocument();

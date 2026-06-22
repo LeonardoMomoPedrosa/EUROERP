@@ -25,14 +25,16 @@ internal static class NfesTextHelper
 
     public static string CleanDigits(string input)
     {
-        var result = input.Replace(" - ", "", StringComparison.Ordinal)
-            .Replace("-", "", StringComparison.Ordinal)
-            .Replace("(", "", StringComparison.Ordinal)
-            .Replace(")", "", StringComparison.Ordinal)
-            .Replace(" ", "", StringComparison.Ordinal)
-            .Replace("/", "", StringComparison.Ordinal)
-            .Replace(".", "", StringComparison.Ordinal);
-        return result.Trim();
+        if (string.IsNullOrEmpty(input))
+            return "";
+
+        var sb = new StringBuilder(input.Length);
+        foreach (var c in input)
+        {
+            if (c is >= '0' and <= '9')
+                sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     /// <summary>Brazil (UTC-3) emission instant, slightly in the past to satisfy E0008 (dhEmi &lt;= dhProc).</summary>

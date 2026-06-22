@@ -13,6 +13,14 @@ public class NfesConfigDto
     public string CodigoMunicipio { get; set; } = "3547304";
     public string EmitCnpj { get; set; } = "";
     public string EmitIMun { get; set; } = "";
+    public string EmitLogradouro { get; set; } = "";
+    public string EmitNumero { get; set; } = "";
+    public string EmitComplemento { get; set; } = "";
+    public string EmitBairro { get; set; } = "";
+    public string EmitMunicipio { get; set; } = "";
+    public string EmitSiglaUf { get; set; } = "SP";
+    public string EmitCep { get; set; } = "";
+    public string EmitTelefone { get; set; } = "";
     public string ApiBaseUrl { get; set; } = "";
     public string ApiBaseUrlHomolog { get; set; } = "";
     public string ApiEmitPath { get; set; } = "/nfse";

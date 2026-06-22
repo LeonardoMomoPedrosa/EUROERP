@@ -108,9 +108,13 @@ public class NfesEmissionService : INfesEmissionService
 
             RpsNo = string.IsNullOrWhiteSpace(row.RpsNo) || row.RpsNo == "0" ? null : row.RpsNo.Trim(),
 
-            NfesCheckCode = string.IsNullOrWhiteSpace(row.NfesCheckCode) ? null : row.NfesCheckCode.Trim(),
+            NfesCheckCode = string.IsNullOrWhiteSpace(row.NfesNo) || row.NfesNo == "0"
+                ? null
+                : (string.IsNullOrWhiteSpace(row.NfesCheckCode) ? null : row.NfesCheckCode.Trim()),
 
-            NfesChaveAcesso = ResolveSimplissChave(row.NfeReceiptChave, row.NfesCheckCode, nfesConfig.UseSimpliss),
+            NfesChaveAcesso = string.IsNullOrWhiteSpace(row.NfesNo) || row.NfesNo == "0"
+                ? null
+                : ResolveSimplissChave(row.NfeReceiptChave, row.NfesCheckCode, nfesConfig.UseSimpliss),
 
             Provider = nfesConfig.Provider
 
@@ -120,11 +124,25 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
+        var nfesCanceled = !string.IsNullOrEmpty(preview.NfesNo)
+            && await IsNfesReceiptCanceledAsync(preview.NfesNo, cancellationToken).ConfigureAwait(false);
+
+        if (nfesCanceled)
+        {
+            preview.NfesNo = null;
+            preview.RpsNo = null;
+            preview.NfesCheckCode = null;
+            preview.NfesChaveAcesso = null;
+            preview.PrintUrl = null;
+        }
+
+        var hasActiveNfes = !string.IsNullOrEmpty(preview.NfesNo);
+
         if (preview.Status is not ("F" or "E"))
 
             preview.BlockReason = "O status da compra não permite geração de NF.";
 
-        else if (!string.IsNullOrEmpty(preview.NfesNo))
+        else if (hasActiveNfes)
 
             preview.BlockReason = "NFE Serviço já emitida para este pedido.";
 
@@ -405,11 +423,7 @@ public class NfesEmissionService : INfesEmissionService
 
                 NFE_RECEIPT = CASE
 
-                    WHEN @ChaveAcesso IS NOT NULL AND @ChaveAcesso <> ''
-
-                         AND (NFE_RECEIPT IS NULL OR LTRIM(RTRIM(NFE_RECEIPT)) = '')
-
-                    THEN @ChaveAcesso
+                    WHEN @ChaveAcesso IS NOT NULL AND @ChaveAcesso <> '' THEN @ChaveAcesso
 
                     ELSE NFE_RECEIPT
 
@@ -825,6 +839,26 @@ public class NfesEmissionService : INfesEmissionService
             return checkCode.Trim();
 
         return null;
+
+    }
+
+
+
+    private async Task<bool> IsNfesReceiptCanceledAsync(string nfesNo, CancellationToken cancellationToken)
+
+    {
+
+        if (!int.TryParse(nfesNo.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var receiptNo) || receiptNo < 1)
+
+            return false;
+
+        const string sql = "SELECT 1 FROM RECEIPT_CANCEL WHERE RECEIPT_NO = @ReceiptNo";
+
+        var exists = await _connection.ExecuteScalarAsync<int?>(
+
+            new CommandDefinition(sql, new { ReceiptNo = receiptNo }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return exists == 1;
 
     }
 

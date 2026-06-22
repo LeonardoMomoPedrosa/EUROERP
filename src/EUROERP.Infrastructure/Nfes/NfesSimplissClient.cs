@@ -21,6 +21,24 @@ internal static class NfesDpsXmlSupport
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException("infDPS sem atributo Id.");
 
+        return SignElementById(doc, id, certificate);
+    }
+
+    public static XmlDocument SignPedRegEvento(string pedRegXml, X509Certificate2 certificate)
+    {
+        var doc = new XmlDocument { PreserveWhitespace = false };
+        doc.LoadXml(pedRegXml);
+        var infPedReg = doc.GetElementsByTagName("infPedReg").Cast<XmlElement>().FirstOrDefault()
+            ?? throw new InvalidOperationException("pedRegEvento sem infPedReg.");
+        var id = infPedReg.GetAttribute("Id");
+        if (string.IsNullOrWhiteSpace(id))
+            throw new InvalidOperationException("infPedReg sem atributo Id.");
+
+        return SignElementById(doc, id, certificate);
+    }
+
+    private static XmlDocument SignElementById(XmlDocument doc, string id, X509Certificate2 certificate)
+    {
 #pragma warning disable SYSLIB0028
         var key = certificate.GetRSAPrivateKey() ?? (System.Security.Cryptography.RSA?)certificate.PrivateKey;
 #pragma warning restore SYSLIB0028
@@ -69,6 +87,14 @@ public interface INfesSimplissClient
 {
     Task<SimplissEmitResponse> EmitDpsAsync(string signedDpsXml, CancellationToken cancellationToken = default);
     Task<SimplissConsultResponse> GetNfseByChaveAsync(string chaveAcesso, CancellationToken cancellationToken = default);
+    Task<SimplissCancelResponse> CancelNfseAsync(string chaveAcesso, string signedPedRegXml, CancellationToken cancellationToken = default);
+}
+
+public sealed class SimplissCancelResponse
+{
+    public bool Success { get; init; }
+    public string? EventoXml { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 public sealed class SimplissConsultResponse
@@ -182,6 +208,72 @@ public class NfesSimplissClient : INfesSimplissClient
         };
     }
 
+    public async Task<SimplissCancelResponse> CancelNfseAsync(string chaveAcesso, string signedPedRegXml, CancellationToken cancellationToken = default)
+    {
+        chaveAcesso = NfesTextHelper.CleanDigits(chaveAcesso?.Trim() ?? "");
+        if (chaveAcesso.Length > 50)
+            chaveAcesso = chaveAcesso[^50..];
+        if (chaveAcesso.Length < 50)
+            return new SimplissCancelResponse { Success = false, ErrorMessage = "Chave de acesso NFS-e inválida." };
+
+        var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var baseUrl = ResolveApiBaseUrl(config);
+        var emitPath = string.IsNullOrWhiteSpace(config.ApiEmitPath) ? "/nfse" : config.ApiEmitPath.TrimEnd('/');
+        var url = $"{baseUrl}{emitPath}/{Uri.EscapeDataString(chaveAcesso)}/eventos";
+
+        var payload = JsonSerializer.Serialize(new { pedidoRegistroEventoXmlGZipB64 = NfesDpsXmlSupport.ToGzipBase64(signedPedRegXml) });
+        using var client = CreateHttpClient(config);
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        return MapCancelResponse(response, responseText);
+    }
+
+    private static SimplissCancelResponse MapCancelResponse(HttpResponseMessage response, string responseText)
+    {
+        SimplissApiResponse? body;
+        try
+        {
+            body = JsonSerializer.Deserialize<SimplissApiResponse>(responseText, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            return new SimplissCancelResponse
+            {
+                Success = false,
+                ErrorMessage = $"Resposta inválida ({(int)response.StatusCode}): {ex.Message}"
+            };
+        }
+
+        if (body?.Erros is { Count: > 0 })
+        {
+            var msg = string.Join(Environment.NewLine, body.Erros.Select(e =>
+                $"Erro {e.Codigo}: {e.Descricao} {e.Complemento}".Trim()));
+            return new SimplissCancelResponse { Success = false, ErrorMessage = msg };
+        }
+
+        if (!response.IsSuccessStatusCode)
+            return new SimplissCancelResponse
+            {
+                Success = false,
+                ErrorMessage = $"HTTP {(int)response.StatusCode}: {responseText}"
+            };
+
+        string? eventoXml = null;
+        var gzipField = body?.EventoXmlGZipB64 ?? body?.NfseXmlGZipB64;
+        if (!string.IsNullOrWhiteSpace(gzipField))
+        {
+            try { eventoXml = NfesDpsXmlSupport.FromGzipBase64(gzipField); }
+            catch (Exception ex)
+            {
+                return new SimplissCancelResponse { Success = false, ErrorMessage = $"XML do evento inválido: {ex.Message}" };
+            }
+        }
+
+        return new SimplissCancelResponse { Success = true, EventoXml = eventoXml };
+    }
+
     private static string ResolveApiBaseUrl(NfesConfigSnapshot config) =>
         (config.IsTestEnvironment ? config.ApiBaseUrlHomolog : config.ApiBaseUrl).TrimEnd('/');
 
@@ -264,6 +356,9 @@ public class NfesSimplissClient : INfesSimplissClient
 
         [JsonPropertyName("nfseXmlGZipB64")]
         public string? NfseXmlGZipB64 { get; set; }
+
+        [JsonPropertyName("eventoXmlGZipB64")]
+        public string? EventoXmlGZipB64 { get; set; }
 
         [JsonPropertyName("urlPdf")]
         public string? UrlPdf { get; set; }

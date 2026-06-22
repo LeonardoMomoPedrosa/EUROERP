@@ -7,6 +7,13 @@ namespace EUROERP.Infrastructure.Nfes;
 
 internal static class NfesRpsSignature
 {
+    public static byte[] BuildCancelServicosSignature(X509Certificate2 certificate, string inscricaoMunicipal, string nfesNo)
+    {
+        var key = NfesTextHelper.LeftZero(NfesTextHelper.CleanDigits(inscricaoMunicipal), 8)
+            + NfesTextHelper.LeftZero(NfesTextHelper.CleanDigits(nfesNo), 12);
+        return SignSha1Rsa(certificate, key);
+    }
+
     public static byte[] BuildRpsAssinatura(
         X509Certificate2 certificate,
         string inscricaoMunicipal,

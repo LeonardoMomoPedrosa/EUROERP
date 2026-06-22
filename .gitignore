@@ -15,3 +15,5 @@
 
 # Secrets / keys
 *.pem
+EURO_LINUX.2pem
+EURO_LINUX.pem

@@ -8,6 +8,7 @@ namespace EUROERP.Infrastructure.Nfes;
 public interface INfesPrefeituraClient
 {
     Task<string> SendLoteRpsAsync(string signedXml, CancellationToken cancellationToken = default);
+    Task<string> SendCancelamentoAsync(string signedXml, CancellationToken cancellationToken = default);
 }
 
 public class NfesPrefeituraClient : INfesPrefeituraClient
@@ -34,6 +35,26 @@ public class NfesPrefeituraClient : INfesPrefeituraClient
             : $"{Ns}/EnvioLoteRPS";
         var requestElement = isTest ? "TesteEnvioLoteRPS" : "EnvioLoteRPS";
 
+        return await PostSoapAsync(url, action, requestElement, signedXml, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string> SendCancelamentoAsync(string signedXml, CancellationToken cancellationToken = default)
+    {
+        var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var isTest = config.IsTestEnvironment;
+        var url = string.IsNullOrWhiteSpace(config.LoteNfeUrl)
+            ? "https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx"
+            : config.LoteNfeUrl;
+        var action = isTest
+            ? $"{Ns}/TesteCancelamentoNFe"
+            : $"{Ns}/CancelamentoNFe";
+        var requestElement = isTest ? "TesteCancelamentoNFe" : "CancelamentoNFe";
+
+        return await PostSoapAsync(url, action, requestElement, signedXml, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string> PostSoapAsync(string url, string action, string requestElement, string signedXml, CancellationToken cancellationToken)
+    {
         var escapedXml = System.Security.SecurityElement.Escape(signedXml) ?? signedXml;
         var envelope = $"""
             <?xml version="1.0" encoding="utf-8"?>

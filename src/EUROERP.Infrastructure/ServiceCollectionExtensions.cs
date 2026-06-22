@@ -64,6 +64,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PrefeituraSpNfesBackend>();
         services.AddScoped<SimplissNfesBackend>();
         services.AddScoped<INfesEmissionService, NfesEmissionService>();
+        services.AddScoped<INfesCancellationService, NfesCancellationService>();
         return services;
     }
 }

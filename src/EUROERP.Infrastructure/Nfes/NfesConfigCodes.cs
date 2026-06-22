@@ -7,6 +7,14 @@ internal static class NfesConfigCodes
     public const string CodigoMunicipio = "NFES_CODMUN";
     public const string EmitCnpj = "NFES_CNPJ";
     public const string EmitIMun = "NFES_IMUN";
+    public const string EmitLogradouro = "NFES_EMIT_LGR";
+    public const string EmitNumero = "NFES_EMIT_NRO";
+    public const string EmitComplemento = "NFES_EMIT_CPL";
+    public const string EmitBairro = "NFES_EMIT_BAIRRO";
+    public const string EmitMunicipio = "NFES_EMIT_MUN";
+    public const string EmitSiglaUf = "NFES_EMIT_UF";
+    public const string EmitCep = "NFES_EMIT_CEP";
+    public const string EmitTelefone = "NFES_EMIT_FONE";
     public const string ApiBaseUrl = "NFES_API_URL";
     public const string ApiBaseUrlHomolog = "NFES_API_URL_H";
     public const string ApiEmitPath = "NFES_API_PATH";
@@ -38,6 +46,7 @@ internal static class NfesConfigCodes
     public static IReadOnlyList<string> All { get; } =
     [
         Provider, Environment, CodigoMunicipio, EmitCnpj, EmitIMun,
+        EmitLogradouro, EmitNumero, EmitComplemento, EmitBairro, EmitMunicipio, EmitSiglaUf, EmitCep, EmitTelefone,
         ApiBaseUrl, ApiBaseUrlHomolog, ApiEmitPath, LoteNfeUrl,
         CertPath, CertPassword, XmlPath, SchemaPath,
         SerieDps, VersaoDps, VersaoAplicativo,
