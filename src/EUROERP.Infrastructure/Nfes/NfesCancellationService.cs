@@ -240,7 +240,7 @@ public sealed class NfesCancellationService : INfesCancellationService
         string motivoCode,
         CancellationToken cancellationToken)
     {
-        var chave = ResolveChaveAcesso(order.NfeReceipt, order.NfesCheckCode);
+        var chave = ResolveChaveAcesso(order.NfesChaveAcesso, order.NfesCheckCode);
         if (string.IsNullOrWhiteSpace(chave))
             chave = await TryLoadChaveFromLocalXmlAsync(order.OrderId, config, cancellationToken).ConfigureAwait(false);
 
@@ -248,7 +248,7 @@ public sealed class NfesCancellationService : INfesCancellationService
             return new SimplissCancelResponse
             {
                 Success = false,
-                ErrorMessage = "Pedido sem chave de acesso NFS-e (NFE_RECEIPT). Não é possível cancelar via Simpliss."
+                ErrorMessage = "Pedido sem chave de acesso NFS-e (NFES_CHAVE_ACESSO). Não é possível cancelar via Simpliss."
             };
 
         return await CancelSimplissWithChaveAsync(config, chave, memo, motivoCode, cancellationToken).ConfigureAwait(false);
@@ -298,7 +298,7 @@ public sealed class NfesCancellationService : INfesCancellationService
                 ISNULL(o.NFES_NO, '') AS NfesNo,
                 ISNULL(o.RPS_NO, '') AS RpsNo,
                 ISNULL(o.NFES_CHECK_CODE, '') AS NfesCheckCode,
-                ISNULL(o.NFE_RECEIPT, '') AS NfeReceipt
+                ISNULL(o.NFES_CHAVE_ACESSO, '') AS NfesChaveAcesso
             FROM [ORDER] o
             WHERE o.NFES_NO = @NfesNo
             ORDER BY o.SYS_CREATION_DATE DESC";
@@ -357,7 +357,7 @@ public sealed class NfesCancellationService : INfesCancellationService
     {
         const string sql = @"
             UPDATE [ORDER]
-            SET RPS_NO = '', NFES_NO = '', NFES_CHECK_CODE = '', NFE_RECEIPT = NULL
+            SET RPS_NO = '', NFES_NO = '', NFES_CHECK_CODE = '', NFES_CHAVE_ACESSO = NULL
             WHERE PKId = @OrderId";
 
         await tx.Connection!.ExecuteAsync(
@@ -387,9 +387,9 @@ public sealed class NfesCancellationService : INfesCancellationService
         return digits.Length == 50 ? digits : digits[^50..];
     }
 
-    private static string? ResolveChaveAcesso(string? nfeReceipt, string? checkCode)
+    private static string? ResolveChaveAcesso(string? nfesChaveAcesso, string? checkCode)
     {
-        foreach (var candidate in new[] { nfeReceipt, checkCode })
+        foreach (var candidate in new[] { nfesChaveAcesso, checkCode })
         {
             if (string.IsNullOrWhiteSpace(candidate))
                 continue;
@@ -482,6 +482,6 @@ public sealed class NfesCancellationService : INfesCancellationService
         public string? NfesNo { get; init; }
         public string? RpsNo { get; init; }
         public string? NfesCheckCode { get; init; }
-        public string? NfeReceipt { get; init; }
+        public string? NfesChaveAcesso { get; init; }
     }
 }

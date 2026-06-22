@@ -55,7 +55,7 @@ public sealed class NfesEmissionOutcome
     public string? NfesNo { get; init; }
     public string? RpsNo { get; init; }
     public string? CheckCode { get; init; }
-    /// <summary>Full nacional access key (Simpliss); stored in ORDER.NFE_RECEIPT when longer than NFES_CHECK_CODE.</summary>
+    /// <summary>Full nacional access key (Simpliss); stored in ORDER.NFES_CHAVE_ACESSO.</summary>
     public string? ChaveAcesso { get; init; }
     public string? PdfUrl { get; init; }
     public string? XmlPath { get; init; }

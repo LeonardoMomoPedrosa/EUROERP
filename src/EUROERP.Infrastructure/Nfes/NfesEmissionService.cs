@@ -68,7 +68,7 @@ public class NfesEmissionService : INfesEmissionService
 
                 ISNULL(o.NFES_CHECK_CODE, '') AS NfesCheckCode,
 
-                ISNULL(o.NFE_RECEIPT, '') AS NfeReceiptChave
+                ISNULL(o.NFES_CHAVE_ACESSO, '') AS NfesChaveAcesso
 
             FROM [ORDER] o
 
@@ -114,7 +114,7 @@ public class NfesEmissionService : INfesEmissionService
 
             NfesChaveAcesso = string.IsNullOrWhiteSpace(row.NfesNo) || row.NfesNo == "0"
                 ? null
-                : ResolveSimplissChave(row.NfeReceiptChave, row.NfesCheckCode, nfesConfig.UseSimpliss),
+                : ResolveSimplissChave(row.NfesChaveAcesso, row.NfesCheckCode, nfesConfig.UseSimpliss),
 
             Provider = nfesConfig.Provider
 
@@ -418,17 +418,14 @@ public class NfesEmissionService : INfesEmissionService
 
 
         const string updOrder = @"
-
-            UPDATE [ORDER] SET RPS_NO = @RpsNo, NFES_NO = @NfesNo, NFES_CHECK_CODE = @CheckCode,
-
-                NFE_RECEIPT = CASE
-
+            UPDATE [ORDER]
+            SET RPS_NO = @RpsNo,
+                NFES_NO = @NfesNo,
+                NFES_CHECK_CODE = @CheckCode,
+                NFES_CHAVE_ACESSO = CASE
                     WHEN @ChaveAcesso IS NOT NULL AND @ChaveAcesso <> '' THEN @ChaveAcesso
-
-                    ELSE NFE_RECEIPT
-
+                    ELSE NFES_CHAVE_ACESSO
                 END
-
             WHERE PKId = @OrderId";
 
         var chaveAcesso = nfesConfig.UseSimpliss ? NfesTextHelper.FitDb(outcome.ChaveAcesso, 100) : null;
@@ -822,24 +819,24 @@ public class NfesEmissionService : INfesEmissionService
 
 
 
-    private static string? ResolveSimplissChave(string? nfeReceipt, string? checkCode, bool useSimpliss)
-
+    private static string? ResolveSimplissChave(string? nfesChaveAcesso, string? checkCode, bool useSimpliss)
     {
-
         if (!useSimpliss)
-
             return null;
 
-        if (!string.IsNullOrWhiteSpace(nfeReceipt) && nfeReceipt.TrimStart().StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
-
-            return nfeReceipt.Trim();
-
-        if (!string.IsNullOrWhiteSpace(checkCode) && checkCode.TrimStart().StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
-
-            return checkCode.Trim();
+        foreach (var candidate in new[] { nfesChaveAcesso, checkCode })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+                continue;
+            var trimmed = candidate.Trim();
+            if (trimmed.StartsWith("NFS", StringComparison.OrdinalIgnoreCase))
+                return trimmed;
+            var digits = NfesTextHelper.CleanDigits(trimmed);
+            if (digits.Length >= 50)
+                return digits.Length == 50 ? digits : digits[^50..];
+        }
 
         return null;
-
     }
 
 
@@ -882,7 +879,7 @@ public class NfesEmissionService : INfesEmissionService
 
         public string? NfesCheckCode { get; init; }
 
-        public string? NfeReceiptChave { get; init; }
+        public string? NfesChaveAcesso { get; init; }
 
     }
 

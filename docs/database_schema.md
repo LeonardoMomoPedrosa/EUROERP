@@ -751,10 +751,11 @@
 | 44 | `RPS_NO` | varchar(15) | YES |  |
 | 45 | `NFES_NO` | varchar(15) | YES |  |
 | 46 | `NFES_CHECK_CODE` | varchar(20) | YES |  |
-| 47 | `NFES_EMAIL_COUNT` | tinyint(3) | YES |  |
-| 48 | `PAYMENT_SUB_METHOD_ID` | tinyint(3) | YES |  |
-| 49 | `MODE` | varchar(1) | NO | ('S') |
-| 50 | `HIGI_PROC` | varchar(1) | NO | ('N') |
+| 47 | `NFES_CHAVE_ACESSO` | varchar(100) | YES | NFS-e nacional (Simpliss); not product NFe |
+| 48 | `NFES_EMAIL_COUNT` | tinyint(3) | YES |  |
+| 49 | `PAYMENT_SUB_METHOD_ID` | tinyint(3) | YES |  |
+| 50 | `MODE` | varchar(1) | NO | ('S') |
+| 51 | `HIGI_PROC` | varchar(1) | NO | ('N') |
 
 ### `ORDER_DETAILS`
 
