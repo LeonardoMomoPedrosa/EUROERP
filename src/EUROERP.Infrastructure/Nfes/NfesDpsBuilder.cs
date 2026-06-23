@@ -78,9 +78,6 @@ internal static class NfesDpsBuilder
                 WriteEl(writer, "regApTribSN", config.RegApTribSn);
             WriteEl(writer, "regEspTrib", regEspTrib);
             writer.WriteEndElement(); // regTrib
-            var emitPhone = NfesTextHelper.CleanDigits(config.EmitTelefone ?? "");
-            if (emitPhone.Length >= 8)
-                WriteEl(writer, "fone", emitPhone);
             writer.WriteEndElement(); // prest
 
             writer.WriteStartElement("toma", Ns);
