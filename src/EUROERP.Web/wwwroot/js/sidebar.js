@@ -7,3 +7,12 @@ window.setSidebarCollapsed = function (collapsed) {
     else
         el.classList.remove('main-layout-sidebar-collapsed');
 };
+
+/** Scroll the main content pane to top (layout scrolls .main-layout-content, not window). */
+window.scrollMainContentToTop = function () {
+    var el = document.querySelector('.main-layout-content');
+    if (el)
+        el.scrollTo({ top: 0, behavior: 'smooth' });
+    else
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+};

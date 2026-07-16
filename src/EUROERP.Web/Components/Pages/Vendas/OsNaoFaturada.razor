@@ -1,0 +1,159 @@
+@page "/vendas/os-nao-faturada"
+@using EUROERP.Application.Orders
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>OS não faturada</PageTitle>
+
+<div class="card mb-3 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <h5 class="mb-0">OS não faturada</h5>
+    </div>
+    <div class="card-body">
+        <div class="pedidos-nao-enviados-filter d-flex gap-2 align-items-center flex-wrap mb-0">
+            <label class="form-label mb-0 text-muted small">Código do produto a ser procurado:</label>
+            <input type="number"
+                   class="form-control form-control-sm"
+                   style="width: 100px;"
+                   placeholder="ID"
+                   @bind="_productIdInput"
+                   min="0"
+                   @onkeydown="OnProductKeyDown" />
+            <button type="button"
+                    class="btn btn-sm btn-primary"
+                    @onclick="Buscar"
+                    disabled="@_loading">
+                @(_loading ? "Carregando..." : "Buscar")
+            </button>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="py-4 text-center text-muted">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Carregando...
+            </div>
+        }
+        else if (_orders.Count == 0)
+        {
+            <div class="alert alert-light border mt-3 mb-0">
+                <span class="text-muted">
+                    @(_filterByProduct ? "Nenhuma OS encontrada com este produto." : "Nenhuma OS pendente de faturamento.")
+                </span>
+            </div>
+        }
+        else
+        {
+            <div class="card grid-card mt-2">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0 data-grid-table pedidos-nao-enviados-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Hora</th>
+                                    <th>OS</th>
+                                    <th>Cliente</th>
+                                    <th>Vendedor</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Valor R$</th>
+                                    @if (_filterByProduct)
+                                    {
+                                        <th class="text-end">Qtd</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _orders)
+                                {
+                                    <tr>
+                                        <td>@item.CreationDate.ToString("dd/MM/yyyy")</td>
+                                        <td>@item.CreationDate.ToString("HH:mm")</td>
+                                        <td>
+                                            <a href="/vendas/os/@item.OrderId" class="order-link">#@item.OrderId</a>
+                                            <span class="order-type-badge ms-1 order-type-@(item.OrderType == "A" ? "animais" : "produtos")">@GetOrderTypeLabel(item.OrderType)</span>
+                                        </td>
+                                        <td>@item.ClientFantasyName</td>
+                                        <td>@item.SalesAgent</td>
+                                        <td><span class="status-badge" style="color: @GetOrderStatusColor(item.Status)">@GetOrderStatusName(item.Status)</span></td>
+                                        <td class="text-end valor-cell">@item.Total.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"))</td>
+                                        @if (_filterByProduct)
+                                        {
+                                            <td class="text-end @(item.Quantity > 0 ? "text-danger fw-bold" : "text-muted")">@(item.Quantity > 0 ? item.Quantity.ToString() : "")</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+
+    private IReadOnlyList<PendingOrderDto> _orders = new List<PendingOrderDto>();
+    private bool _loading;
+    private int? _productIdInput;
+    private bool _filterByProduct;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync(null);
+    }
+
+    private async Task Buscar()
+    {
+        await LoadAsync(_productIdInput);
+    }
+
+    private async Task OnProductKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Buscar();
+    }
+
+    private async Task LoadAsync(int? productId)
+    {
+        _loading = true;
+        _filterByProduct = productId.HasValue && productId.Value > 0;
+        try
+        {
+            _orders = await OrderService.GetPendingOrdersAsync(productId > 0 ? productId : null);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string GetOrderStatusName(string status) => status switch
+    {
+        "I" => "Incompleto",
+        "R" => "Reaberto",
+        "F" => "Fechado",
+        "C" => "Cancelado",
+        "E" => "Enviado",
+        _ => "Indefinido"
+    };
+
+    private static string GetOrderStatusColor(string status) => status switch
+    {
+        "I" => "#FF8800",
+        "R" => "green",
+        "F" => "black",
+        "C" => "red",
+        "E" => "blue",
+        _ => "black"
+    };
+
+    private static string GetOrderTypeLabel(string orderType) => orderType switch
+    {
+        "A" => "Animais",
+        "B" => "Produtos",
+        _ => "Produtos"
+    };
+}

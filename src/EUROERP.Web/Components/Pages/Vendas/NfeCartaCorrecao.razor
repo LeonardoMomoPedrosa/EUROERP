@@ -1,0 +1,181 @@
+@page "/vendas/nfe/carta-correcao"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+
+<PageTitle>Carta de Correção</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-body py-3">
+            <h6 class="card-title mb-1">Carta de Correção Eletrônica</h6>
+            <p class="text-muted small mb-3">
+                Registra correção na SEFAZ (evento 110110) para NFe de venda. Informe o número da NF (RECEIPT).
+            </p>
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <label class="form-label small text-muted mb-0">Número da NF para emitir correção</label>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="text" inputmode="numeric" class="form-control form-control-sm text-end"
+                               @bind="_receiptNoText" placeholder="Nº" style="width: 7rem;" />
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ListarCorrecoes" disabled="@_lastCcLoading">
+                            @(_lastCcLoading ? "..." : "Listar correções")
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-12">
+                    <label class="form-label small text-muted mb-0">Descrição da nova correção (mín. 15 caracteres)</label>
+                    <textarea class="form-control form-control-sm" @bind="_correctionText" rows="3" maxlength="1000"
+                              placeholder="Texto da correção"></textarea>
+                </div>
+            </div>
+            <p class="small text-muted mt-2 mb-0">
+                <strong>Atenção:</strong> Cada carta de correção deverá conter as correções anteriores. Caso não sejam incluídas, serão desconsideradas.
+            </p>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="EmitirCorrecao" disabled="@_submitting">
+                    @(_submitting ? "Aguarde..." : "Emitir nova correção")
+                </button>
+            </div>
+            @if (_result != null)
+            {
+                <div class="mt-3 pt-3 border-top small @(_result.Success ? "text-success" : "text-danger")">
+                    @_result.Message
+                    @if (_result.Success && !string.IsNullOrEmpty(_result.Protocol))
+                    {
+                        <span class="d-block mt-1"><strong>Protocolo de correção:</strong> @_result.Protocol</span>
+                        @if (!string.IsNullOrEmpty(_result.SefazXEvento))
+                        {
+                            <span class="d-block text-muted">@_result.SefazXEvento</span>
+                        }
+                    }
+                    @if (!_result.Success && (!string.IsNullOrEmpty(_result.SefazCStat) || !string.IsNullOrEmpty(_result.SefazXMotivo)))
+                    {
+                        <span class="d-block mt-1">@_result.SefazCStat — @_result.SefazXMotivo</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card grid-card">
+        <div class="card-header py-2">
+            <h6 class="mb-0">Última Carta de Correção</h6>
+        </div>
+        @if (_lastCcLoading)
+        {
+            <div class="card-body py-4 text-center text-muted small">Carregando...</div>
+        }
+        else if (_lastCcList.Count == 0 && _listedReceiptNo is > 0)
+        {
+            <div class="card-body py-4">
+                <p class="text-muted mb-0 small">* Nenhuma carta de correção encontrada.</p>
+            </div>
+        }
+        else if (_lastCcList.Count == 0)
+        {
+            <div class="card-body py-4">
+                <p class="text-muted mb-0 small">Informe o número da NF e clique em &quot;Listar correções&quot;.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card-body py-2">
+                @foreach (var cc in _lastCcList)
+                {
+                    <div class="small border-bottom pb-2 mb-2">
+                        <strong>@cc.SysCreationDate.ToString("dd/MM/yyyy")</strong> — <em>por @cc.UserId</em>
+                        <div class="mt-1">@cc.Reason</div>
+                    </div>
+                }
+                @{
+                    var first = _lastCcList[0];
+                }
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <a href="/vendas/nfe/carta-correcao/imprimir?RID=@first.ReceiptNo" target="_blank" rel="noopener noreferrer"
+                       class="btn btn-sm btn-outline-secondary">Imprimir</a>
+                    @if (!string.IsNullOrEmpty(first.NfeKey))
+                    {
+                        <a href="/NFE_FILES/@first.OrderId/@(first.NfeKey)-cce.xml" target="_blank" rel="noopener noreferrer"
+                           class="btn btn-sm btn-outline-secondary">Abrir XML</a>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _receiptNoText = "";
+    private string _correctionText = "";
+    private bool _submitting;
+    private SendCceResult? _result;
+    private IReadOnlyList<LastCcEventDto> _lastCcList = Array.Empty<LastCcEventDto>();
+    private bool _lastCcLoading;
+    private int? _listedReceiptNo;
+
+    private bool TryGetReceiptNo(out int receiptNo)
+    {
+        receiptNo = 0;
+        return int.TryParse((_receiptNoText ?? "").Trim(), out receiptNo) && receiptNo >= 1;
+    }
+
+    private async Task ListarCorrecoes()
+    {
+        _result = null;
+        if (!TryGetReceiptNo(out var receiptNo))
+        {
+            _result = new SendCceResult { Success = false, Message = "Informe o número da nota." };
+            return;
+        }
+
+        _lastCcLoading = true;
+        try
+        {
+            _listedReceiptNo = receiptNo;
+            _lastCcList = await NfeService.GetLastCcEventsAsync(receiptNo);
+        }
+        finally
+        {
+            _lastCcLoading = false;
+        }
+    }
+
+    private async Task EmitirCorrecao()
+    {
+        _result = null;
+        if (!TryGetReceiptNo(out var receiptNo))
+        {
+            _result = new SendCceResult { Success = false, Message = "Informe o número da nota." };
+            return;
+        }
+
+        var text = (_correctionText ?? "").Trim();
+        if (text.Length < 15)
+        {
+            _result = new SendCceResult { Success = false, Message = "A descrição da correção deve ter no mínimo 15 caracteres." };
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            _result = await NfeService.SendCceAsync(new SendCceRequest
+            {
+                ReceiptNo = receiptNo,
+                CorrectionText = text
+            });
+            if (_result.Success)
+            {
+                _correctionText = "";
+                await ListarCorrecoes();
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

@@ -380,7 +380,7 @@
                     Mode = _orderMode
                 },
                 appId, userId);
-            Navigation.NavigateTo($"/vendas/os/{orderId}");
+            Navigation.NavigateTo($"/vendas/os/{orderId}", forceLoad: true);
         }
         catch (Exception ex)
         {

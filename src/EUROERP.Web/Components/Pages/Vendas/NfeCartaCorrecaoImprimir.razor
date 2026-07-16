@@ -1,0 +1,75 @@
+@page "/vendas/nfe/carta-correcao/imprimir"
+@layout PrintLayout
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Carta de Correção - Imprimir</PageTitle>
+
+<div class="p-4" style="max-width: 800px;">
+    @if (_loading)
+    {
+        <p class="text-muted">Carregando...</p>
+    }
+    else if (_cc == null)
+    {
+        <p class="text-muted">Nenhuma carta de correção encontrada para esta nota.</p>
+    }
+    else
+    {
+        <h5 class="mb-4">Carta de Correção Eletrônica</h5>
+        <p class="mb-1"><strong>Nota Fiscal:</strong> #@_cc.ReceiptNo</p>
+        <p class="mb-1"><strong>Pedido/OS:</strong> #@_cc.OrderId</p>
+        <p class="mb-1"><strong>Chave de acesso da nota relacionada:</strong> @_cc.NfeKey</p>
+        <p class="mb-1"><strong>Protocolo de correção:</strong> @_cc.Protocol</p>
+        <p class="mb-2 mt-3">@_cc.SysCreationDate.ToString("dd/MM/yyyy HH:mm") por <em>@_cc.UserId</em></p>
+        <p class="border rounded p-2 bg-light">@_cc.Reason</p>
+        <button type="button" class="btn btn-primary btn-sm mt-3 d-print-none" @onclick="PrintWindow">Imprimir</button>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "RID")]
+    public int? Rid { get; set; }
+
+    private LastCcEventDto? _cc;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Rid is > 0)
+        {
+            var list = await NfeService.GetLastCcEventsAsync(Rid.Value);
+            _cc = list.Count > 0 ? list[0] : null;
+        }
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _cc != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("window.print");
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    private async Task PrintWindow()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("window.print");
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+}

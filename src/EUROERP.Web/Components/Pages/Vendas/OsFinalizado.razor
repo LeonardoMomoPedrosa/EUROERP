@@ -1,0 +1,20 @@
+@page "/vendas/os/{OrderId:int}/finalizado"
+@rendermode InteractiveServer
+
+<PageTitle>OS finalizada — #@OrderId</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-body text-center py-5">
+        <p class="text-success fs-4 mb-2">OS finalizada com sucesso.</p>
+        <p class="text-muted mb-4">Ordem de Serviço #@OrderId</p>
+        <div class="d-flex flex-wrap justify-content-center gap-2">
+            <a href="/vendas/os/@OrderId" class="btn btn-outline-primary btn-sm">Voltar à OS</a>
+            <a href="/vendas/nfe/nfes" class="btn btn-outline-danger btn-sm">Enviar NFES</a>
+            <a href="/vendas/nova-os" class="btn btn-primary btn-sm">Nova OS</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+}

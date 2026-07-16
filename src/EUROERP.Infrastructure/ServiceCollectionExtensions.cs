@@ -9,8 +9,10 @@ using EUROERP.Application.Stock;
 using EUROERP.Application.Suppliers;
 using EUROERP.Application.Warranty;
 using EUROERP.Application.Config;
+using EUROERP.Application.NFe;
 using EUROERP.Application.Nfes;
 using EUROERP.Infrastructure.Config;
+using EUROERP.Infrastructure.NFe;
 using EUROERP.Infrastructure.Nfes;
 using EUROERP.Infrastructure.Address;
 using EUROERP.Infrastructure.Auth;
@@ -65,6 +67,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SimplissNfesBackend>();
         services.AddScoped<INfesEmissionService, NfesEmissionService>();
         services.AddScoped<INfesCancellationService, NfesCancellationService>();
+
+        services.AddSingleton<INfeCertificateActiveConfigStore, NfeCertificateActiveConfigStore>();
+        services.AddSingleton<INfeCertificateProvider, NfeCertificateProvider>();
+        services.AddScoped<INfeXmlBuilder, NfeXmlBuilder>();
+        services.AddScoped<INfeXmlSigner, NfeXmlSigner>();
+        services.AddScoped<INfeSchemaValidator, NfeSchemaValidator>();
+        services.AddScoped<INfeFileStorage, NfeFileStorage>();
+        services.AddScoped<INfePdfGenerator, NfePdfGenerator>();
+        services.AddScoped<INfeSefazClient, NfeSefazClient>();
+        services.AddScoped<INfeIndividualService, NfeIndividualService>();
+        services.AddScoped<IReceiptInNfeDataService, ReceiptInNfeDataService>();
+
         return services;
     }
 }

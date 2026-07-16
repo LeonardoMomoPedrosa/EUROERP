@@ -1,0 +1,313 @@
+@page "/vendas/nfe/outras"
+@using EUROERP.Application.NFe
+@using EUROERP.Application.Suppliers
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Nota Fiscal Avulsa</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Nota Fiscal Avulsa</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            NFe Outras (Eurobus) — cabeçalho da nota avulsa de fornecedor. Após salvar, informe os itens na tela de detalhes.
+        </p>
+
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageIsError ? "alert-danger" : "alert-info") py-2 small">@_message</div>
+        }
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-5">
+                        <label class="form-label small text-muted mb-0">Busca NF (nº fornecedor)</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_searchReceiptNo" min="1" />
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="BuscarPorReceiptNo" disabled="@_loading">Buscar</button>
+                    </div>
+                </div>
+
+                <label class="form-label small text-muted">Selecione o fornecedor</label>
+                @if (_selectedSupplierId > 0)
+                {
+                    <div class="small fw-bold mb-1">@_selectedSupplierName</div>
+                }
+                <div class="row g-2 mb-2">
+                    <div class="col">
+                        <input type="text" class="form-control form-control-sm" placeholder="Filtrar por nome..." @bind="_supplierFilter" @bind:event="oninput" />
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="FiltrarFornecedores" disabled="@_loadingSuppliers">Filtrar</button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+                    <table class="table table-sm table-striped table-hover mb-0">
+                        <thead class="table-secondary sticky-top">
+                            <tr>
+                                <th>Id</th>
+                                <th>Nome</th>
+                                <th>Cidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_suppliers.Count == 0)
+                            {
+                                <tr><td colspan="3" class="text-muted small">Nenhum fornecedor.</td></tr>
+                            }
+                            @foreach (var s in _suppliers)
+                            {
+                                <tr class="@(_selectedSupplierId == s.Id ? "table-active" : "") cursor-pointer"
+                                    @onclick="() => SelecionarFornecedor(s)">
+                                    <td>@s.Id</td>
+                                    <td class="fw-semibold">@s.SocialName</td>
+                                    <td>@s.City</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-5">
+                        <label class="form-label small text-muted mb-0">Número NFE (interno)</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_searchInternalNfe" min="1" />
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="BuscarPorNfeInterno" disabled="@_loading">Buscar</button>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <div class="form-check form-check-inline">
+                        <input type="radio" class="form-check-input" name="inout_v1" id="inout_in" checked="@(_inOut == "I")" @onchange="@(() => _inOut = "I")" />
+                        <label class="form-check-label" for="inout_in">Entrada</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input type="radio" class="form-check-input" name="inout_v1" id="inout_out" checked="@(_inOut == "O")" @onchange="@(() => _inOut = "O")" />
+                        <label class="form-check-label" for="inout_out">Saída</label>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">CFOP</label>
+                    <select class="form-select form-select-sm" @bind="_cfopId">
+                        @foreach (var cf in _cfopList)
+                        {
+                            <option value="@cf.Id">@cf.DisplayText</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">NF Referência (chave de acesso)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_nfeRef" />
+                </div>
+
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-0">Número</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_receiptNo" min="1" disabled="@_receiptNoLocked" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-0">Frete</label>
+                        <select class="form-select form-select-sm" @bind="_shipmOrigin">
+                            <option value="1">1 - Emitente</option>
+                            <option value="2">2 - Destinatário</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-0">Valor frete</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_shipment" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-0">ICMS ST</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_stAmount" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small text-muted mb-0">Observação da nota</label>
+                    <textarea class="form-control form-control-sm" rows="4" @bind="_obs"></textarea>
+                </div>
+
+                <button type="button" class="btn btn-sm btn-primary" @onclick="Continuar" disabled="@_saving">
+                    @(_saving ? "Salvando..." : "Continuar >")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private IReceiptInNfeDataService ReceiptInService { get; set; } = null!;
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private INfeIndividualService NfeService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    private static readonly System.Globalization.CultureInfo PtBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private List<SupplierSummaryDto> _suppliers = new();
+    private List<CfopItemDto> _cfopList = new();
+    private int _selectedSupplierId;
+    private string? _selectedSupplierName;
+    private string _supplierFilter = "";
+    private int _searchReceiptNo;
+    private int _searchInternalNfe;
+    private int _receiptNo;
+    private bool _receiptNoLocked;
+    private string _inOut = "I";
+    private byte _cfopId = 1;
+    private byte _shipmOrigin = 2;
+    private string _shipment = "0";
+    private string _stAmount = "0";
+    private string _nfeRef = "";
+    private string _obs = "";
+    private string? _message;
+    private bool _messageIsError;
+    private bool _loading;
+    private bool _loadingSuppliers;
+    private bool _saving;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+        _cfopList = (await NfeService.GetCfopListAsync()).ToList();
+        if (_cfopList.Count > 0 && _cfopId == 0)
+            _cfopId = _cfopList[0].Id;
+        await FiltrarFornecedores();
+    }
+
+    private async Task FiltrarFornecedores()
+    {
+        _loadingSuppliers = true;
+        try
+        {
+            _suppliers = (await SupplierService.GetListAsync(new SupplierFilterDto { Name = _supplierFilter })).ToList();
+        }
+        finally
+        {
+            _loadingSuppliers = false;
+        }
+    }
+
+    private void SelecionarFornecedor(SupplierSummaryDto s)
+    {
+        _selectedSupplierId = s.Id;
+        _selectedSupplierName = s.SocialName;
+    }
+
+    private async Task BuscarPorReceiptNo()
+    {
+        if (_searchReceiptNo <= 0) { ShowError("Informe o número da NF."); return; }
+        await CarregarDados(_searchReceiptNo);
+    }
+
+    private async Task BuscarPorNfeInterno()
+    {
+        if (_searchInternalNfe <= 0) { ShowError("Informe o número NFE."); return; }
+        _loading = true;
+        try
+        {
+            var receiptNo = await ReceiptInService.ResolveReceiptNoByInternalReceiptAsync(_searchInternalNfe);
+            if (receiptNo is null or <= 0)
+            {
+                ShowError("NF não encontrada para este número NFE.");
+                return;
+            }
+            await CarregarDados(receiptNo.Value);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task CarregarDados(int receiptNo)
+    {
+        _loading = true;
+        _message = null;
+        try
+        {
+            var data = await ReceiptInService.GetByReceiptNoAsync(receiptNo, 1);
+            if (data == null)
+            {
+                ShowError("NF não encontrada.");
+                return;
+            }
+            _receiptNo = data.ReceiptNo;
+            _receiptNoLocked = true;
+            _selectedSupplierId = data.SupplierId;
+            _selectedSupplierName = data.SupplierName;
+            _supplierFilter = data.SupplierName ?? "";
+            await FiltrarFornecedores();
+            _inOut = data.InOut;
+            _cfopId = data.CfopId;
+            _shipmOrigin = data.ShipmOrigin;
+            _shipment = data.Shipment.ToString("N2", PtBr);
+            _stAmount = data.StAmount.ToString("N2", PtBr);
+            _nfeRef = data.NfeRef ?? "";
+            _obs = data.Obs ?? "";
+            _message = "Dados carregados.";
+            _messageIsError = false;
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task Continuar()
+    {
+        _message = null;
+        if (_selectedSupplierId <= 0) { ShowError("Selecione o fornecedor."); return; }
+        if (_receiptNo <= 0) { ShowError("Informe o número da NF."); return; }
+        if (!TryParseDecimal(_shipment, out var shipment)) { ShowError("Frete inválido."); return; }
+        if (!TryParseDecimal(_stAmount, out var stAmount)) { ShowError("ICMS ST inválido."); return; }
+
+        _saving = true;
+        try
+        {
+            var result = await ReceiptInService.SaveV1Async(new SaveReceiptInNfeV1Request
+            {
+                ReceiptNo = _receiptNo,
+                SupplierId = _selectedSupplierId,
+                CfopId = _cfopId,
+                InOut = _inOut,
+                ShipmOrigin = _shipmOrigin,
+                Shipment = shipment,
+                StAmount = stAmount,
+                NfeRef = _nfeRef,
+                Obs = _obs,
+                UserId = _userId ?? "SYS",
+                ApplicationId = "EUROERP"
+            });
+            if (!result.Success)
+            {
+                ShowError(result.Message ?? "Erro ao salvar.");
+                return;
+            }
+            Navigation.NavigateTo($"/vendas/nfe/outras/detalhes/{result.ReceiptNo}");
+        }
+        finally { _saving = false; }
+    }
+
+    private static bool TryParseDecimal(string? text, out decimal value)
+    {
+        if (string.IsNullOrWhiteSpace(text)) { value = 0; return true; }
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Number, PtBr, out value)
+            || decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private void ShowError(string msg)
+    {
+        _message = msg;
+        _messageIsError = true;
+    }
+}

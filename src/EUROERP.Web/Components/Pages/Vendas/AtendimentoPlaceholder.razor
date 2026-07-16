@@ -1,0 +1,36 @@
+@page "/vendas/atendimento/criar"
+@page "/vendas/atendimento/listar"
+@page "/vendas/atendimento/relatorios"
+@inject NavigationManager Navigation
+
+<PageTitle>Atendimento</PageTitle>
+
+<div class="card mb-3 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <h5 class="mb-0">@_title</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-2">
+            Módulo de atendimento (Epic 10) — <strong>a implementar</strong>.
+        </p>
+        <p class="small text-muted mb-0">
+            Legacy: Eurobus4 <code>principal/call/*</code>. Tabelas: <code>CALL</code>, <code>CALL_STEP</code>, <code>ZONE</code>.
+        </p>
+    </div>
+</div>
+
+@code {
+    private string _title = "Atendimento";
+
+    protected override void OnInitialized()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+        _title = path switch
+        {
+            "vendas/atendimento/criar" => "Criar atendimento",
+            "vendas/atendimento/listar" => "Listar atendimentos",
+            "vendas/atendimento/relatorios" => "Relatório de atendimentos",
+            _ => "Atendimento"
+        };
+    }
+}

@@ -1,0 +1,375 @@
+@page "/vendas/nfe/outras-novo"
+@using EUROERP.Application.NFe
+@using EUROERP.Application.Suppliers
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Nota Fiscal Outras</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Nota Fiscal Outras</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            NFe Outras versão 2 (Eurobus) — cabeçalho com base ICMS, CSOSN, volumes e peso. Após salvar, informe os itens na tela de detalhes.
+        </p>
+
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageIsError ? "alert-danger" : "alert-info") py-2 small">@_message</div>
+        }
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Busca NF</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_searchReceiptNo" min="1" />
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="BuscarPorReceiptNo" disabled="@_loading">Buscar</button>
+                    </div>
+                </div>
+
+                <div class="row g-2 mb-2 align-items-end">
+                    <div class="col-md-8">
+                        <label class="form-label small text-muted mb-0">Fornecedor</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="Filtrar..." @bind="_supplierFilter" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="FiltrarFornecedores" disabled="@_loadingSuppliers">Filtrar</button>
+                    </div>
+                </div>
+                @if (_selectedSupplierId > 0)
+                {
+                    <div class="small fw-bold mb-1">@_selectedSupplierName</div>
+                }
+                <div class="table-responsive mb-3" style="max-height: 200px; overflow-y: auto;">
+                    <table class="table table-sm table-striped table-hover mb-0">
+                        <thead class="table-secondary sticky-top">
+                            <tr><th>Id</th><th>Nome</th><th>Cidade</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _suppliers)
+                            {
+                                <tr class="@(_selectedSupplierId == s.Id ? "table-active" : "") cursor-pointer"
+                                    @onclick="() => SelecionarFornecedor(s)">
+                                    <td>@s.Id</td>
+                                    <td class="fw-semibold">@s.SocialName</td>
+                                    <td>@s.City</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Base Cálc. ICMS</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input type="text" class="form-control" @bind="_baseCalc" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">ICMS</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" @bind="_icmsPerc" min="0" max="99" />
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Frete</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input type="text" class="form-control" @bind="_shipment" />
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Base Cálc. ICMS ST</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input type="text" class="form-control" @bind="_stBaseCalc" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Valor ICMS ST</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input type="text" class="form-control" @bind="_stAmount" />
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Outras Desp.</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input type="text" class="form-control" @bind="_otherAmount" />
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Peso Líq.</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" @bind="_weightNet" min="0" />
+                            <span class="input-group-text">gr</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Espécie</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_especie" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Peso Bruto</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" @bind="_weightGross" min="0" />
+                            <span class="input-group-text">gr</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="mb-2">
+                    <div class="form-check form-check-inline">
+                        <input type="radio" class="form-check-input" name="inout_v2" checked="@(_inOut == "I")" @onchange="@(() => _inOut = "I")" />
+                        <label class="form-check-label">Entrada</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input type="radio" class="form-check-input" name="inout_v2" checked="@(_inOut == "O")" @onchange="@(() => _inOut = "O")" />
+                        <label class="form-check-label">Saída</label>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">CFOP</label>
+                    <select class="form-select form-select-sm" @bind="_cfopId">
+                        @foreach (var cf in _cfopList)
+                        {
+                            <option value="@cf.Id">@cf.DisplayText</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">CSOSN</label>
+                    <select class="form-select form-select-sm" @bind="_csosn">
+                        <option value="101">101 - SN com crédito</option>
+                        <option value="102">102 - SN sem crédito</option>
+                        <option value="900">900 - Outros</option>
+                    </select>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">Frete (responsável)</label>
+                    <select class="form-select form-select-sm" @bind="_shipmOrigin">
+                        <option value="1">1 - Emitente</option>
+                        <option value="2">2 - Destinatário</option>
+                    </select>
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-0">NF Referência (chave de acesso)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_nfeRef" />
+                </div>
+
+                <div class="row g-2 mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0"># NF Forn.</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_receiptNo" min="1" disabled="@_receiptNoLocked" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Taxa Conv.</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_conversion" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-0">Volumes</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_volumes" min="0" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small text-muted mb-0">Observações</label>
+                    <input type="text" class="form-control form-control-sm mb-1" maxlength="60" @bind="_obs1" />
+                    <input type="text" class="form-control form-control-sm mb-1" maxlength="60" @bind="_obs2" />
+                    <input type="text" class="form-control form-control-sm" maxlength="60" @bind="_obs3" />
+                </div>
+
+                <button type="button" class="btn btn-sm btn-primary" @onclick="Continuar" disabled="@_saving">
+                    @(_saving ? "Salvando..." : "Continuar >")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private IReceiptInNfeDataService ReceiptInService { get; set; } = null!;
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private INfeIndividualService NfeService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    private static readonly System.Globalization.CultureInfo PtBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private List<SupplierSummaryDto> _suppliers = new();
+    private List<CfopItemDto> _cfopList = new();
+    private int _selectedSupplierId;
+    private string? _selectedSupplierName;
+    private string _supplierFilter = "";
+    private int _searchReceiptNo;
+    private int _receiptNo;
+    private bool _receiptNoLocked;
+    private string _inOut = "I";
+    private byte _cfopId = 1;
+    private byte _shipmOrigin = 2;
+    private string _csosn = "102";
+    private string _shipment = "0";
+    private string _baseCalc = "0";
+    private short _icmsPerc;
+    private string _stBaseCalc = "0";
+    private string _stAmount = "0";
+    private string _otherAmount = "0";
+    private string _conversion = "1";
+    private int _volumes;
+    private int _weightGross;
+    private int _weightNet;
+    private string _especie = "";
+    private string _nfeRef = "";
+    private string _obs1 = "";
+    private string _obs2 = "";
+    private string _obs3 = "";
+    private string? _message;
+    private bool _messageIsError;
+    private bool _loading;
+    private bool _loadingSuppliers;
+    private bool _saving;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+        _cfopList = (await NfeService.GetCfopListAsync()).ToList();
+        if (_cfopList.Count > 0)
+            _cfopId = _cfopList[0].Id;
+        await FiltrarFornecedores();
+    }
+
+    private async Task FiltrarFornecedores()
+    {
+        _loadingSuppliers = true;
+        try
+        {
+            _suppliers = (await SupplierService.GetListAsync(new SupplierFilterDto { Name = _supplierFilter })).ToList();
+        }
+        finally { _loadingSuppliers = false; }
+    }
+
+    private void SelecionarFornecedor(SupplierSummaryDto s)
+    {
+        _selectedSupplierId = s.Id;
+        _selectedSupplierName = s.SocialName;
+    }
+
+    private async Task BuscarPorReceiptNo()
+    {
+        if (_searchReceiptNo <= 0) { ShowError("Informe o número da NF."); return; }
+        _loading = true;
+        try
+        {
+            var data = await ReceiptInService.GetByReceiptNoAsync(_searchReceiptNo, 2);
+            if (data == null) { ShowError("NF não encontrada."); return; }
+            PreencherFormulario(data);
+            _message = "Dados carregados.";
+            _messageIsError = false;
+        }
+        finally { _loading = false; }
+    }
+
+    private void PreencherFormulario(ReceiptInNfeDataDto data)
+    {
+        _receiptNo = data.ReceiptNo;
+        _receiptNoLocked = true;
+        _selectedSupplierId = data.SupplierId;
+        _selectedSupplierName = data.SupplierName;
+        _inOut = data.InOut;
+        _cfopId = data.CfopId;
+        _shipmOrigin = data.ShipmOrigin;
+        _csosn = data.Csosn;
+        _shipment = data.Shipment.ToString("N2", PtBr);
+        _baseCalc = data.BaseCalc.ToString("N2", PtBr);
+        _icmsPerc = data.IcmsPerc;
+        _stBaseCalc = data.StBaseCalc.ToString("N2", PtBr);
+        _stAmount = data.StAmount.ToString("N2", PtBr);
+        _otherAmount = data.OtherAmount.ToString("N2", PtBr);
+        _conversion = data.Conversion.ToString("N2", PtBr);
+        _volumes = data.Volumes;
+        _weightGross = data.WeightGross;
+        _weightNet = data.WeightNet;
+        _especie = data.Especie ?? "";
+        _nfeRef = data.NfeRef ?? "";
+        _obs1 = data.Obs ?? "";
+        _obs2 = data.Obs2 ?? "";
+        _obs3 = data.Obs3 ?? "";
+    }
+
+    private async Task Continuar()
+    {
+        _message = null;
+        if (_selectedSupplierId <= 0) { ShowError("Selecione o fornecedor."); return; }
+        if (_receiptNo <= 0) { ShowError("Informe o número da NF."); return; }
+        if (!TryParseDecimal(_baseCalc, out var baseCalc)) { ShowError("Base ICMS inválida."); return; }
+        if (!TryParseDecimal(_shipment, out var shipment)) { ShowError("Frete inválido."); return; }
+        if (!TryParseDecimal(_stBaseCalc, out var stBaseCalc)) { ShowError("Base ST inválida."); return; }
+        if (!TryParseDecimal(_stAmount, out var stAmount)) { ShowError("ICMS ST inválido."); return; }
+        if (!TryParseDecimal(_otherAmount, out var otherAmount)) { ShowError("Outras despesas inválidas."); return; }
+        if (!TryParseDecimal(_conversion, out var conversion) || conversion < 1) { ShowError("Taxa de conversão inválida."); return; }
+
+        _saving = true;
+        try
+        {
+            var result = await ReceiptInService.SaveV2Async(new SaveReceiptInNfeV2Request
+            {
+                ReceiptNo = _receiptNo,
+                SupplierId = _selectedSupplierId,
+                CfopId = _cfopId,
+                InOut = _inOut,
+                ShipmOrigin = _shipmOrigin,
+                Shipment = shipment,
+                BaseCalc = baseCalc,
+                IcmsPerc = _icmsPerc,
+                StBaseCalc = stBaseCalc,
+                StAmount = stAmount,
+                OtherAmount = otherAmount,
+                Conversion = conversion,
+                Volumes = _volumes,
+                WeightGross = _weightGross,
+                WeightNet = _weightNet,
+                Especie = _especie,
+                Csosn = _csosn,
+                NfeRef = _nfeRef,
+                Obs1 = _obs1,
+                Obs2 = _obs2,
+                Obs3 = _obs3,
+                UserId = _userId ?? "SYS",
+                ApplicationId = "EUROERP"
+            });
+            if (!result.Success) { ShowError(result.Message ?? "Erro ao salvar."); return; }
+            Navigation.NavigateTo($"/vendas/nfe/outras-novo/detalhes/{result.ReceiptNo}");
+        }
+        finally { _saving = false; }
+    }
+
+    private static bool TryParseDecimal(string? text, out decimal value)
+    {
+        if (string.IsNullOrWhiteSpace(text)) { value = 0; return true; }
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Number, PtBr, out value)
+            || decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private void ShowError(string msg) { _message = msg; _messageIsError = true; }
+}

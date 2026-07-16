@@ -1,18 +1,443 @@
 @page "/vendas/os/{OrderId:int}/pagamento"
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Orders
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Globalization
 @rendermode InteractiveServer
 
 <PageTitle>Pagamento — OS #@OrderId</PageTitle>
 
-<div class="card">
-    <div class="card-header">
-        <h5 class="mb-0">Pagamento da Ordem de Serviço #@OrderId</h5>
+<div class="mb-2">
+    <a href="/vendas/os/@OrderId" class="btn btn-link btn-sm p-0 text-secondary">← Voltar à OS</a>
+</div>
+
+@if (_summary == null && !_loading)
+{
+    <div class="alert alert-warning">OS não encontrada.</div>
+    return;
+}
+
+@if (_loading)
+{
+    <div class="text-muted">Carregando...</div>
+    return;
+}
+
+@if (_summary!.Status != "I" && _summary.Status != "R")
+{
+    <div class="alert alert-warning">Esta OS não está aberta para pagamento.</div>
+    <div class="mt-2">
+        <a href="/vendas/os/@OrderId" class="btn btn-outline-secondary btn-sm">Voltar à OS</a>
+        <a href="/vendas/nova-os" class="btn btn-outline-secondary btn-sm ms-1">Nova OS</a>
     </div>
-    <div class="card-body">
-        <p class="text-muted mb-3">Tela de pagamento (Story 8.3) será implementada em seguida.</p>
-        <a class="btn btn-sm btn-outline-secondary" href="/vendas/os/@OrderId">Voltar à OS</a>
+    return;
+}
+
+<div class="row">
+    <div class="col-lg-4 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light py-2 px-3">
+                <span class="text-muted small">Ordem de Serviço</span>
+                <span class="fw-semibold ms-1">#@_summary.OrderId</span>
+            </div>
+            <div class="card-body p-3">
+                <div class="mb-3">
+                    <div class="text-muted small text-uppercase mb-1">Cliente</div>
+                    <div class="fw-medium">@_summary.ClientName</div>
+                    @if (_summary.AvgPayterm > 0)
+                    {
+                        <div class="text-muted small mt-0">Prazo médio: @_summary.AvgPayterm dias</div>
+                    }
+                </div>
+                <div class="border-top pt-3">
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>(-) Crédito</span>
+                        <span>@_summary.CurrencySymbol @_summary.Credit.ToString("N2")</span>
+                    </div>
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>(-) Desconto</span>
+                        <span>@_summary.Discount.ToString("N1")%</span>
+                    </div>
+                    @if (_summary.OtherExpenses > 0)
+                    {
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span>(+) Outras despesas</span>
+                            <span>@_summary.CurrencySymbol @_summary.OtherExpenses.ToString("N2")</span>
+                        </div>
+                    }
+                    @if (_summary.ShipmentCost > 0)
+                    {
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span>(+) Frete</span>
+                            <span>@_summary.CurrencySymbol @_summary.ShipmentCost.ToString("N2")</span>
+                        </div>
+                    }
+                    <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                        <span class="fw-semibold">Total a pagar</span>
+                        <span class="fs-5 fw-bold text-primary">@_summary.CurrencySymbol @_summary.TotalToPay.ToString("N2")</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card mt-2 mb-3 shadow-sm">
+            <div class="card-body py-2">
+                <label class="form-label small mb-1">Método de pagamento</label>
+                <select class="form-select form-select-sm" @bind="_selectedPaymentMethodId" @bind:after="OnPaymentMethodChanged">
+                    <option value="0">Selecione</option>
+                    @foreach (var pm in _paymentMethods)
+                    {
+                        <option value="@pm.Id">@pm.Name</option>
+                    }
+                </select>
+                @if (_paymentSubMethods.Count > 0)
+                {
+                    <label class="form-label small mt-2 mb-1">Sub-método</label>
+                    <select class="form-select form-select-sm" @bind="_selectedPaymentSubMethodId" @bind:after="OnPaymentSubMethodChanged">
+                        <option value="0">Selecione</option>
+                        @foreach (var sm in _paymentSubMethods)
+                        {
+                            <option value="@sm.Id">@sm.Name</option>
+                        }
+                    </select>
+                }
+                @if (RequiresParcelas && _selectedMethod != null)
+                {
+                    <label class="form-label small mt-2 mb-1">Número de parcelas</label>
+                    <select class="form-select form-select-sm" @bind="_parcelas" @bind:after="BuildTermsFromParcelas">
+                        <option value="0">Selecione</option>
+                        @for (var i = 1; i <= EffectiveMaxTerms; i++)
+                        {
+                            <option value="@i">@i</option>
+                        }
+                    </select>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        @if (_selectedPaymentMethodId == 6)
+        {
+            <div class="alert alert-info py-2 small">Forma <strong>OUTROS</strong> — a OS será finalizada sem contas a receber.</div>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-success btn-sm" @onclick="FinalizarCompra" disabled="@_finishing">@(_finishing ? "Finalizando..." : "Finalizar OS")</button>
+                <a href="/vendas/os/@OrderId" class="btn btn-outline-secondary btn-sm">Voltar à OS</a>
+                <a href="/vendas/nova-os" class="btn btn-outline-secondary btn-sm">Sair</a>
+            </div>
+        }
+        else if (_selectedPaymentMethodId > 0 && _terms.Count > 0)
+        {
+            <div class="card mb-3">
+                <div class="card-header py-2"><h6 class="mb-0">Detalhes do pagamento</h6></div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Parcela</th>
+                                    <th>Valor</th>
+                                    <th>Vencimento</th>
+                                    <th>Obs</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < _terms.Count; i++)
+                                {
+                                    var idx = i;
+                                    var t = _terms[i];
+                                    <tr>
+                                        <td>@(idx + 1)</td>
+                                        <td><input type="text" class="form-control form-control-sm text-end" inputmode="decimal" value="@FormatTermAmount(t.Amount)" @onchange="e => OnTermAmountChanged(idx, e)" /></td>
+                                        <td><input type="date" class="form-control form-control-sm" @bind="t.DueDate" /></td>
+                                        <td><input type="text" class="form-control form-control-sm" maxlength="200" @bind="t.Memo" /></td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td class="text-end"><strong>Total</strong></td>
+                                    <td><strong>@FormatTermAmount(_terms.Sum(x => x.Amount))</strong></td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_validationError))
+            {
+                <div class="alert alert-danger py-2 small">@_validationError</div>
+            }
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-success btn-sm" @onclick="FinalizarCompra" disabled="@_finishing">@(_finishing ? "Finalizando..." : "Finalizar OS")</button>
+                <a href="/vendas/os/@OrderId" class="btn btn-outline-secondary btn-sm">Voltar à OS</a>
+                <a href="/vendas/nova-os" class="btn btn-outline-secondary btn-sm">Sair</a>
+            </div>
+        }
+        else if (_selectedPaymentMethodId > 0)
+        {
+            <p class="text-muted small">Selecione o método e, se necessário, sub-método e número de parcelas.</p>
+        }
     </div>
 </div>
 
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
 @code {
-    [Parameter] public int OrderId { get; set; }
+    [Parameter]
+    public int OrderId { get; set; }
+
+    private OrderPaymentSummaryDto? _summary;
+    private List<PaymentMethodOptionDto> _paymentMethods = new();
+    private List<PaymentSubMethodDto> _paymentSubMethods = new();
+    private bool _loading = true;
+    private byte _selectedPaymentMethodId;
+    private byte _selectedPaymentSubMethodId;
+    private PaymentMethodOptionDto? _selectedMethod;
+    private int _parcelas;
+    private List<PaymentTermEdit> _terms = new();
+    private string? _validationError;
+    private bool _finishing;
+    private string? _errorMessage;
+
+    private string? _applicationId;
+    private string? _userId;
+
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+    [Inject] private IClientReferenceService ClientReferenceService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    private bool RequiresParcelas =>
+        _selectedPaymentMethodId is not (0 or 1 or 4 or 6) && EffectiveMaxTerms > 1;
+
+    private byte EffectiveMaxTerms
+    {
+        get
+        {
+            if (_selectedMethod == null) return 1;
+            if (_selectedPaymentSubMethodId > 0)
+            {
+                var sm = _paymentSubMethods.FirstOrDefault(s => s.Id == _selectedPaymentSubMethodId);
+                if (sm?.MaxTerms is > 0) return sm.MaxTerms.Value;
+            }
+            return _selectedMethod.MaxTerms > 0 ? _selectedMethod.MaxTerms : (byte)1;
+        }
+    }
+
+    private class PaymentTermEdit
+    {
+        public decimal Amount { get; set; }
+        public DateTime DueDate { get; set; }
+        public string Memo { get; set; } = "";
+    }
+
+    private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private static string FormatTermAmount(decimal amount) =>
+        Math.Round(amount, 2).ToString("N2", PtBr);
+
+    private void OnTermAmountChanged(int index, ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString()?.Trim() ?? "";
+        if (string.IsNullOrEmpty(raw))
+        {
+            _terms[index].Amount = 0;
+            return;
+        }
+
+        if (!decimal.TryParse(raw, NumberStyles.Number, PtBr, out var amount)
+            && !decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out amount))
+            return;
+
+        _terms[index].Amount = Math.Round(amount, 2);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+        _applicationId = Configuration["Authentication:ApplicationName"] ?? "LionSystem";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+        try
+        {
+            _summary = await OrderService.GetOrderPaymentSummaryAsync(OrderId);
+            if (_summary == null) return;
+            _paymentMethods = (await OrderService.GetAllowedPaymentMethodsAsync(_summary.ClientId, _summary.TotalToPay)).ToList();
+
+            if (_summary.Status == "R" && _summary.BtrId is > 0)
+            {
+                var existing = (await OrderService.GetOrderPaymentTermsAsync(OrderId)).ToList();
+                if (existing.Count > 0)
+                {
+                    _selectedPaymentMethodId = existing[0].PaymentMethodId;
+                    _selectedPaymentSubMethodId = existing[0].PaymentSubMethodId;
+                    await LoadPaymentSubMethodsAsync();
+                    _selectedMethod = _paymentMethods.FirstOrDefault(p => p.Id == _selectedPaymentMethodId);
+                    _terms = existing.Select(t => new PaymentTermEdit
+                    {
+                        Amount = Math.Round(t.Amount, 2),
+                        DueDate = t.DueDate,
+                        Memo = t.Memo
+                    }).ToList();
+                    _parcelas = _terms.Count;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnPaymentMethodChanged()
+    {
+        _validationError = null;
+        _selectedMethod = _paymentMethods.FirstOrDefault(p => p.Id == _selectedPaymentMethodId);
+        _terms.Clear();
+        _parcelas = 0;
+        _selectedPaymentSubMethodId = 0;
+        await LoadPaymentSubMethodsAsync();
+        if (_selectedPaymentMethodId == 0 || _summary == null) return;
+        if (_selectedPaymentMethodId == 6) return;
+        if (RequiresParcelas) return;
+        BuildSingleTerm();
+    }
+
+    private async Task OnPaymentSubMethodChanged()
+    {
+        _validationError = null;
+        _terms.Clear();
+        _parcelas = 0;
+        if (_selectedPaymentMethodId == 0 || _summary == null) return;
+        if (RequiresParcelas) return;
+        BuildSingleTerm();
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadPaymentSubMethodsAsync()
+    {
+        _paymentSubMethods.Clear();
+        if (_selectedPaymentMethodId == 0 || _selectedPaymentMethodId == 6) return;
+        _paymentSubMethods = (await ClientReferenceService.GetPaymentSubMethodsAsync(_selectedPaymentMethodId)).ToList();
+    }
+
+    private void BuildSingleTerm()
+    {
+        if (_summary == null) return;
+        _terms.Clear();
+        _terms.Add(new PaymentTermEdit
+        {
+            Amount = Math.Round(_summary.TotalToPay, 2),
+            DueDate = _selectedPaymentMethodId == 4 ? DateTime.Today : DateTime.Today,
+            Memo = "--"
+        });
+    }
+
+    private void BuildTermsFromParcelas()
+    {
+        _terms.Clear();
+        if (_summary == null || _parcelas < 1) return;
+        var total = _summary.TotalToPay;
+        var termVal = Math.Round(total / _parcelas, 2);
+        var first = termVal - (termVal * _parcelas - total);
+        var startDate = _selectedPaymentMethodId == 7 ? DateTime.Today.AddDays(30) : DateTime.Today;
+        for (var i = 0; i < _parcelas; i++)
+        {
+            _terms.Add(new PaymentTermEdit
+            {
+                Amount = Math.Round(i == 0 ? first : termVal, 2),
+                DueDate = startDate.AddMonths(i),
+                Memo = "--"
+            });
+        }
+    }
+
+    private bool ValidateAvgPayterm(out string? error)
+    {
+        error = null;
+        if (_summary == null || _terms.Count <= 1 || _summary.AvgPayterm == 0)
+            return true;
+        var totalDays = _terms.Sum(t => (t.DueDate.Date - DateTime.Today).Days);
+        var avg = (decimal)totalDays / _terms.Count;
+        if (Math.Ceiling(avg) > _summary.AvgPayterm)
+        {
+            error = "O prazo médio de pagamento excede ao permitido.";
+            return false;
+        }
+        return true;
+    }
+
+    private async Task FinalizarCompra()
+    {
+        if (_summary == null || _selectedPaymentMethodId == 0) return;
+        _validationError = null;
+
+        if (_paymentSubMethods.Count > 0 && _selectedPaymentSubMethodId == 0 && _selectedPaymentMethodId != 6)
+        {
+            _validationError = "Selecione o sub-método de pagamento.";
+            return;
+        }
+
+        if (_selectedPaymentMethodId != 6)
+        {
+            if (_terms.Count == 0)
+            {
+                _validationError = "Informe os termos de pagamento.";
+                return;
+            }
+            var sum = _terms.Sum(t => t.Amount);
+            if (Math.Abs(sum - _summary.TotalToPay) > 0.01m)
+            {
+                _validationError = "O total das parcelas deve ser igual ao total a pagar.";
+                return;
+            }
+            if (!ValidateAvgPayterm(out var avgError))
+            {
+                _validationError = avgError;
+                return;
+            }
+        }
+
+        _finishing = true;
+        _errorMessage = null;
+        try
+        {
+            IReadOnlyList<BtrDetailDto> details = _selectedPaymentMethodId == 6
+                ? Array.Empty<BtrDetailDto>()
+                : _terms.Select(t => new BtrDetailDto
+                {
+                    Amount = t.Amount,
+                    DueDate = t.DueDate,
+                    Memo = t.Memo ?? "",
+                    PaymentMethodId = _selectedPaymentMethodId,
+                    PaymentSubMethodId = _selectedPaymentSubMethodId
+                }).ToList();
+
+            await OrderService.FinishOrderWithPaymentAsync(
+                OrderId, _selectedPaymentMethodId, _selectedPaymentSubMethodId, details, _applicationId!, _userId!, default);
+            Navigation.NavigateTo($"/vendas/os/{OrderId}/finalizado", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _finishing = false;
+        }
+    }
 }

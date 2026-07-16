@@ -1,0 +1,132 @@
+@page "/vendas/nfe/download"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+
+<PageTitle>Download de Notas Fiscais</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-body py-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label small text-muted mb-0" for="monthYear">Mês / Ano</label>
+                    <input id="monthYear" type="month" class="form-control form-control-sm" @bind="_monthYear" />
+                </div>
+                <div class="col-12 col-md-4">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="GerarArquivo" disabled="@_loading">
+                        @(_loading ? "Aguarde..." : "Gerar Arquivo")
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_validationError))
+            {
+                <div class="small text-danger mt-2">@_validationError</div>
+            }
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="mt-2 small @(_messageSuccess ? "text-success" : "text-danger")">@_message</div>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between">
+            <h6 class="mb-0">Arquivos Existentes</h6>
+            <span class="text-muted small">(até 12 mais recentes)</span>
+        </div>
+        <div class="card-body py-3">
+            @if (_zipFiles.Count == 0)
+            {
+                <p class="text-muted small mb-0">Nenhum arquivo zip gerado ainda.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-nowrap">Arquivo</th>
+                                <th class="text-end" style="width: 6rem;">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var fileName in _zipFiles)
+                            {
+                                <tr>
+                                    <td class="align-middle"><span class="text-break">@fileName</span></td>
+                                    <td class="align-middle text-end">
+                                        <a href="/NFE_download/@fileName" target="_blank" rel="noopener noreferrer" download
+                                           class="btn btn-sm btn-outline-primary py-0 px-2">Download</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime _monthYear = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private string? _validationError;
+    private string? _message;
+    private bool _messageSuccess;
+    private bool _loading;
+    private IReadOnlyList<string> _zipFiles = Array.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadZipListAsync();
+    }
+
+    private async Task LoadZipListAsync()
+    {
+        try
+        {
+            _zipFiles = await NfeService.ListZipFilesAsync();
+        }
+        catch
+        {
+            _zipFiles = Array.Empty<string>();
+        }
+    }
+
+    private async Task GerarArquivo()
+    {
+        _validationError = null;
+        _message = null;
+        var month = (byte)_monthYear.Month;
+        var year = _monthYear.Year;
+        if (month < 1 || month > 12)
+        {
+            _validationError = "Mês inválido.";
+            return;
+        }
+        if (year < 2005 || year > 2030)
+        {
+            _validationError = "Ano deve ser entre 2005 e 2030.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var fileName = await NfeService.GenerateZipAsync(month, year);
+            _message = $"Arquivo gerado: {fileName}";
+            _messageSuccess = true;
+            await LoadZipListAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = "Erro ao gerar arquivo: " + ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

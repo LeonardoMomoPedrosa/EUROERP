@@ -1,0 +1,192 @@
+@page "/vendas/nfe/relatorio"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+
+<PageTitle>Relatório de Notas Fiscais</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-body py-3">
+            <h6 class="card-title mb-3">Período</h6>
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label small text-muted mb-0" for="firstDate">Data Inicial</label>
+                    <input id="firstDate" type="date" class="form-control form-control-sm" @bind="_firstDate" />
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label small text-muted mb-0" for="lastDate">Data Final</label>
+                    <input id="lastDate" type="date" class="form-control form-control-sm" @bind="_lastDate" />
+                </div>
+                <div class="col-12 col-md-4">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Buscar" disabled="@_loading">
+                        @(_loading ? "Aguarde..." : "Buscar")
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="mt-2 small text-danger">@_message</div>
+            }
+        </div>
+    </div>
+
+    @if (_searched)
+    {
+        <div class="card grid-card">
+            <div class="card-header py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h6 class="mb-0">Saídas (vendas)</h6>
+                <span class="text-muted small">@_firstDate.ToString("dd/MM/yyyy") até @_lastDate.ToString("dd/MM/yyyy")</span>
+            </div>
+            <div class="card-body p-0">
+                @{
+                    var sales = _allRows.Where(r => r.Type == "P" || r.Type == "S").ToList();
+                    var totalSales = sales.Where(r => string.IsNullOrEmpty(r.CancelUser)).Sum(r => r.NfAmount);
+                }
+                @if (sales.Count == 0)
+                {
+                    <div class="p-4 text-center text-muted">Nenhuma nota fiscal de venda no período.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover table-bordered mb-0 data-grid-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center">NF</th>
+                                    <th class="text-center">CFOP</th>
+                                    <th class="text-nowrap">Data</th>
+                                    <th class="text-center">Hora</th>
+                                    <th>Cliente</th>
+                                    <th class="text-nowrap">CNPJ/CPF</th>
+                                    <th class="text-center">OS</th>
+                                    <th class="text-end">Valor</th>
+                                    <th class="text-end" style="width: 8rem;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in sales)
+                                {
+                                    <tr class="@(string.IsNullOrEmpty(r.CancelUser) ? null : "table-danger")">
+                                        <td class="text-center">@r.ReceiptNo</td>
+                                        <td class="text-center">@r.Cfop</td>
+                                        <td class="text-nowrap">@r.RecDate</td>
+                                        <td class="text-center">@r.RecTime</td>
+                                        <td class="text-truncate" style="max-width: 12rem;" title="@(r.SocialName ?? "")">@(r.SocialName ?? "—")</td>
+                                        <td class="small text-nowrap">@(r.CnpjPf ?? "—")</td>
+                                        <td class="text-center">@r.OrderId</td>
+                                        <td class="text-end">@r.NfAmount.ToString("N2", PtBr)</td>
+                                        <td class="text-end">
+                                            @if (!string.IsNullOrEmpty(r.NfeKey))
+                                            {
+                                                <a href="/NFE_FILES/@r.OrderId/DFE@(r.NfeKey).pdf" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-danger py-0 px-1 me-1">PDF</a>
+                                                <a href="/NFE_FILES/@r.OrderId/DFE@(r.NfeKey).xml" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary py-0 px-1">XML</a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr class="fw-medium">
+                                    <td colspan="7" class="text-end">Total (não canceladas)</td>
+                                    <td class="text-end">R$ @totalSales.ToString("N2", PtBr)</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (_allRows.Any(r => r.Type == "O"))
+        {
+            var outras = _allRows.Where(r => r.Type == "O").ToList();
+            <div class="card grid-card">
+                <div class="card-header py-2">
+                    <h6 class="mb-0">Entradas / Outras</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover table-bordered mb-0 data-grid-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center">NF</th>
+                                    <th class="text-nowrap">Data</th>
+                                    <th>Fornecedor</th>
+                                    <th class="text-center">In/Out</th>
+                                    <th class="text-end">Valor</th>
+                                    <th class="text-end" style="width: 8rem;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in outras)
+                                {
+                                    var folder = "IN" + r.OrderId;
+                                    var key = r.OnfeKey ?? r.NfeKey;
+                                    <tr>
+                                        <td class="text-center">@r.ReceiptNo</td>
+                                        <td class="text-nowrap">@r.RecDate</td>
+                                        <td>@(r.OtherName ?? "—")</td>
+                                        <td class="text-center">@(string.IsNullOrEmpty(r.Inout) ? "—" : r.Inout)</td>
+                                        <td class="text-end">@r.NfAmount.ToString("N2", PtBr)</td>
+                                        <td class="text-end">
+                                            @if (!string.IsNullOrEmpty(key))
+                                            {
+                                                <a href="/NFE_FILES/@folder/DFE@(key).pdf" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-danger py-0 px-1 me-1">PDF</a>
+                                                <a href="/NFE_FILES/@folder/DFE@(key).xml" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary py-0 px-1">XML</a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo PtBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private DateTime _firstDate = DateTime.Today.AddMonths(-1);
+    private DateTime _lastDate = DateTime.Today;
+    private bool _loading;
+    private string? _message;
+    private bool _searched;
+    private IReadOnlyList<ReceiptReportRowDto> _allRows = Array.Empty<ReceiptReportRowDto>();
+
+    private async Task Buscar()
+    {
+        _message = null;
+        _searched = false;
+        var first = _firstDate.Date;
+        var last = _lastDate.Date;
+        if (last < first)
+            last = first;
+        if (first.Year < 2005 || first.Year > 2030 || last.Year < 2005 || last.Year > 2030)
+        {
+            _message = "Datas devem estar entre 2005 e 2030.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            _allRows = await NfeService.GetReceiptReportAsync(first, last);
+            _firstDate = first;
+            _lastDate = last;
+            _searched = true;
+        }
+        catch (Exception ex)
+        {
+            _message = "Erro ao gerar relatório: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

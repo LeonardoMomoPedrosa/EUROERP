@@ -1,0 +1,426 @@
+@page "/vendas/consultar-os"
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Orders
+@rendermode InteractiveServer
+
+<PageTitle>Consultar Ordem de Serviço</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Ordem de Serviço</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-3">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Cliente</label>
+                <div class="position-relative autocomplete-wrapper">
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           placeholder="Razão social ou fantasia..."
+                           @bind="_clientName"
+                           @bind:event="oninput"
+                           @bind:after="OnClientNameChanged"
+                           @onblur="OnClientNameBlur"
+                           autocomplete="off" />
+                    @if (_loadingSuggestions)
+                    {
+                        <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                    }
+                    @if (_showSuggestions)
+                    {
+                        <div class="supplier-autocomplete-dropdown position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm border-dark" style="z-index: 9999; max-height: 200px; overflow-y: auto;" @onmousedown="OnDropdownMouseDown" @onmousedown:preventDefault>
+                            @if (_suggestions.Count == 0)
+                            {
+                                <div class="p-2 small text-muted">Nenhum cliente encontrado.</div>
+                            }
+                            else
+                            {
+                                @foreach (var c in _suggestions)
+                                {
+                                    <div class="supplier-autocomplete-item px-2 py-1 small cursor-pointer" @onmousedown="() => SelectClientFromAutocomplete(c)">
+                                        <div class="fw-semibold">@c.SocialName</div>
+                                        @if (!string.IsNullOrEmpty(c.FantasyName) && c.FantasyName != c.SocialName)
+                                        {
+                                            <div class="text-muted">@c.FantasyName</div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" @onclick="BuscarClientes" disabled="@_loadingClients">@(_loadingClients ? "..." : "Busca")</button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Busca por Número da OS</label>
+                <input type="number" class="form-control form-control-sm" min="1" max="100000" @bind="_orderIdInput" />
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" @onclick="BuscarPorOs" disabled="@_searching">@(_searching ? "..." : "Busca")</button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Nota Fiscal #</label>
+                <input type="number" class="form-control form-control-sm" min="1" @bind="_nfInput" />
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" @onclick="BuscarPorNf" disabled="@_searching">@(_searching ? "..." : "Busca")</button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Busca por Frota</label>
+                <input type="text" class="form-control form-control-sm" @bind="_carDescInput" />
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" @onclick="BuscarPorFrota" disabled="@_searching">@(_searching ? "..." : "Busca")</button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Busca por Placa</label>
+                <div class="position-relative autocomplete-wrapper">
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           @bind="_carPlateInput"
+                           @bind:event="oninput"
+                           @bind:after="OnPlateChanged"
+                           @onblur="OnPlateBlur"
+                           autocomplete="off" />
+                    @if (_loadingPlateSuggestions)
+                    {
+                        <span class="position-absolute top-50 end-0 translate-middle-y pe-2 small text-muted">...</span>
+                    }
+                    @if (_showPlateSuggestions)
+                    {
+                        <div class="supplier-autocomplete-dropdown position-absolute start-0 end-0 top-100 mt-1 border rounded bg-white shadow-sm border-dark" style="z-index: 9999; max-height: 160px; overflow-y: auto;" @onmousedown="OnPlateDropdownMouseDown" @onmousedown:preventDefault>
+                            @foreach (var plate in _plateSuggestions)
+                            {
+                                <div class="supplier-autocomplete-item px-2 py-1 small cursor-pointer" @onmousedown="() => SelectPlate(plate)">@plate</div>
+                            }
+                        </div>
+                    }
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" @onclick="BuscarPorPlaca" disabled="@_searching">@(_searching ? "..." : "Busca")</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-7">
+                <label class="form-label small text-muted">Clientes</label>
+                @if (_clientList.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Fantasia</th>
+                                    <th>Localidade</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _clientList)
+                                {
+                                    <tr role="button" class="@(_selectedClient?.Id == c.Id ? "table-primary" : "")" @onclick="() => OnSelectClientFromGrid(c)">
+                                        <td class="small">@c.SocialName</td>
+                                        <td class="small">@c.FantasyName</td>
+                                        <td class="small">@((c.City ?? "") + " / " + (c.State ?? ""))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+            <div class="col-md-5">
+                @if (!string.IsNullOrEmpty(_searchMessage))
+                {
+                    <div class="alert alert-info py-2 small mb-2">@_searchMessage</div>
+                }
+                @if (_searching && _results.Count == 0 && string.IsNullOrEmpty(_searchMessage))
+                {
+                    <p class="text-muted small">Aguarde carregando...</p>
+                }
+                @foreach (var o in _results)
+                {
+                    <div class="alert alert-info py-2 mb-2" style="background-color: ghostwhite; font-size: 0.9rem;" role="alert">
+                        Pedido:
+                        <a href="/vendas/os/@o.OrderId?from=consultar" class="fw-bold">@o.OrderId</a>
+                        @o.CreationDate.ToString("dd/MM/yyyy")
+                        <span style="color: @GetOrderStatusColor(o.Status)"><b>@GetOrderStatusName(o.Status)</b></span>
+                        <span class="small">@o.ClientFantasyName</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+@code {
+    private string? _clientName;
+    private int? _orderIdInput;
+    private int? _nfInput;
+    private string? _carDescInput;
+    private string? _carPlateInput;
+
+    private IReadOnlyList<ClientSummaryDto> _suggestions = new List<ClientSummaryDto>();
+    private bool _showSuggestions;
+    private bool _loadingSuggestions;
+    private bool _selectingSuggestions;
+    private CancellationTokenSource? _debounceCts;
+
+    private IReadOnlyList<string> _plateSuggestions = new List<string>();
+    private bool _showPlateSuggestions;
+    private bool _loadingPlateSuggestions;
+    private bool _selectingPlateSuggestions;
+    private CancellationTokenSource? _plateDebounceCts;
+
+    private List<ClientSummaryDto> _clientList = new();
+    private ClientSummaryDto? _selectedClient;
+
+    private bool _loadingClients;
+    private bool _searching;
+    private string? _searchMessage;
+    private string? _errorMessage;
+    private List<OrderSearchResultDto> _results = new();
+
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+
+    private async Task BuscarClientes()
+    {
+        _errorMessage = null;
+        _loadingClients = true;
+        try
+        {
+            _clientList = (await ClientService.GetListAsync(new ClientFilterDto { Name = _clientName })).ToList();
+            if (_clientList.Count == 1)
+                await OnSelectClientFromGrid(_clientList[0]);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao buscar clientes: " + ex.Message;
+        }
+        finally
+        {
+            _loadingClients = false;
+        }
+    }
+
+    private async Task OnClientNameChanged()
+    {
+        _showSuggestions = (_clientName?.Trim().Length ?? 0) >= 2;
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var ct = _debounceCts.Token;
+        if ((_clientName?.Trim().Length ?? 0) < 2)
+        {
+            _suggestions = new List<ClientSummaryDto>();
+            StateHasChanged();
+            return;
+        }
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        _loadingSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await ClientService.GetSuggestionsAsync(_clientName!.Trim(), 15, ct);
+            if (!ct.IsCancellationRequested) { _suggestions = list; _showSuggestions = true; }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested) { _loadingSuggestions = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task OnClientNameBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingSuggestions) _showSuggestions = false;
+        _selectingSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnDropdownMouseDown(MouseEventArgs _) => _selectingSuggestions = true;
+
+    private void SelectClientFromAutocomplete(ClientSummaryDto c)
+    {
+        _selectingSuggestions = true;
+        _showSuggestions = false;
+        _suggestions = new List<ClientSummaryDto>();
+        _clientName = c.SocialName;
+        _selectedClient = c;
+        _ = BuscarOrdersByClientAsync(c.Id);
+    }
+
+    private async Task OnSelectClientFromGrid(ClientSummaryDto c)
+    {
+        _selectedClient = c;
+        await BuscarOrdersByClientAsync(c.Id);
+    }
+
+    private async Task BuscarOrdersByClientAsync(int clientId)
+    {
+        _errorMessage = null;
+        _searchMessage = null;
+        _searching = true;
+        try
+        {
+            _results = (await OrderService.SearchOrdersByClientAsync(clientId, 40)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao buscar OS: " + ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task BuscarPorOs()
+    {
+        if (!_orderIdInput.HasValue || _orderIdInput.Value < 1) return;
+        _errorMessage = null;
+        _searchMessage = null;
+        _searching = true;
+        try
+        {
+            var o = await OrderService.SearchOrderByIdAsync(_orderIdInput.Value);
+            _results = o != null ? new List<OrderSearchResultDto> { o } : new List<OrderSearchResultDto>();
+            if (o == null) _searchMessage = "Pedido não existente.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro: " + ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task BuscarPorNf()
+    {
+        if (!_nfInput.HasValue || _nfInput.Value < 1) return;
+        _errorMessage = null;
+        _searchMessage = null;
+        _searching = true;
+        try
+        {
+            _results = (await OrderService.SearchOrdersByReceiptAsync(_nfInput.Value)).ToList();
+            if (_results.Count == 0) _searchMessage = "Não existe pedido com a nota especificada.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro: " + ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task BuscarPorFrota()
+    {
+        if (string.IsNullOrWhiteSpace(_carDescInput) || _carDescInput.Trim().Length < 2) return;
+        _errorMessage = null;
+        _searchMessage = null;
+        _searching = true;
+        try
+        {
+            _results = (await OrderService.SearchOrdersByCarAsync(_carDescInput.Trim())).ToList();
+            if (_results.Count == 0) _searchMessage = "Não existe pedido com a frota especificada.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro: " + ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task BuscarPorPlaca()
+    {
+        if (string.IsNullOrWhiteSpace(_carPlateInput) || _carPlateInput.Trim().Length < 2) return;
+        _errorMessage = null;
+        _searchMessage = null;
+        _searching = true;
+        try
+        {
+            _results = (await OrderService.SearchOrdersByCarPlateAsync(_carPlateInput.Trim())).ToList();
+            if (_results.Count == 0) _searchMessage = "Não existe pedido com a placa especificada.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro: " + ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task OnPlateChanged()
+    {
+        _showPlateSuggestions = (_carPlateInput?.Trim().Length ?? 0) >= 2;
+        _plateDebounceCts?.Cancel();
+        _plateDebounceCts = new CancellationTokenSource();
+        var ct = _plateDebounceCts.Token;
+        if ((_carPlateInput?.Trim().Length ?? 0) < 2)
+        {
+            _plateSuggestions = new List<string>();
+            StateHasChanged();
+            return;
+        }
+        try { await Task.Delay(300, ct); } catch (TaskCanceledException) { return; }
+        _loadingPlateSuggestions = true;
+        StateHasChanged();
+        try
+        {
+            var list = await ClientService.GetCarPlateSuggestionsAsync(_carPlateInput!.Trim(), 15, ct);
+            if (!ct.IsCancellationRequested) { _plateSuggestions = list; _showPlateSuggestions = list.Count > 0; }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!ct.IsCancellationRequested) { _loadingPlateSuggestions = false; StateHasChanged(); }
+        }
+    }
+
+    private async Task OnPlateBlur()
+    {
+        await Task.Delay(150);
+        if (!_selectingPlateSuggestions) _showPlateSuggestions = false;
+        _selectingPlateSuggestions = false;
+        StateHasChanged();
+    }
+
+    private void OnPlateDropdownMouseDown(MouseEventArgs _) => _selectingPlateSuggestions = true;
+
+    private void SelectPlate(string plate)
+    {
+        _selectingPlateSuggestions = true;
+        _showPlateSuggestions = false;
+        _carPlateInput = plate;
+        _ = BuscarPorPlaca();
+    }
+
+    private static string GetOrderStatusName(string status) => status switch
+    {
+        "I" => "Incompleto",
+        "R" => "Reaberto",
+        "F" => "Fechado",
+        "C" => "Cancelado",
+        "E" => "Enviado",
+        _ => "Indefinido"
+    };
+
+    private static string GetOrderStatusColor(string status) => status switch
+    {
+        "I" => "#FF8800",
+        "R" => "green",
+        "F" => "black",
+        "C" => "red",
+        "E" => "blue",
+        _ => "black"
+    };
+}

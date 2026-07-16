@@ -1040,17 +1040,72 @@ h1:focus {
 
 /* ========== Pedido – grid carrinho compacto + ícones ========== */
 .pedido-cart-card .card-header {
-    padding-top: 0.35rem;
-    padding-bottom: 0.35rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    background: linear-gradient(180deg, #f8f9fc 0%, #eef1f8 100%);
+    border-bottom: 1px solid #c5cae9;
+}
+.pedido-cart-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: #3949ab;
 }
 .pedido-cart-table {
+    font-size: 0.875rem;
+}
+.pedido-cart-table thead th {
+    background-color: #e8eaf6;
+    color: #283593;
+    font-weight: 600;
     font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-bottom: 2px solid #c5cae9;
 }
 /* Especificidade maior que .data-grid-table tbody td para sobrescrever o padding */
 .pedido-cart-table thead th,
 .pedido-cart-table tbody td {
-    padding: 0.04rem 0.4rem;
+    padding: 0.45rem 0.55rem;
     vertical-align: middle;
+}
+.pedido-cart-row {
+    background-color: #fff;
+    border-left: 3px solid transparent;
+    transition: background-color 0.15s ease, border-left-color 0.15s ease;
+}
+.pedido-cart-row:nth-child(even) {
+    background-color: #f5f7fb;
+}
+.pedido-cart-row:hover {
+    background-color: #e8eefc;
+    border-left-color: #3949ab;
+}
+.pedido-cart-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #5c6bc0;
+    white-space: nowrap;
+}
+.pedido-cart-name {
+    font-weight: 600;
+    color: #1a237e;
+    line-height: 1.35;
+}
+.pedido-cart-qty,
+.pedido-cart-price,
+.pedido-cart-disc {
+    font-variant-numeric: tabular-nums;
+    color: #424242;
+}
+.pedido-cart-total {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #1565c0;
+    background-color: rgba(21, 101, 192, 0.06);
+}
+.pedido-cart-row:hover .pedido-cart-total {
+    background-color: rgba(21, 101, 192, 0.12);
 }
 .pedido-cart-tfoot td {
     font-size: 0.875rem;
@@ -1090,6 +1145,18 @@ h1:focus {
 .pedido-icon-btn-edit:hover {
     color: #0a58ca;
     background-color: rgba(13, 110, 253, 0.12);
+}
+.pedido-icon-btn-discount {
+    color: #198754;
+}
+.pedido-icon-btn-discount:hover {
+    color: #157347;
+    background-color: rgba(25, 135, 84, 0.12);
+}
+.pedido-icon-percent {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
 .pedido-add-to-cart-btn {

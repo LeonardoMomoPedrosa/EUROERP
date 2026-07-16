@@ -1,0 +1,540 @@
+@page "/vendas/nfe/enviar"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+
+<PageTitle>Enviar NFe</PageTitle>
+
+<div class="card mb-3 nfe-individual-page">
+    <div class="card-header">
+        <h5 class="mb-0">Enviar NFe (produtos)</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Emissão individual de NFe de produtos na SEFAZ-SP (homologação em desenvolvimento).
+            Informe a OS fechada ou enviada com itens de produto.
+        </p>
+        <div class="row">
+            <div class="col-md-8">
+                <div class="consultar-pedido-criteria">
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small text-muted">OS #</label>
+                            <div class="d-flex gap-1">
+                                <input type="number"
+                                       class="form-control form-control-sm"
+                                       placeholder="#"
+                                       @bind="_orderIdInput"
+                                       @bind:event="oninput"
+                                       @onchange="OnOrderIdChanged"
+                                       min="1" />
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary flex-shrink-0"
+                                        @onclick="BuscarPedido"
+                                        disabled="@_loadingOrder">
+                                    @(_loadingOrder ? "..." : "Busca")
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small text-muted">Nº da NFe</label>
+                            <input type="text"
+                                   class="form-control form-control-sm"
+                                   placeholder="Próximo número"
+                                   @bind="_nfeNumber" />
+                        </div>
+                    </div>
+                    @if (_orderInfoLoaded)
+                    {
+                        <div class="mt-2 pt-2 border-top border-light">
+                            <div class="row small">
+                                <div class="col-5">
+                                    <span class="text-muted">Total</span><br />
+                                    <span class="fw-bold">@(_orderTotal?.ToString("C", _ptBr) ?? "—")</span>
+                                </div>
+                                <div class="col-7">
+                                    <span class="text-muted">Cliente</span><br />
+                                    <span>@(_clientName ?? "—")</span>
+                                    @if (!string.IsNullOrEmpty(_address))
+                                    {
+                                        <div class="text-muted">@_address</div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="consultar-pedido-other">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">Cód. fiscal (manual)</label>
+                            <select class="form-select form-select-sm" @bind="_cfopId">
+                                <option value="0">Automático (da OS)</option>
+                                @foreach (var cf in _cfopList)
+                                {
+                                    <option value="@((int)cf.Id)">@cf.DisplayText</option>
+                                }
+                            </select>
+                        </div>
+                        @if (_orderCfopDisplay.Count > 0)
+                        {
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted mb-0">Cód. fiscal da OS</label>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @foreach (var cf in _orderCfopDisplay)
+                                    {
+                                        <span class="badge bg-light text-dark border">@cf.DisplayText</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-0">Tipo de frete</label>
+                            <div class="pt-1">
+                                <div class="form-check form-check-inline">
+                                    <input type="radio" class="form-check-input" name="frete" id="frete_emit" checked="@(_frete == 0)" @onchange="@(() => _frete = 0)" />
+                                    <label class="form-check-label" for="frete_emit">Emitente</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input type="radio" class="form-check-input" name="frete" id="frete_dest" checked="@(_frete == 1)" @onchange="@(() => _frete = 1)" />
+                                    <label class="form-check-label" for="frete_dest">Destinatário</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small text-muted">Desc %</label>
+                            <input type="number"
+                                   class="form-control form-control-sm"
+                                   min="0"
+                                   max="99"
+                                   disabled="@(!_orderInfoLoaded)"
+                                   value="@_discount"
+                                   @onchange="@(e => OnDiscountChange(e.Value?.ToString()))" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">Informações complementares</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_complementInfo" placeholder="Opcional (OS/frota são incluídos automaticamente)" style="resize: vertical; min-height: 2.5em;"></textarea>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted">Transportadora</label>
+                            <select class="form-select form-select-sm" @bind="_transportId">
+                                @foreach (var t in _transportList)
+                                {
+                                    <option value="@t.Id">@t.SocialName</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small text-muted">Espécie</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_packageSpecies" placeholder="CAIXA" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small text-muted">Quantidade</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_packageQty" placeholder="1" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small text-muted">Peso bruto</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_weightGross" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small text-muted">Peso líq.</label>
+                            <input type="text" class="form-control form-control-sm" @bind="_weightNet" />
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <button type="button"
+                                    class="btn btn-sm btn-primary"
+                                    @onclick="EnviarNfe"
+                                    disabled="@(_sending || !_orderInfoLoaded || _orderHasNfeProtocol)">
+                                @if (_sending)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                }
+                                @(_sending ? "Enviando..." : "Enviar NFe")
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Limpar">Limpar</button>
+                        </div>
+
+                        @if (_orderHasNfeProtocol)
+                        {
+                            var pdfUrlCurrent = !string.IsNullOrEmpty(_currentPdfRelativePath) ? "/NFE_FILES/" + _currentPdfRelativePath.Replace('\\', '/') : null;
+                            var xmlUrlCurrent = !string.IsNullOrEmpty(_currentXmlRelativePath) ? "/NFE_FILES/" + _currentXmlRelativePath.Replace('\\', '/') : null;
+                            <div class="alert alert-warning py-2 px-3 mt-2 mb-0">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span class="small mb-0">Esta OS já possui NFe autorizada. Não é permitido criar nova NFe.</span>
+                                    <button type="button"
+                                            class="btn btn-sm btn-link text-dark p-0 border-0 text-decoration-underline"
+                                            @onclick="GerarApenasPdf"
+                                            disabled="@(_regeneratingPdf || !_orderInfoLoaded)">
+                                        @if (_regeneratingPdf)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                        }
+                                        @(_regeneratingPdf ? "Recriando..." : "Recriar PDF")
+                                    </button>
+                                    @if (!string.IsNullOrEmpty(pdfUrlCurrent) || !string.IsNullOrEmpty(xmlUrlCurrent))
+                                    {
+                                        <span class="small text-nowrap ms-auto">
+                                            @if (!string.IsNullOrEmpty(pdfUrlCurrent))
+                                            {
+                                                <a href="@pdfUrlCurrent" target="_blank" rel="noopener" class="alert-link fw-medium">Abrir PDF</a>
+                                                @if (!string.IsNullOrEmpty(xmlUrlCurrent)) { <span class="text-muted mx-1">|</span> }
+                                            }
+                                            @if (!string.IsNullOrEmpty(xmlUrlCurrent))
+                                            {
+                                                <a href="@xmlUrlCurrent" target="_blank" rel="noopener" class="alert-link fw-medium">Abrir XML</a>
+                                            }
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_hasEmitResultToShow)
+                        {
+                            <div class="alert @(_emitSuccess ? "alert-success" : "alert-danger") py-2 px-3 mt-2 mb-0">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span class="small mb-0 flex-grow-1">@_displayEmitMessage</span>
+                                    @if (_emitSuccess && _lastEmitResult != null)
+                                    {
+                                        var pdfUrl = !string.IsNullOrEmpty(_lastEmitResult.PdfRelativePath) ? "/NFE_FILES/" + _lastEmitResult.PdfRelativePath.Replace('\\', '/') : null;
+                                        var xmlUrl = !string.IsNullOrEmpty(_lastEmitResult.XmlRelativePath) ? "/NFE_FILES/" + _lastEmitResult.XmlRelativePath.Replace('\\', '/') : null;
+                                        @if (!string.IsNullOrEmpty(pdfUrl) || !string.IsNullOrEmpty(xmlUrl))
+                                        {
+                                            <span class="small text-nowrap">
+                                                @if (!string.IsNullOrEmpty(pdfUrl))
+                                                {
+                                                    <a href="@pdfUrl" target="_blank" rel="noopener" class="alert-link fw-medium">Abrir PDF</a>
+                                                    @if (!string.IsNullOrEmpty(xmlUrl)) { <span class="text-muted mx-1">|</span> }
+                                                }
+                                                @if (!string.IsNullOrEmpty(xmlUrl))
+                                                {
+                                                    <a href="@xmlUrl" target="_blank" rel="noopener" class="alert-link fw-medium">Abrir XML</a>
+                                                }
+                                            </span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <h6 class="mb-2">Últimas OS</h6>
+                @if (_loadingLastOrders)
+                {
+                    <p class="text-muted small">Carregando...</p>
+                }
+                else if (_lastOrders.Count == 0)
+                {
+                    <p class="text-muted small">Nenhuma OS F ou E pendente.</p>
+                }
+                else
+                {
+                    @foreach (var o in _lastOrders)
+                    {
+                        <div class="alert alert-info py-2 mb-2 nfe-individual-order-item"
+                             style="background-color: ghostwhite; font-size: 0.9rem;"
+                             role="button"
+                             @onclick="() => SelectOrder(o.OrderId)">
+                            OS: <span class="fw-bold text-primary">#@o.OrderId</span><br />
+                            <span class="fw-semibold">NF:</span> <span class="fw-bold">@(o.Receipt.HasValue ? o.Receipt.Value.ToString() : "—")</span><br />
+                            Cliente: @o.ClientFantasyName<br />
+                            @if (!string.IsNullOrEmpty(o.CityName) || !string.IsNullOrEmpty(o.StateCode))
+                            {
+                                <span class="small text-muted">@((o.CityName ?? "") + " / " + (o.StateCode ?? ""))</span>
+                                @if (!string.IsNullOrEmpty(o.NfeProtocol) || !string.IsNullOrEmpty(o.NfeCancelProtocol))
+                                {
+                                    <br />
+                                }
+                            }
+                            @if (!string.IsNullOrEmpty(o.NfeCancelProtocol))
+                            {
+                                <span class="badge bg-danger mt-1" title="Protocolo de cancelamento">Cancelada – Prot. @o.NfeCancelProtocol</span>
+                            }
+                            else if (!string.IsNullOrEmpty(o.NfeProtocol))
+                            {
+                                <span class="badge bg-success mt-1">Prot. @o.NfeProtocol</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_orderError))
+{
+    <div class="alert alert-danger">@_orderError</div>
+}
+
+@code {
+    private readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private string _orderIdInput = "";
+    private string _nfeNumber = "";
+    private string? _clientName;
+    private string? _address;
+    private decimal? _orderTotal;
+    private decimal _discount;
+    private string? _orderError;
+    private bool _orderInfoLoaded;
+    private bool _orderHasNfeProtocol;
+    private string? _currentPdfRelativePath;
+    private string? _currentXmlRelativePath;
+    private bool _loadingOrder;
+    private List<CfopItemDto> _orderCfopDisplay = new();
+    private int _cfopId;
+    private int _frete;
+    private string _complementInfo = "";
+    private int _transportId = -1;
+    private string _packageSpecies = "CAIXA";
+    private string _packageQty = "1";
+    private string _weightGross = "";
+    private string _weightNet = "";
+
+    private List<CfopItemDto> _cfopList = new();
+    private List<TransportSupplierDto> _transportList = new();
+    private List<LastOrderForNfeDto> _lastOrders = new();
+    private bool _loadingLastOrders;
+    private bool _sending;
+    private bool _regeneratingPdf;
+    private bool _emitSuccess;
+    private EmitNfeResult? _lastEmitResult;
+    private string _lastEmitStatusText = "";
+    private bool _showEmitResultBox;
+    private bool _hasEmitResultToShow => _showEmitResultBox;
+    private string _displayEmitMessage => _lastEmitStatusText;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReceiptNoAsync();
+        _cfopList = (await NfeService.GetCfopListAsync(default)).ToList();
+        _transportList = (await NfeService.GetTransportSuppliersAsync(default)).ToList();
+        await LoadLastOrdersAsync();
+    }
+
+    private async Task LoadReceiptNoAsync()
+    {
+        var next = await NfeService.GetNextReceiptNoAsync(default);
+        _nfeNumber = next.ToString();
+    }
+
+    private async Task LoadLastOrdersAsync()
+    {
+        _loadingLastOrders = true;
+        try
+        {
+            _lastOrders = (await NfeService.GetLastPendingClosedOrdersForNfeAsync(30, default)).ToList();
+        }
+        finally
+        {
+            _loadingLastOrders = false;
+        }
+    }
+
+    private async Task BuscarPedido()
+    {
+        await OnOrderIdChanged();
+    }
+
+    private async Task OnOrderIdChanged()
+    {
+        if (_sending)
+            return;
+        _orderError = null;
+        _clientName = null;
+        _address = null;
+        _orderTotal = null;
+        _discount = 0;
+        _orderCfopDisplay = new();
+        _orderInfoLoaded = false;
+        _orderHasNfeProtocol = false;
+        _currentPdfRelativePath = null;
+        _currentXmlRelativePath = null;
+
+        if (string.IsNullOrWhiteSpace(_orderIdInput) || !int.TryParse(_orderIdInput.Trim(), out var orderId) || orderId <= 0)
+            return;
+
+        _loadingOrder = true;
+        try
+        {
+            var info = await NfeService.GetOrderInfoForNfeAsync(orderId, default);
+            if (info == null)
+            {
+                _orderError = "OS inexistente ou não permitida para NFe (status deve ser F ou E e ter produtos).";
+                return;
+            }
+
+            _clientName = info.ClientName;
+            _address = info.Address;
+            _orderTotal = info.OrderTotal;
+            _discount = info.Discount;
+            _orderCfopDisplay = info.CfopList.ToList();
+            _orderInfoLoaded = true;
+            _orderHasNfeProtocol = !string.IsNullOrEmpty(info.NfeProtocol);
+            if (_orderHasNfeProtocol)
+            {
+                _currentPdfRelativePath = info.PdfRelativePath;
+                _currentXmlRelativePath = info.XmlRelativePath;
+            }
+
+            if (_orderHasNfeProtocol)
+            {
+                _orderError = "Esta OS já possui NFe autorizada. Não é permitido criar nova NFe.";
+            }
+            else if (!string.IsNullOrEmpty(info.NfeProtocolResult) && info.NfeProtocolResult == "100")
+            {
+                _orderError = "NOTA FISCAL JÁ EMITIDA PARA ESTA OS.";
+            }
+        }
+        finally
+        {
+            _loadingOrder = false;
+        }
+    }
+
+    private async Task SelectOrder(int orderId)
+    {
+        _orderIdInput = orderId.ToString();
+        await OnOrderIdChanged();
+    }
+
+    private void OnDiscountChange(string? value)
+    {
+        if (decimal.TryParse(value?.Replace(",", "."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            _discount = Math.Clamp(d, 0, 99);
+    }
+
+    private async Task EnviarNfe()
+    {
+        void SetError(string text)
+        {
+            _emitSuccess = false;
+            _lastEmitResult = null;
+            _lastEmitStatusText = string.IsNullOrWhiteSpace(text) ? "Erro desconhecido." : text;
+            _showEmitResultBox = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_orderIdInput) || !int.TryParse(_orderIdInput.Trim(), out var orderId) || orderId <= 0)
+        {
+            SetError("Informe o número da OS.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_nfeNumber))
+        {
+            SetError("Informe o número da NFe.");
+            return;
+        }
+
+        var request = new EmitNfeRequest
+        {
+            OrderId = orderId,
+            NfeNumber = _nfeNumber.Trim(),
+            FreightEmitenteDestinatario = (byte)_frete,
+            CfopId = (byte)_cfopId,
+            TransportSupplierId = _transportId > 0 ? _transportId : null,
+            PackageSpecies = string.IsNullOrWhiteSpace(_packageSpecies) ? null : _packageSpecies,
+            PackageQuantity = string.IsNullOrWhiteSpace(_packageQty) ? null : _packageQty,
+            WeightGross = string.IsNullOrWhiteSpace(_weightGross) ? null : _weightGross,
+            WeightNet = string.IsNullOrWhiteSpace(_weightNet) ? null : _weightNet,
+            InformacoesComplementares = string.IsNullOrWhiteSpace(_complementInfo) ? null : _complementInfo.Trim(),
+            Discount = _discount
+        };
+
+        _sending = true;
+        _showEmitResultBox = false;
+        try
+        {
+            var result = await NfeService.EmitNfeAsync(request, default);
+            _lastEmitResult = result;
+            _emitSuccess = result.Success;
+            _lastEmitStatusText = result.Success ? (result.Message ?? "NFe enviada.") : (result.Message ?? "Erro ao enviar NFe.");
+            _showEmitResultBox = true;
+            if (result.Success)
+            {
+                await LoadReceiptNoAsync();
+                await LoadLastOrdersAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.Message;
+            if (ex.InnerException != null) msg += " " + ex.InnerException.Message;
+            SetError("Erro: " + msg);
+        }
+        finally
+        {
+            _sending = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GerarApenasPdf()
+    {
+        if (string.IsNullOrWhiteSpace(_orderIdInput) || !int.TryParse(_orderIdInput.Trim(), out var orderId) || orderId <= 0)
+        {
+            _lastEmitStatusText = "Informe o número da OS.";
+            _emitSuccess = false;
+            _showEmitResultBox = true;
+            return;
+        }
+
+        _regeneratingPdf = true;
+        _showEmitResultBox = false;
+        try
+        {
+            var result = await NfeService.RegeneratePdfOnlyAsync(orderId, default);
+            _lastEmitResult = result;
+            _emitSuccess = result.Success;
+            _lastEmitStatusText = result.Message ?? (result.Success ? "PDF gerado." : "Erro ao gerar PDF.");
+            _showEmitResultBox = true;
+        }
+        catch (Exception ex)
+        {
+            _emitSuccess = false;
+            _lastEmitResult = null;
+            _lastEmitStatusText = "Erro: " + ex.Message;
+            _showEmitResultBox = true;
+        }
+        finally
+        {
+            _regeneratingPdf = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Limpar()
+    {
+        _orderIdInput = "";
+        _clientName = null;
+        _address = null;
+        _orderTotal = null;
+        _discount = 0;
+        _orderError = null;
+        _orderCfopDisplay = new();
+        _orderInfoLoaded = false;
+        _orderHasNfeProtocol = false;
+        _currentPdfRelativePath = null;
+        _currentXmlRelativePath = null;
+        _lastEmitResult = null;
+        _lastEmitStatusText = "";
+        _showEmitResultBox = false;
+        _cfopId = 0;
+        _frete = 0;
+        _complementInfo = "";
+        _transportId = -1;
+        _packageSpecies = "CAIXA";
+        _packageQty = "1";
+        _weightGross = "";
+        _weightNet = "";
+        await LoadReceiptNoAsync();
+    }
+}

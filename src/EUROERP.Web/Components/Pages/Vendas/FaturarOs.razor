@@ -1,0 +1,120 @@
+@page "/vendas/faturar-os"
+@using EUROERP.Application.Orders
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Faturar OS</PageTitle>
+
+<div class="card mb-3 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <h5 class="mb-0">Faturar OS</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+            <label class="form-label mb-0"><b>Número da OS:</b></label>
+            <input type="number"
+                   id="faturar-os-input"
+                   class="form-control form-control-sm"
+                   style="width: 120px;"
+                   placeholder="Ex: 12345"
+                   @bind="_orderIdInput"
+                   @bind:event="oninput"
+                   min="1"
+                   disabled="@_sending"
+                   @onkeydown="OnOrderIdKeyDown" />
+            <button type="button"
+                    class="btn btn-sm btn-primary"
+                    @onclick="Faturar"
+                    disabled="@_sending">
+                @(_sending ? "Enviando..." : "Enviar")
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger py-2 small mb-2">@_errorMessage</div>
+        }
+
+        @if (_successMessages.Count > 0)
+        {
+            <div class="small text-success">
+                @foreach (var msg in _successMessages)
+                {
+                    <div>@((MarkupString)msg)</div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject] private IOrderService OrderService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    private string _orderIdInput = "";
+    private bool _sending;
+    private string? _errorMessage;
+    private readonly List<string> _successMessages = new();
+    private string? _applicationId;
+    private string? _currentUserId;
+    private bool _focusOrderInput;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserId = state.User.Identity?.Name ?? "SYS";
+        _applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender || _focusOrderInput)
+        {
+            _focusOrderInput = false;
+            await Task.Delay(50);
+            await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('faturar-os-input')?.focus()");
+        }
+    }
+
+    private async Task Faturar()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_orderIdInput) || !int.TryParse(_orderIdInput.Trim(), out var orderId) || orderId <= 0)
+        {
+            _errorMessage = "Digite o número da OS.";
+            return;
+        }
+
+        _sending = true;
+        try
+        {
+            var result = await OrderService.SendOrderAsync(orderId, _applicationId!, _currentUserId!);
+            if (result.Success)
+            {
+                _successMessages.Add($"OS <b>{orderId}</b> enviada.");
+                _orderIdInput = "";
+            }
+            else
+            {
+                _errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _sending = false;
+            _focusOrderInput = true;
+        }
+    }
+
+    private async Task OnOrderIdKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Faturar();
+    }
+}

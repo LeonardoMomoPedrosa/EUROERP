@@ -6,4 +6,5 @@ public class BtrDetailDto
     public DateTime DueDate { get; set; }
     public string Memo { get; set; } = "";
     public byte PaymentMethodId { get; set; }
+    public byte PaymentSubMethodId { get; set; }
 }

@@ -1,0 +1,489 @@
+@page "/vendas/nfe/imprimir"
+@using EUROERP.Application.NFe
+@using EUROERP.Application.Nfes
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+@inject INfesEmissionService NfesService
+@inject IJSRuntime JS
+
+<PageTitle>Consultar / Imprimir NFe</PageTitle>
+
+<div class="d-flex flex-column gap-3" id="nfe-imprimir-top">
+    <div class="card">
+        <div class="card-body py-3">
+            <div class="row align-items-end g-2">
+                <div class="col-auto">
+                    <label class="form-label small text-muted mb-0">Pedido / OS</label>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="number"
+                               class="form-control form-control-sm"
+                               placeholder="Nº"
+                               @bind="_orderIdInput"
+                               @onkeydown="OnOrderKeydown"
+                               min="1"
+                               style="width: 110px;" />
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                @onclick="Buscar"
+                                disabled="@_searching">
+                            @(_searching ? "..." : "Busca")
+                        </button>
+                    </div>
+                </div>
+                @if (_searchMessage != null)
+                {
+                    <div class="col small @(_searchSuccess ? "text-success" : "text-danger")">@_searchMessage</div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (_saleDetail != null)
+    {
+        <div class="card border-primary">
+            <div class="card-header py-2 bg-light">
+                <span class="fw-medium small">Pedido #@_saleDetail.OrderId</span>
+                @if (!string.IsNullOrEmpty(_saleDetail.ClientName))
+                {
+                    <span class="text-muted small ms-2">— @_saleDetail.ClientName</span>
+                }
+            </div>
+            <div class="card-body py-3">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <span class="text-muted small">Chave de acesso</span>
+                        <div class="font-monospace small text-break" style="font-size: 0.8rem;">@_saleDetail.NfeKey</div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_saleDetail.NfeReceipt))
+                    {
+                        <div class="col-md-4">
+                            <span class="text-muted small d-block">Recibo de envio</span>
+                            <span class="small">@_saleDetail.NfeReceipt</span>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        @if (!string.IsNullOrEmpty(_saleDetail.NfeCancelProtocol))
+                        {
+                            <span class="text-muted small d-block">Status</span>
+                            <span class="badge bg-danger">Cancelada</span>
+                            <div class="text-danger small mt-1">@_saleDetail.NfeCancelProtocol</div>
+                        }
+                        else if (!string.IsNullOrEmpty(_saleDetail.NfeProtocol))
+                        {
+                            <span class="text-muted small d-block">Protocolo de autorização</span>
+                            <span class="text-primary">@_saleDetail.NfeProtocol</span>
+                        }
+                    </div>
+                    <div class="col-md-4 d-flex flex-wrap align-items-end justify-content-md-end gap-2">
+                        @if (!string.IsNullOrEmpty(_saleDetail.PdfRelativePath))
+                        {
+                            <a href="/NFE_FILES/@_saleDetail.PdfRelativePath" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">Abrir PDF</a>
+                        }
+                        @if (!string.IsNullOrEmpty(_saleDetail.XmlRelativePath))
+                        {
+                            <a href="/NFE_FILES/@_saleDetail.XmlRelativePath" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">Abrir XML</a>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_receiptInDetail != null)
+    {
+        <div class="card border-info">
+            <div class="card-header py-2 bg-light">
+                <span class="fw-medium small">NF Fornecedor #@_receiptInDetail.ReceiptNo</span>
+                @if (!string.IsNullOrEmpty(_receiptInDetail.SupplierName))
+                {
+                    <span class="text-muted small ms-2">— @_receiptInDetail.SupplierName</span>
+                }
+            </div>
+            <div class="card-body py-3">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <span class="text-muted small">Chave de acesso</span>
+                        <div class="font-monospace small text-break" style="font-size: 0.8rem;">@_receiptInDetail.NfeKey</div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_receiptInDetail.NfeReceipt))
+                    {
+                        <div class="col-md-4">
+                            <span class="text-muted small d-block">Recibo de envio</span>
+                            <span class="small">@_receiptInDetail.NfeReceipt</span>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        @if (!string.IsNullOrEmpty(_receiptInDetail.NfeCancelProtocol))
+                        {
+                            <span class="badge bg-danger">Cancelada</span>
+                            <div class="text-danger small mt-1">@_receiptInDetail.NfeCancelProtocol</div>
+                        }
+                        else if (!string.IsNullOrEmpty(_receiptInDetail.NfeProtocol))
+                        {
+                            <span class="text-muted small d-block">Protocolo de autorização</span>
+                            <span class="text-primary">@_receiptInDetail.NfeProtocol</span>
+                        }
+                    </div>
+                    <div class="col-md-4 d-flex flex-wrap align-items-end justify-content-md-end gap-2">
+                        @if (!string.IsNullOrEmpty(_receiptInDetail.PdfRelativePath))
+                        {
+                            <a href="/NFE_FILES/@_receiptInDetail.PdfRelativePath" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">Abrir PDF</a>
+                        }
+                        @if (!string.IsNullOrEmpty(_receiptInDetail.XmlRelativePath))
+                        {
+                            <a href="/NFE_FILES/@_receiptInDetail.XmlRelativePath" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-sm">Abrir XML</a>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_nfesDetail != null)
+    {
+        <div class="card border-success">
+            <div class="card-header py-2 bg-light">
+                <span class="fw-medium small">NFES #@_nfesDetail.NfesNo</span>
+                <span class="text-muted small ms-2">— Pedido #@_nfesDetail.OrderId</span>
+            </div>
+            <div class="card-body py-3">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    @if (!string.IsNullOrEmpty(_nfesPrintUrl))
+                    {
+                        <a class="btn btn-outline-primary btn-sm" href="@_nfesPrintUrl" target="_blank" rel="noopener noreferrer">Imprimir NFS-e</a>
+                    }
+                    <a class="btn btn-outline-secondary btn-sm" href="/api/nfes/imprimir?orderId=@_nfesDetail.OrderId" target="_blank" rel="noopener noreferrer">DANFSe PDF</a>
+                    @if (!string.IsNullOrEmpty(_nfesDetail.NfesChaveAcesso))
+                    {
+                        <span class="small font-monospace text-break">@_nfesDetail.NfesChaveAcesso</span>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card grid-card h-100">
+                <div class="card-header py-2">
+                    <span class="fw-medium small">Últimas Saídas</span>
+                </div>
+                @if (_listLoading)
+                {
+                    <div class="card-body py-4 text-center text-muted">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        Carregando...
+                    </div>
+                }
+                else if (_outbound.Count == 0)
+                {
+                    <div class="card-body">
+                        <div class="alert alert-light border mb-0"><span class="text-muted">Nenhuma saída encontrada.</span></div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Pedido</th>
+                                        <th># NFe</th>
+                                        <th># NFES</th>
+                                        <th>Cliente</th>
+                                        <th>Protocolo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in _outbound)
+                                    {
+                                        <tr>
+                                            <td class="fw-medium">@item.OrderId</td>
+                                            <td>
+                                                @if (item.Receipt is > 0)
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-primary py-0 px-1"
+                                                            @onclick="() => SelectSaleAsync(item.OrderId)">
+                                                        @item.Receipt
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(item.NfesNo))
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-success py-0 px-1"
+                                                            @onclick="() => SelectNfesAsync(item.NfesNo!)">
+                                                        @item.NfesNo
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                            <td class="text-truncate" style="max-width: 160px;" title="@item.SocialName">@item.SocialName</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(item.NfeCancelProtocol))
+                                                {
+                                                    <span class="badge bg-danger me-1">Cancelada</span>
+                                                    <span class="text-danger small">@item.NfeCancelProtocol</span>
+                                                }
+                                                else if (!string.IsNullOrEmpty(item.NfeProtocol))
+                                                {
+                                                    <span class="text-primary small">@item.NfeProtocol</span>
+                                                }
+                                                else if (!string.IsNullOrEmpty(item.NfeReceipt))
+                                                {
+                                                    <span class="text-muted small">Recibo: @item.NfeReceipt</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card grid-card h-100">
+                <div class="card-header py-2">
+                    <span class="fw-medium small">Últimas Entradas</span>
+                </div>
+                @if (_listLoading)
+                {
+                    <div class="card-body py-4 text-center text-muted">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        Carregando...
+                    </div>
+                }
+                else if (_inbound.Count == 0)
+                {
+                    <div class="card-body">
+                        <div class="alert alert-light border mb-0"><span class="text-muted">Nenhuma entrada encontrada.</span></div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0 data-grid-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>NF Forn.</th>
+                                        <th># NF</th>
+                                        <th>Fornecedor</th>
+                                        <th>Protocolo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in _inbound)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-info py-0 px-1 text-white"
+                                                        @onclick="() => SelectReceiptInAsync(item.ReceiptNo)">
+                                                    @item.ReceiptNo
+                                                </button>
+                                            </td>
+                                            <td>@(item.InternalReceipt?.ToString() ?? "—")</td>
+                                            <td class="text-truncate" style="max-width: 160px;" title="@item.SocialName">@item.SocialName</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(item.NfeCancelProtocol))
+                                                {
+                                                    <span class="badge bg-danger me-1">Cancelada</span>
+                                                    <span class="text-danger small">@item.NfeCancelProtocol</span>
+                                                }
+                                                else if (!string.IsNullOrEmpty(item.NfeProtocol))
+                                                {
+                                                    <span class="text-primary small">@item.NfeProtocol</span>
+                                                }
+                                                else if (!string.IsNullOrEmpty(item.NfeReceipt))
+                                                {
+                                                    <span class="text-muted small">Recibo: @item.NfeReceipt</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _orderIdInput = "";
+    private bool _searching;
+    private string? _searchMessage;
+    private bool _searchSuccess;
+    private bool _listLoading = true;
+
+    private OrderNfeDetailForDanfeDto? _saleDetail;
+    private ReceiptInNfeDetailForDanfeDto? _receiptInDetail;
+    private NfesPrintInfoDto? _nfesDetail;
+    private string? _nfesPrintUrl;
+
+    private IReadOnlyList<PendingOutboundNfeDto> _outbound = Array.Empty<PendingOutboundNfeDto>();
+    private IReadOnlyList<PendingInboundNfeDto> _inbound = Array.Empty<PendingInboundNfeDto>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadListsAsync(null);
+    }
+
+    private async Task LoadListsAsync(int? filterId)
+    {
+        _listLoading = true;
+        try
+        {
+            _outbound = await NfeService.GetPendingOutboundNfeListAsync(filterId);
+            _inbound = await NfeService.GetPendingInboundNfeListAsync(filterId);
+        }
+        finally
+        {
+            _listLoading = false;
+        }
+    }
+
+    private void ClearDetails()
+    {
+        _saleDetail = null;
+        _receiptInDetail = null;
+        _nfesDetail = null;
+        _nfesPrintUrl = null;
+        _searchMessage = null;
+    }
+
+    private async Task Buscar()
+    {
+        ClearDetails();
+        int? filterId = null;
+        if (!string.IsNullOrWhiteSpace(_orderIdInput))
+        {
+            if (!int.TryParse(_orderIdInput.Trim(), out var orderId) || orderId <= 0)
+            {
+                _searchMessage = "Informe um número de pedido válido.";
+                _searchSuccess = false;
+                return;
+            }
+            filterId = orderId;
+        }
+
+        _searching = true;
+        try
+        {
+            await LoadListsAsync(filterId);
+            if (filterId is > 0)
+            {
+                var sale = await NfeService.GetOrderNfeDetailForDanfeAsync(filterId.Value);
+                if (sale != null)
+                {
+                    _saleDetail = sale;
+                    _searchSuccess = true;
+                }
+                else
+                {
+                    var inbound = await NfeService.GetReceiptInNfeDetailForDanfeAsync(filterId.Value);
+                    if (inbound != null)
+                    {
+                        _receiptInDetail = inbound;
+                        _searchSuccess = true;
+                    }
+                    else if (_outbound.Count == 0 && _inbound.Count == 0)
+                    {
+                        _searchMessage = "Pedido inexistente ou sem NFe autorizada.";
+                        _searchSuccess = false;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _searching = false;
+        }
+        await ScrollToTopAsync();
+    }
+
+    private async Task SelectSaleAsync(int orderId)
+    {
+        ClearDetails();
+        _orderIdInput = orderId.ToString();
+        _saleDetail = await NfeService.GetOrderNfeDetailForDanfeAsync(orderId);
+        if (_saleDetail == null)
+        {
+            _searchMessage = "Pedido sem NFe autorizada (sem protocolo).";
+            _searchSuccess = false;
+        }
+        await ScrollToTopAsync();
+    }
+
+    private async Task SelectReceiptInAsync(int receiptNo)
+    {
+        ClearDetails();
+        _orderIdInput = receiptNo.ToString();
+        _receiptInDetail = await NfeService.GetReceiptInNfeDetailForDanfeAsync(receiptNo);
+        if (_receiptInDetail == null)
+        {
+            _searchMessage = "Nota do fornecedor inexistente ou sem NFe autorizada.";
+            _searchSuccess = false;
+        }
+        await ScrollToTopAsync();
+    }
+
+    private async Task SelectNfesAsync(string nfesNo)
+    {
+        ClearDetails();
+        _nfesDetail = await NfeService.GetNfesPrintInfoByNfesNoAsync(nfesNo);
+        if (_nfesDetail == null)
+        {
+            _searchMessage = "NFES inexistente.";
+            _searchSuccess = false;
+            await ScrollToTopAsync();
+            return;
+        }
+
+        _orderIdInput = _nfesDetail.OrderId.ToString();
+        var preview = await NfesService.GetOrderPreviewAsync(_nfesDetail.OrderId);
+        _nfesPrintUrl = preview?.PrintUrl;
+        if (string.IsNullOrEmpty(_nfesPrintUrl))
+            _nfesPrintUrl = $"/api/nfes/imprimir?orderId={_nfesDetail.OrderId}";
+        await ScrollToTopAsync();
+    }
+
+    private async Task ScrollToTopAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await JS.InvokeVoidAsync("scrollMainContentToTop");
+        }
+        catch (JSDisconnectedException)
+        {
+            // circuit gone — ignore
+        }
+    }
+
+    private async Task OnOrderKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Buscar();
+    }
+}

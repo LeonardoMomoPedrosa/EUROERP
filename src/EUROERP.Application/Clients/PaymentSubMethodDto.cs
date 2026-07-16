@@ -8,5 +8,4 @@ public sealed class PaymentSubMethodDto
     public int PaymentMethodId { get; set; }
     public byte? MaxTerms { get; set; }
     public decimal? MinAmount { get; set; }
-    public bool AllowFront { get; set; }
 }

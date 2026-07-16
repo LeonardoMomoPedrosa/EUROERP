@@ -1,0 +1,167 @@
+@page "/vendas/nfe/status-servico"
+@using EUROERP.Application.NFe
+@using Microsoft.AspNetCore.Hosting
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+@inject IWebHostEnvironment Env
+
+<PageTitle>Status do Serviço da NFE</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-body py-3">
+            <p class="text-muted small mb-3">Verifique o status atual do serviço NFe na SEFAZ (autorizador da UF configurada).</p>
+            <button type="button" class="btn btn-primary" @onclick="ConsultarStatus" disabled="@_loading">
+                @if (_loading)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                    <span>Consultando status do serviço...</span>
+                }
+                else
+                {
+                    <span>Clique aqui para ver o status atual do serviço</span>
+                }
+            </button>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="alert alert-danger mt-3 mb-0 py-3" role="alert">
+                    <strong>Erro na consulta.</strong> Serviço indisponível ou falha na comunicação.<br /><br />
+                    <span class="font-monospace small text-break" style="white-space: pre-wrap;">@_errorMessage</span>
+                </div>
+            }
+
+            @if (_result != null)
+            {
+                var isOk = _result.CStat == "107";
+                <div class="mt-3 card @(isOk ? "border-success" : "border-warning")">
+                    <div class="card-header py-2 @(isOk ? "bg-success bg-opacity-10 text-success" : "bg-warning bg-opacity-10 text-dark")">
+                        <strong>@(isOk ? "Serviço em operação" : "Status do serviço")</strong>
+                        @if (!string.IsNullOrEmpty(_result.CStat))
+                        {
+                            <span class="badge bg-secondary ms-2">cStat: @_result.CStat</span>
+                        }
+                    </div>
+                    <div class="card-body py-3">
+                        <p class="mb-3 text-dark">@_result.XMotivo</p>
+                        <div class="row g-2 small">
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <span class="text-muted">Ambiente</span><br />
+                                <strong>@AmbienteLabel(_result.TpAmb)</strong>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <span class="text-muted">UF consultada</span><br />
+                                <strong>@_result.CUf @UfNome(_result.CUf)</strong>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <span class="text-muted">Versão do leiaute</span><br />
+                                <strong>@_result.Versao</strong>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <span class="text-muted">Versão do aplicativo SEFAZ</span><br />
+                                <strong>@_result.VerAplic</strong>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_result.TMed))
+                            {
+                                <div class="col-12 col-sm-6 col-md-4">
+                                    <span class="text-muted">Tempo médio de resposta</span><br />
+                                    <strong>@_result.TMed s</strong> <span class="text-muted">(últimos 5 min)</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_result.DhRecbto))
+                            {
+                                <div class="col-12 col-sm-6 col-md-4">
+                                    <span class="text-muted">Recebimento da consulta</span><br />
+                                    <strong>@FormatarDataHora(_result.DhRecbto)</strong>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_result.DhRetorno))
+                            {
+                                <div class="col-12 col-sm-6 col-md-4">
+                                    <span class="text-muted">Previsão de retorno</span><br />
+                                    <strong>@FormatarDataHora(_result.DhRetorno)</strong>
+                                </div>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(_result.XObs))
+                        {
+                            <div class="mt-3 pt-3 border-top">
+                                <span class="text-muted small">Observações da SEFAZ</span><br />
+                                <span class="small">@_result.XObs</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool _loading;
+    private string? _errorMessage;
+    private ServiceStatusResultDto? _result;
+
+    private static string AmbienteLabel(string tpAmb) =>
+        tpAmb == "1" ? "Produção" : tpAmb == "2" ? "Homologação" : string.IsNullOrEmpty(tpAmb) ? "—" : tpAmb;
+
+    private static string UfNome(string cUf)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["11"] = "RO", ["12"] = "AC", ["13"] = "AM", ["14"] = "RR", ["15"] = "PA", ["16"] = "AP", ["17"] = "TO",
+            ["21"] = "MA", ["22"] = "PI", ["23"] = "CE", ["24"] = "RN", ["25"] = "PB", ["26"] = "PE", ["27"] = "AL", ["28"] = "SE", ["29"] = "BA",
+            ["31"] = "MG", ["32"] = "ES", ["33"] = "RJ", ["35"] = "SP", ["41"] = "PR", ["42"] = "SC", ["43"] = "RS",
+            ["50"] = "MS", ["51"] = "MT", ["52"] = "GO", ["53"] = "DF"
+        };
+        return map.TryGetValue((cUf ?? "").Trim(), out var sigla) ? $"({sigla})" : "";
+    }
+
+    private static string FormatarDataHora(string dh)
+    {
+        if (string.IsNullOrWhiteSpace(dh)) return "—";
+        if (DateTimeOffset.TryParse(dh, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d))
+            return d.ToString("dd/MM/yyyy HH:mm:ss");
+        return dh;
+    }
+
+    private static string FullExceptionMessage(Exception ex, bool includeStackTrace)
+    {
+        var sb = new System.Text.StringBuilder();
+        var current = ex;
+        var level = 0;
+        while (current != null)
+        {
+            if (level > 0) sb.AppendLine();
+            sb.Append(level == 0 ? "Exceção: " : $"Inner ({level}): ");
+            sb.Append(current.Message);
+            if (includeStackTrace && !string.IsNullOrEmpty(current.StackTrace))
+            {
+                sb.AppendLine();
+                sb.Append(current.StackTrace);
+            }
+            current = current.InnerException;
+            level++;
+        }
+        return sb.ToString();
+    }
+
+    private async Task ConsultarStatus()
+    {
+        _loading = true;
+        _errorMessage = null;
+        _result = null;
+        try
+        {
+            _result = await NfeService.GetServiceStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = FullExceptionMessage(ex, includeStackTrace: Env.IsDevelopment());
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

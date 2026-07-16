@@ -103,8 +103,7 @@ public class ClientReferenceService : IClientReferenceService
                    psm.NAME AS Name,
                    psm.PAYMENT_METHOD_ID AS PaymentMethodId,
                    psm.MAX_TERMS AS MaxTerms,
-                   psm.MIN_AMOUNT AS MinAmount,
-                   psm.ALLOW_FRONT AS AllowFront
+                   psm.MIN_AMOUNT AS MinAmount
             FROM PAYMENT_SUB_METHOD psm
             WHERE psm.PAYMENT_METHOD_ID = @PaymentMethodId
             ORDER BY psm.PKId";

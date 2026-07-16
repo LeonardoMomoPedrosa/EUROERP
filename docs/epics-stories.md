@@ -130,29 +130,38 @@ Note: Eurobus uses single “Geral” list (no separate Animais page).
 
 ---
 
-## EPIC 8 — Service orders / OS (Vendas)
+## EPIC 8 — Service orders / OS (Vendas) — **DONE**
+
+All stories complete (8.1–8.7). Full open/closed OS flow in EUROERP; billing/NFe remain Epics 11–12.
 
 **Story 8.1 — Nova OS — first screen** — **STATUS: Done** *(Eurobus)*  
 Client + sales agent selection; recent OS list.  
 Legacy: `Eurobus4/principal/sales/new_sale_create_order_number.aspx`
 
 **Story 8.2 — OS editor (open status)** — **STATUS: Done** *(Eurobus)*  
-Cart, discounts, F2 product search, credit/shipment amounts.  
+Cart, discounts, F2 product search, credit/shipment amounts, fleet (truck) assignment.  
 Legacy: `Eurobus4/principal/sales/new_sale.aspx` and related components
 
-**Story 8.3 — OS payment (BTR)** — **STATUS: Pending**  
+**Story 8.3 — OS payment (BTR)** — **STATUS: Done** *(Eurobus)*  
+Payment screen (`OsPagamento.razor` → `OsFinalizado.razor`). Creates `FINANCE_BTR` + `FINANCE_BTR_DETAIL`; auto baixa (`FINANCE_RECEIVE`) **only for dinheiro (payment method 4)**. Cheque / `FINANCE_CHECK` **not** implemented.  
 Legacy: `Eurobus4/principal/sales/sale_btr.aspx`  
 Tables: `FINANCE_BTR`, `FINANCE_BTR_DETAIL`, `FINANCE_RECEIVE`
 
-**Story 8.4 — OS activities (read-only + actions)** — **STATUS: Pending**  
-Reopen, print, packing slip, labels.  
+**Story 8.4 — OS activities (read-only + actions)** — **STATUS: Done** *(Eurobus)*  
+Reopen, print (types 1–3), packing slip, labels on closed OS (`Os.razor`).  
 Legacy: order detail/print pages under `Eurobus4/principal/sales/`
 
-**Story 8.5 — Consultar OS** — **STATUS: Pending**  
+**Story 8.5 — Consultar OS** — **STATUS: Done** *(Eurobus)*  
+Search by client, OS #, NF (`RECEIPT` / `NFES_NO`), fleet description, plate. Opens `Os.razor` (read-only when closed).  
 Legacy: `Eurobus4/principal/sales/search_sale.aspx` and related search pages
 
-**Story 8.6 — Desconto por produto na OS** — **STATUS: Pending** *(if required)*  
-Legacy: `Eurobus4/principal/sales/discountProduct.aspx`
+**Story 8.6 — Desconto por produto na OS** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/discountProduct.aspx`  
+Per-line discount % and optional new list price on open OS (`Os.razor` modal).
+
+**Story 8.7 — Efetuar venda (orçamento → OS)** — **STATUS: Done** *(Eurobus)*  
+Convert closed orçamento (`MODE=Q`, `STATUS=F`) to venda (`MODE=S`): reserve/deduct stock, align line quantities.  
+Legacy: `Eurobus4/components/sales/OrderDetailsEngine.ascx` → **Efetuar Venda** → `SalesController.performSale`
 
 ---
 
@@ -169,38 +178,44 @@ Legacy: `Eurobus4/principal/finance/rank/client_per_saler.aspx`
 
 ---
 
-## EPIC 10 — Customer service (Atendimento) *(Eurobus)*
+## EPIC 10 — Customer service (Atendimento) *(optional — to be implemented)*
 
-**Story 10.1 — Criar atendimento** — **STATUS: Pending**  
+Eurobus-only (`CALL`, `CALL_STEP`, `ZONE`). Not in the current migration wave; menu routes exist with placeholder pages until stories are **Ready**.
+
+**Story 10.1 — Criar atendimento** — **STATUS: Pending** *(to be implemented)*  
 Legacy: `Eurobus4/principal/call/call_create.aspx`  
 Tables: `CALL`, `CALL_STEP`, `ZONE`
 
-**Story 10.2 — Listar atendimentos** — **STATUS: Pending**  
+**Story 10.2 — Listar atendimentos** — **STATUS: Pending** *(to be implemented)*  
 Legacy: `Eurobus4/principal/call/call_search.aspx`
 
-**Story 10.3 — Relatório atendimentos** — **STATUS: Pending**  
+**Story 10.3 — Relatório atendimentos** — **STATUS: Pending** *(to be implemented)*  
 Legacy: `Eurobus4/principal/call/call_report.aspx`
 
 ---
 
-## EPIC 11 — OS billing flow
+## EPIC 11 — OS billing flow — **DONE**
 
-**Story 11.1 — OS não faturada** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/last_orders.aspx`
+All stories complete (11.1–11.2). Lists pending OS (`STATUS` not `E`/`C`); faturar sets `STATUS=E` (legacy send order).
 
-**Story 11.2 — Faturar OS** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/send/send_order.aspx`
+**Story 11.1 — OS não faturada** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/last_orders.aspx`  
+`OsNaoFaturada.razor` — list with optional product filter.
+
+**Story 11.2 — Faturar OS** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/send/send_order.aspx`  
+`FaturarOs.razor` — enter OS # (status `F`) → `SendOrderAsync`.
 
 ---
 
 ## EPIC 12 — NFe
 
-**Interim (Eurobus bridge):** OS lifecycle stays in **legacy Eurobus** until Epics 8–11 are done. EUROERP may ship **NFES only** first — same DB (`LionEBDev`), user enters order # closed in legacy (`F`/`E`), emits NFS-e via Prefeitura SP. Product NFe (SEFAZ) remains in legacy until full Story 12.1.
+**Interim (Eurobus bridge):** Epics 8–11 are **done** in EUROERP. Product NFe (SEFAZ) Story 12.1 is **Done**; NFES bridge (12.1-NFES) is Done.
 
-**Story 12.1 — Enviar NFe (individual)** — **STATUS: Pending**  
+**Story 12.1 — Enviar NFe (individual)** — **STATUS: Done**  
 Legacy: `Eurobus4/principal/sales/nfe/receipt.aspx` *(Eurobus flow — not receiptSync)*  
 SEFAZ, certificate, validation, PDF — pattern ERPCOM3 Epic 10 Story 10.1  
-*Deferred while legacy handles product NFe; see 12.1-NFES for interim scope.*
+**EUROERP:** `NfeEmitir.razor` at `/vendas/nfe/enviar`; CRT 3 (ICMS00 + PIS/COFINS alíquota); `infCpl` com OS/frota; XML/PDF em `NFE_files` (mesma pasta do legado).
 
 **Story 12.1-NFES — Enviar NFES (NFS-e serviços)** — **STATUS: Done** *(Eurobus bridge)*  
 Legacy: `Eurobus4/principal/sales/nfe/receipt.aspx` → `printNFEServices`.  
@@ -208,26 +223,33 @@ Legacy: `Eurobus4/principal/sales/nfe/receipt.aspx` → `printNFEServices`.
 Not in ERPCOM3/Aquanimal. Updates `ORDER.NFES_NO`, `NFES_CHECK_CODE`, `RPS_NO`.  
 Requires order **F** or **E** with service total &gt; 0 (legacy closes OS / BTR). No EUROERP Epic 8.3 dependency if OS is finished in legacy.
 
-**Story 12.2 — NFe Outras / Outras (novo)** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/receiptin_nfe/dataInput.aspx`, `dataInput2.aspx`
+**Story 12.2 — NFe Outras / Outras (novo)** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/receiptin_nfe/dataInput.aspx`, `dataInput2.aspx`, `detailsInput.aspx`, `detailsInput2.aspx`  
+EUROERP: `/vendas/nfe/outras`, `/vendas/nfe/outras-novo` + detalhes. Eurobus-only (`RECEIPT_IN_DATA`, `RECEIPT_IN_DETAILS`). Not in ERPCOM3.
 
-**Story 12.3 — Imprimir / listar NFe** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/nfe/status.aspx`
+**Story 12.3 — Imprimir / listar NFe** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/sales/nfe/status.aspx`  
+**EUROERP:** `NfeImprimir.razor` at `/vendas/nfe/imprimir` — search by OS, Últimas Saídas (NFe + NFES) + Últimas Entradas, detail with PDF/XML via `/NFE_FILES/` (ERPCOM3 pattern). No SEFAZ poll / email (same as ERPCOM3 10.2).
 
-**Story 12.4 — Cancelar NFe** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/nfe/cancel.aspx`
+**Story 12.4 — Cancelar NFe** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/sales/nfe/cancel.aspx`  
+**EUROERP:** `NfeCancelar.razor` at `/vendas/nfe/cancelar` — SEFAZ evento 110111 via `CancelNfeAsync`; grid of today's `RECEIPT_CANCEL`. Inutilização de número **not** implemented (same as ERPCOM3 10.3).
 
-**Story 12.5 — Cancelar NFES (batch)** — **STATUS: Pending** *(Eurobus)*  
-Legacy: `Eurobus4/principal/sales/nfe/cancel_nfes.aspx`
+**Story 12.5 — Cancelar NFES (batch)** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/nfe/cancel_nfes.aspx`  
+**EUROERP:** `NfesCancelarLote.razor` at `/vendas/nfe/cancelar-lote` — Simpliss cancel via `INfesCancellationService`; today's cancels grid. Manual admin path: `/diretoria/admin/nfes-cancel-manual`.
 
-**Story 12.6 — Carta de correção** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/nfe/cc_nfe.aspx`
+**Story 12.6 — Carta de correção** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/sales/nfe/cc_nfe.aspx`  
+**EUROERP:** `NfeCartaCorrecao.razor` at `/vendas/nfe/carta-correcao` + print `/vendas/nfe/carta-correcao/imprimir?RID=`; SEFAZ 110110 via `SendCceAsync` (sales only). Email deferred (same as ERPCOM3).
 
-**Story 12.7 — Relatório NFe** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/receipt_report.aspx`
+**Story 12.7 — Relatório NFe** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/sales/receipt_report.aspx`  
+**EUROERP:** `NfeRelatorio.razor` at `/vendas/nfe/relatorio` — period filter; saídas + entradas/outras; PDF/XML via `/NFE_FILES/`.
 
-**Story 12.8 — Download ZIP + Status serviço** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/nfe/nfe_download.aspx`, `status_servico.aspx`
+**Story 12.8 — Download ZIP + Status serviço** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/sales/nfe/nfe_download.aspx`, `status_servico.aspx`  
+**EUROERP:** `NfeDownload.razor` at `/vendas/nfe/download` (zip → `/NFE_download/`); `NfeStatusServico.razor` at `/vendas/nfe/status-servico` (SEFAZ consStatServ).
 
 ---
 
@@ -356,11 +378,11 @@ Pattern: ERPCOM3 Epic 21
 | Foundation | 1 | 3 |
 | Master data | 2–5 | 18 |
 | Stock & lists | 6–7 | 6 |
-| OS / Vendas | 8–11 | 14 |
+| OS / Vendas | 8–9, 11 | 11 |
 | NFe | 12 | 8 |
 | Finance | 13–15 | 14 |
 | Platform | 16–19 | 12 |
-| Optional | 20 | 1 |
+| Optional (to be implemented) | 10, 20 | 4 |
 | **Total** | **20** | **~76** |
 
 See also: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)

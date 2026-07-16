@@ -8,6 +8,7 @@ namespace EUROERP.Infrastructure.Orders;
 public class OrderService : IOrderService
 {
     private const string RoleComissao = "COMISSAO";
+    private const byte PaymentMethodDinheiro = 4;
     private readonly IDbConnection _connection;
     private readonly string _applicationName;
     private readonly int _animalTaxLionProductId;
@@ -135,7 +136,7 @@ public class OrderService : IOrderService
                 o.PKId AS OrderId,
                 o.ORDER_TYPE AS OrderType,
                 o.MODE AS Mode,
-                om.DESCRIPTION AS ModeDescription,
+                ISNULL(om.DESCRIPTION, CASE WHEN o.MODE = 'Q' THEN N'Orçamento' ELSE N'Venda' END) AS ModeDescription,
                 o.SYS_CREATION_DATE AS OrderDate,
                 o.STATUS AS Status,
                 o.SENT_DATE AS SentDate,
@@ -159,18 +160,16 @@ public class OrderService : IOrderService
                 ISNULL(o.OTHER_EXPENSES, 0) AS OtherExpenses,
                 ISNULL(o.SHIPMENT_COST, 0) AS ShipmentCost,
                 ISNULL(o.CHARGE_SHIPMENT, 1) AS ChargeShipment,
-                o.SITE_ORDER_ID AS SiteOrderId,
-                o.ML_ORDER_ID AS MlOrderId,
                 o.CAR_ID AS CarId,
                 car.DESCRIPTION AS CarDescription,
                 car.PLATE AS CarPlate,
                 o.CAR_KM AS CarKm,
                 o.CAR_PROBLEM AS CarProblem
             FROM [ORDER] o
-            JOIN ORDER_MODE om ON o.MODE = om.ORDER_MODE
+            LEFT JOIN ORDER_MODE om ON o.MODE = om.ORDER_MODE
             JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
-            JOIN [CITY] ci ON ci.PKId = c.ADDRESS_CITY_ID
-            JOIN [STATE] st ON c.ADDRESS_STATE_ID = st.PKId
+            LEFT JOIN [CITY] ci ON ci.PKId = c.ADDRESS_CITY_ID
+            LEFT JOIN [STATE] st ON c.ADDRESS_STATE_ID = st.PKId
             LEFT JOIN [CAR] car ON car.PKId = o.CAR_ID
             WHERE o.PKId = @OrderId";
         var row = await _connection.QueryFirstOrDefaultAsync<OrderHeaderDto>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -322,8 +321,16 @@ public class OrderService : IOrderService
         if (!SkipStockForAnimalTaxProduct(productId))
             await OperateStockAsync(productId, orderId, clientId, -quantity, "Adicionou ao pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
         const string ins = @"
-            INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, EXTERNAL_PID, PRODUCT_ID, QTD_ORDERED, QUANTITY, PRICE, COST_FINAL, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
-            VALUES (@OrderId, @Box, NULL, @ProductId, @Quantity, @Quantity, @Price, (SELECT COST_FINAL FROM PRODUCT WHERE PKId = @ProductId), @CurrencyId, @Conversion, @IgnoreOrderDisc, @Discount)";
+            INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, PRODUCT_ID, QTD_ORDERED, QUANTITY, UNIT_ID, PRICE, COST_FINAL, HAS_COST_IND, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
+            VALUES (
+                @OrderId, @Box, @ProductId, @Quantity, @Quantity,
+                (SELECT ISNULL(UNIT_ID, 1) FROM PRODUCT WHERE PKId = @ProductId),
+                @Price,
+                (SELECT COST_FINAL FROM PRODUCT WHERE PKId = @ProductId),
+                (SELECT ISNULL(HAS_COST_IND, 0) FROM PRODUCT WHERE PKId = @ProductId),
+                @CurrencyId, @Conversion,
+                (SELECT ISNULL(pg.IGNORE_ORDER_DISC, 0) FROM PRODUCT p JOIN PRODUCT_GROUP pg ON pg.PKId = p.GROUP_ID WHERE p.PKId = @ProductId),
+                @Discount)";
         var currencyId = await GetProductCurrencyIdAsync(productId, cancellationToken).ConfigureAwait(false);
         await _connection.ExecuteAsync(new CommandDefinition(ins, new
         {
@@ -334,7 +341,6 @@ public class OrderService : IOrderService
             Price = price,
             CurrencyId = currencyId,
             Conversion = product.Conversion,
-            IgnoreOrderDisc = product.CostInd,
             Discount = product.Discount
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -346,8 +352,14 @@ public class OrderService : IOrderService
         if (!SkipStockForAnimalTaxProduct(productId))
             await OperateStockAsync(productId, orderId, clientId, -quantity, "Importação Site", userId, cancellationToken).ConfigureAwait(false);
         const string ins = @"
-            INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, EXTERNAL_PID, PRODUCT_ID, QTD_ORDERED, QUANTITY, PRICE, COST_FINAL, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
-            VALUES (@OrderId, @Box, NULL, @ProductId, @Quantity, @Quantity, @Price, (SELECT COST_FINAL FROM PRODUCT WHERE PKId = @ProductId), @CurrencyId, 1, 0, 0)";
+            INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, PRODUCT_ID, QTD_ORDERED, QUANTITY, UNIT_ID, PRICE, COST_FINAL, HAS_COST_IND, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
+            VALUES (
+                @OrderId, @Box, @ProductId, @Quantity, @Quantity,
+                (SELECT ISNULL(UNIT_ID, 1) FROM PRODUCT WHERE PKId = @ProductId),
+                @Price,
+                (SELECT COST_FINAL FROM PRODUCT WHERE PKId = @ProductId),
+                (SELECT ISNULL(HAS_COST_IND, 0) FROM PRODUCT WHERE PKId = @ProductId),
+                @CurrencyId, 1, 0, 0)";
         await _connection.ExecuteAsync(new CommandDefinition(ins, new
         {
             OrderId = orderId,
@@ -369,6 +381,36 @@ public class OrderService : IOrderService
             await OperateStockAsync(productId, orderId, clientId, qty.Value, "Removeu produto do pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
         const string del = "DELETE FROM [ORDER_DETAILS] WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
         await _connection.ExecuteAsync(new CommandDefinition(del, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    public async Task UpdateOrderProductDiscountAsync(int orderId, int productId, decimal discountPercent, decimal? newListPrice, CancellationToken cancellationToken = default)
+    {
+        if (discountPercent < 0 || discountPercent > 100)
+            throw new InvalidOperationException("Desconto deve estar entre 0 e 100.");
+
+        const string getSql = @"
+            SELECT od.PRICE
+            FROM [ORDER_DETAILS] od
+            WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0 AND od.QUANTITY > 0";
+        var currentPrice = await _connection.ExecuteScalarAsync<decimal?>(
+            new CommandDefinition(getSql, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (currentPrice == null)
+            throw new InvalidOperationException("Item não encontrado no pedido.");
+
+        var price = newListPrice ?? currentPrice.Value;
+        if (price < 0)
+            throw new InvalidOperationException("Preço inválido.");
+
+        const string sql = @"
+            UPDATE [ORDER_DETAILS] SET DISCOUNT = @Discount, PRICE = @Price
+            WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
+        await _connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            OrderId = orderId,
+            ProductId = productId,
+            Discount = discountPercent,
+            Price = decimal.Round(price, 2)
+        }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     public async Task ResetOrderAsync(int orderId, CancellationToken cancellationToken = default)
@@ -424,6 +466,29 @@ public class OrderService : IOrderService
         }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    public async Task AssignOrderCarAsync(int orderId, int carId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            UPDATE [ORDER]
+            SET CAR_ID = @CarId,
+                CAR_KM = (SELECT LAST_KM FROM CAR WHERE PKId = @CarId)
+            WHERE PKId = @OrderId";
+        var rows = await _connection.ExecuteAsync(new CommandDefinition(sql, new { OrderId = orderId, CarId = carId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (rows == 0)
+            throw new InvalidOperationException("OS não encontrada.");
+    }
+
+    public async Task RemoveOrderCarAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            UPDATE [ORDER]
+            SET CAR_ID = NULL, CAR_KM = NULL
+            WHERE PKId = @OrderId";
+        var rows = await _connection.ExecuteAsync(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (rows == 0)
+            throw new InvalidOperationException("OS não encontrada.");
+    }
+
     public async Task UpdateOrderCfeAsync(int orderId, string cfeProtocol, string applicationId, string userId, CancellationToken cancellationToken = default)
     {
         var appId = applicationId.Length > 8 ? applicationId[..8] : applicationId;
@@ -466,7 +531,7 @@ public class OrderService : IOrderService
         var appId = applicationId.Length > 8 ? applicationId[..8] : applicationId;
         var uid = userId.Length > 20 ? userId[..20] : userId;
 
-        const string updOrder = "UPDATE [ORDER] SET STATUS = 'C', BTR_ID = NULL, ML_ORDER_ID = NULL, LAST_ACTV = 'CANCEL' WHERE PKId = @OrderId";
+        const string updOrder = "UPDATE [ORDER] SET STATUS = 'C', BTR_ID = NULL, LAST_ACTV = 'CANCEL' WHERE PKId = @OrderId";
         await _connection.ExecuteAsync(new CommandDefinition(updOrder, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         const string updDetails = "UPDATE [ORDER_DETAILS] SET QTD_ORDERED = 0, QUANTITY = 0 WHERE ORDER_ID = @OrderId";
         await _connection.ExecuteAsync(new CommandDefinition(updDetails, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -511,24 +576,24 @@ public class OrderService : IOrderService
                 FROM [ORDER_DETAILS] od
                 JOIN [ORDER] o ON o.PKId = od.ORDER_ID
                 WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
-                GROUP BY o.CREDIT, o.DISCOUNT, o.OTHER_EXPENSES, o.SHIPMENT_COST, od.IGNORE_ORDER_DISC
+                GROUP BY o.CREDIT, o.DISCOUNT, o.OTHER_EXPENSES, o.SHIPMENT_COST, o.CHARGE_SHIPMENT, od.IGNORE_ORDER_DISC
             ) t1";
         var total = await _connection.ExecuteScalarAsync<decimal?>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
         return total ?? 0;
     }
 
-    private async Task OperateStockAsync(int productId, int orderId, int clientId, decimal amount, string memo, string? userId, CancellationToken ct)
+    private async Task OperateStockAsync(int productId, int orderId, int clientId, decimal amount, string memo, string? userId, CancellationToken ct, IDbTransaction? transaction = null)
     {
         const string getStock = "SELECT STOCK FROM [PRODUCT] WHERE PKId = @ProductId";
-        var stock = await _connection.ExecuteScalarAsync<decimal>(new CommandDefinition(getStock, new { ProductId = productId }, cancellationToken: ct)).ConfigureAwait(false);
+        var stock = await _connection.ExecuteScalarAsync<decimal>(new CommandDefinition(getStock, new { ProductId = productId }, cancellationToken: ct, transaction: transaction)).ConfigureAwait(false);
         if (amount < 0 && stock < -amount)
             throw new InvalidOperationException("Estoque insuficiente.");
         const string upd = "UPDATE [PRODUCT] SET STOCK = STOCK + @Amount WHERE PKId = @ProductId";
-        await _connection.ExecuteAsync(new CommandDefinition(upd, new { ProductId = productId, Amount = amount }, cancellationToken: ct)).ConfigureAwait(false);
+        await _connection.ExecuteAsync(new CommandDefinition(upd, new { ProductId = productId, Amount = amount }, cancellationToken: ct, transaction: transaction)).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(userId))
         {
             const string insHist = "INSERT INTO [STOCK_HISTORY] (PRODUCT_ID, SYS_CREATION_DATE, USER_ID, PREVIOUS, QUANTITY, MEMO, CLIENT_ID) VALUES (@ProductId, GETDATE(), @UserId, @Previous, @Quantity, @Memo, @ClientId)";
-            await _connection.ExecuteAsync(new CommandDefinition(insHist, new { ProductId = productId, UserId = userId.Length > 20 ? userId[..20] : userId, Previous = stock, Quantity = amount, Memo = memo.Length > 100 ? memo[..100] : memo, ClientId = (int?)clientId }, cancellationToken: ct)).ConfigureAwait(false);
+            await _connection.ExecuteAsync(new CommandDefinition(insHist, new { ProductId = productId, UserId = userId.Length > 20 ? userId[..20] : userId, Previous = stock, Quantity = amount, Memo = memo.Length > 100 ? memo[..100] : memo, ClientId = (int?)clientId }, cancellationToken: ct, transaction: transaction)).ConfigureAwait(false);
         }
     }
 
@@ -575,14 +640,16 @@ public class OrderService : IOrderService
         const string sql = @"
             SELECT pm.PKId AS Id, pm.NAME AS Name, ISNULL(pm.MAX_TERMS, 0) AS MaxTerms, ISNULL(pm.MIN_AMOUNT, 0) AS MinAmount
             FROM [CLIENT] c
-            JOIN [PAYMENT_METHOD] pm ON pm.PKId IN (c.PAYMENT_METHOD_ID, c.PAYMENT_METHOD_ID2, c.PAYMENT_METHOD_ID3)
-            WHERE c.PKId = @ClientId AND pm.PKId IS NOT NULL AND LTRIM(RTRIM(ISNULL(pm.NAME,''))) <> ''
+            JOIN [PAYMENT_METHOD] pm ON pm.PKId IN (
+                c.PAYMENT_METHOD_ID, c.PAYMENT_METHOD_ID2, c.PAYMENT_METHOD_ID3,
+                c.PAYMENT_METHOD_ID4, c.PAYMENT_METHOD_ID5)
+            WHERE c.PKId = @ClientId AND LTRIM(RTRIM(ISNULL(pm.NAME,''))) <> ''
             GROUP BY pm.PKId, pm.NAME, pm.MAX_TERMS, pm.MIN_AMOUNT";
         var all = await _connection.QueryAsync<PaymentMethodOptionDto>(new CommandDefinition(sql, new { ClientId = clientId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         var list = new List<PaymentMethodOptionDto>();
         foreach (var pm in all)
         {
-            if (pm.Id == 1) continue; // Skip Cheque
+            if (pm.Id == 1) continue; // Cheque — not supported
             if (totalToPay >= pm.MinAmount || totalToPay == 0)
                 list.Add(pm);
         }
@@ -592,21 +659,40 @@ public class OrderService : IOrderService
             var d = await _connection.QueryFirstOrDefaultAsync<PaymentMethodOptionDto>(new CommandDefinition(dinheiro, cancellationToken: cancellationToken)).ConfigureAwait(false);
             if (d != null) list.Add(d);
         }
+        if (!list.Any(p => p.Id == 6))
+            list.Add(new PaymentMethodOptionDto { Id = 6, Name = "OUTROS", MaxTerms = 1, MinAmount = 0 });
         return list;
     }
 
-    public async Task FinishOrderWithPaymentAsync(int orderId, byte paymentMethodId, IReadOnlyList<BtrDetailDto> details, string applicationId, string userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<BtrDetailDto>> GetOrderPaymentTermsAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT btrd.AMOUNT AS Amount, btrd.DUE_DATE AS DueDate, ISNULL(btrd.MEMO, '') AS Memo,
+                btrd.PAYMENT_METHOD_ID AS PaymentMethodId, ISNULL(btrd.PAYMENT_SUB_METHOD_ID, 0) AS PaymentSubMethodId
+            FROM [ORDER] o
+            JOIN [FINANCE_BTR_DETAIL] btrd ON btrd.FINANCE_BTR_ID = o.BTR_ID
+            WHERE o.PKId = @OrderId AND o.BTR_ID IS NOT NULL
+            ORDER BY btrd.TERM_NO";
+        var rows = await _connection.QueryAsync<BtrDetailDto>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToList();
+    }
+
+    public async Task FinishOrderWithPaymentAsync(int orderId, byte paymentMethodId, byte paymentSubMethodId, IReadOnlyList<BtrDetailDto> details, string applicationId, string userId, CancellationToken cancellationToken = default)
     {
         var summary = await GetOrderPaymentSummaryAsync(orderId, cancellationToken).ConfigureAwait(false);
         if (summary == null)
             throw new InvalidOperationException("Pedido não encontrado.");
         if (summary.Status != "I" && summary.Status != "R")
             throw new InvalidOperationException("Só é possível finalizar pedidos incompletos ou reabertos.");
-        if (details == null || details.Count == 0)
+        var isOthers = paymentMethodId == 6;
+        if (!isOthers && (details == null || details.Count == 0))
             throw new InvalidOperationException("Informe ao menos um termo de pagamento.");
-        var sumDetails = details.Sum(d => d.Amount);
-        if (Math.Abs(sumDetails - summary.TotalToPay) > 0.01m)
-            throw new InvalidOperationException($"O total das parcelas deve ser igual ao total a pagar. Total das parcelas: {sumDetails:N2}. Total a pagar: {summary.TotalToPay:N2}.");
+        if (!isOthers)
+        {
+            var sumDetails = details!.Sum(d => d.Amount);
+            if (Math.Abs(sumDetails - summary.TotalToPay) > 0.01m)
+                throw new InvalidOperationException($"O total das parcelas deve ser igual ao total a pagar. Total das parcelas: {sumDetails:N2}. Total a pagar: {summary.TotalToPay:N2}.");
+        }
 
         var appId = applicationId.Length > 8 ? applicationId[..8] : applicationId;
         var uid = userId.Length > 20 ? userId[..20] : userId;
@@ -617,7 +703,7 @@ public class OrderService : IOrderService
         using var tr = _connection.BeginTransaction();
         try
         {
-            if (summary.Status == "R" && summary.BtrId.HasValue && summary.BtrId.Value > 0)
+            if (summary.Status == "R" && summary.BtrId.HasValue && summary.BtrId.Value > 0 && !isOthers)
             {
                 await _connection.ExecuteAsync(new CommandDefinition(
                     "UPDATE [ORDER] SET BTR_ID = NULL WHERE PKId = @OrderId; DELETE FROM [FINANCE_CHECK] WHERE FINANCE_BTR_ID = @BtrId; DELETE FROM [FINANCE_BTR_DETAIL] WHERE FINANCE_BTR_ID = @BtrId; DELETE FROM [FINANCE_BTR] WHERE PKId = @BtrId",
@@ -626,35 +712,63 @@ public class OrderService : IOrderService
                     transaction: tr)).ConfigureAwait(false);
             }
 
-            const string insBtr = @"
-                INSERT INTO [FINANCE_BTR] (SYS_CREATION_DATE, USER_ID, APPLICATION_ID, CLIENT_ID, TERMS, BILL_TYPE, CURRENCY_ID)
-                VALUES (GETDATE(), @UserId, @ApplicationId, @ClientId, @Terms, 'O', @CurrencyId);
-                SELECT CAST(SCOPE_IDENTITY() AS INT);";
-            var btrId = await _connection.ExecuteScalarAsync<int>(new CommandDefinition(insBtr, new
+            var btrId = 0;
+            if (!isOthers)
             {
-                UserId = uid,
-                ApplicationId = appId,
-                ClientId = summary.ClientId,
-                Terms = (byte)details.Count,
-                CurrencyId = summary.CurrencyId
-            }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
-
-            const string insDetail = @"
-                INSERT INTO [FINANCE_BTR_DETAIL] (FINANCE_BTR_ID, TERM_NO, PAYMENT_METHOD_ID, DUE_DATE, AMOUNT, ORIG_AMOUNT, STATUS, MEMO)
-                VALUES (@BtrId, @TermNo, @PaymentMethodId, @DueDate, @Amount, @Amount, 'U', @Memo)";
-            for (byte i = 0; i < details.Count; i++)
-            {
-                var d = details[i];
-                await _connection.ExecuteAsync(new CommandDefinition(insDetail, new
+                const string insBtr = @"
+                    INSERT INTO [FINANCE_BTR] (SYS_CREATION_DATE, USER_ID, APPLICATION_ID, CLIENT_ID, TERMS, BILL_TYPE, CURRENCY_ID)
+                    VALUES (GETDATE(), @UserId, @ApplicationId, @ClientId, @Terms, 'O', @CurrencyId);
+                    SELECT CAST(SCOPE_IDENTITY() AS INT);";
+                btrId = await _connection.ExecuteScalarAsync<int>(new CommandDefinition(insBtr, new
                 {
-                    BtrId = btrId,
-                    TermNo = (byte)(i + 1),
-                    d.PaymentMethodId,
-                    d.DueDate,
-                    d.Amount,
-                    Memo = (d.Memo ?? "").Length > 200 ? (d.Memo ?? "").Substring(0, 200) : (d.Memo ?? "")
+                    UserId = uid,
+                    ApplicationId = appId,
+                    ClientId = summary.ClientId,
+                    Terms = (byte)details!.Count,
+                    CurrencyId = summary.CurrencyId
                 }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+
+                const string insDetail = @"
+                    INSERT INTO [FINANCE_BTR_DETAIL] (FINANCE_BTR_ID, TERM_NO, PAYMENT_METHOD_ID, PAYMENT_SUB_METHOD_ID, DUE_DATE, AMOUNT, STATUS, MEMO)
+                    VALUES (@BtrId, @TermNo, @PaymentMethodId, @PaymentSubMethodId, @DueDate, @Amount, 'U', @Memo)";
+                for (byte i = 0; i < details.Count; i++)
+                {
+                    var d = details[i];
+                    var subMethodId = d.PaymentSubMethodId > 0 ? d.PaymentSubMethodId : paymentSubMethodId;
+                    byte? paymentSubMethodIdDb = subMethodId > 0 ? subMethodId : null;
+                    await _connection.ExecuteAsync(new CommandDefinition(insDetail, new
+                    {
+                        BtrId = btrId,
+                        TermNo = (byte)(i + 1),
+                        PaymentMethodId = d.PaymentMethodId > 0 ? d.PaymentMethodId : paymentMethodId,
+                        PaymentSubMethodId = paymentSubMethodIdDb,
+                        d.DueDate,
+                        d.Amount,
+                        Memo = (d.Memo ?? "").Length > 200 ? (d.Memo ?? "")[..200] : (d.Memo ?? "")
+                    }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+                }
+
+                if (paymentMethodId == PaymentMethodDinheiro)
+                {
+                    const string insReceive = @"
+                        INSERT INTO [FINANCE_RECEIVE] (FINANCE_BTR_ID, TERM_NO, SYS_CREATION_DATE, USER_ID, APPLICATION_ID, AMOUNT, MEMO, TYPE, RETURN_ID)
+                        VALUES (@BtrId, @TermNo, GETDATE(), @UserId, @ApplicationId, @Amount, '', 'M', 0);
+                        UPDATE [FINANCE_BTR_DETAIL] SET STATUS = 'P' WHERE FINANCE_BTR_ID = @BtrId AND TERM_NO = @TermNo";
+                    for (byte i = 0; i < details.Count; i++)
+                    {
+                        await _connection.ExecuteAsync(new CommandDefinition(insReceive, new
+                        {
+                            BtrId = btrId,
+                            TermNo = (byte)(i + 1),
+                            UserId = uid,
+                            ApplicationId = appId,
+                            Amount = details[i].Amount
+                        }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+                    }
+                }
             }
+
+            byte? orderPaymentSubMethodId = paymentSubMethodId > 0 ? paymentSubMethodId : null;
 
             decimal creditToApply = summary.Credit;
             var totalGross = await _connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
@@ -671,8 +785,16 @@ public class OrderService : IOrderService
             }
 
             await _connection.ExecuteAsync(new CommandDefinition(
-                "UPDATE [ORDER] SET SYS_UPDATE_DATE = GETDATE(), APPLICATION_ID = @ApplicationId, USER_ID = @UserId, LAST_ACTV = 'FINISHED', STATUS = 'F', CREDIT = @Credit, STATUS_CHG_DATE = GETDATE(), BTR_ID = @BtrId WHERE PKId = @OrderId",
-                new { ApplicationId = appId, UserId = uid, Credit = creditToApply, BtrId = btrId, OrderId = orderId },
+                "UPDATE [ORDER] SET SYS_UPDATE_DATE = GETDATE(), APPLICATION_ID = @ApplicationId, USER_ID = @UserId, LAST_ACTV = 'FINISHED', STATUS = 'F', CREDIT = @Credit, STATUS_CHG_DATE = GETDATE(), PAYMENT_SUB_METHOD_ID = @PaymentSubMethodId, BTR_ID = @BtrId WHERE PKId = @OrderId",
+                new
+                {
+                    ApplicationId = appId,
+                    UserId = uid,
+                    Credit = creditToApply,
+                    PaymentSubMethodId = orderPaymentSubMethodId,
+                    BtrId = btrId > 0 ? (int?)btrId : null,
+                    OrderId = orderId
+                },
                 cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
 
             await _connection.ExecuteAsync(new CommandDefinition(
@@ -733,6 +855,98 @@ public class OrderService : IOrderService
         await _connection.ExecuteAsync(new CommandDefinition(insHist, new { UserId = uid, ApplicationId = appIdStr.Length > 8 ? appIdStr[..8] : appIdStr, OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    public async Task PerformQuoteSaleAsync(int orderId, string userId, CancellationToken cancellationToken = default)
+    {
+        const string sqlOrder = "SELECT MODE AS Mode, STATUS AS Status, CLIENT_ID AS ClientId FROM [ORDER] WHERE PKId = @OrderId";
+        var order = await _connection.QueryFirstOrDefaultAsync<(string Mode, string Status, int ClientId)>(
+            new CommandDefinition(sqlOrder, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(order.Mode))
+            throw new InvalidOperationException("Pedido não encontrado.");
+        if (order.Mode != "Q")
+            throw new InvalidOperationException("Esta OS não é um orçamento.");
+        if (order.Status != "F")
+            throw new InvalidOperationException("Só é possível efetuar venda de orçamentos fechados.");
+
+        if (!await IsEligibleForQuoteSaleAsync(orderId, cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("Não há saldo em estoque suficiente para efetuar a venda!");
+
+        const string sqlLines = @"
+            SELECT od.PRODUCT_ID AS ProductId,
+                   od.QTD_ORDERED AS QtdOrdered,
+                   od.QUANTITY AS Quantity,
+                   p.STOCK AS Stock
+            FROM [ORDER_DETAILS] od
+            JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+            JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
+            WHERE od.ORDER_ID = @OrderId
+              AND pc.PROD_SRV_IND = 'P'";
+
+        var uid = userId.Length > 20 ? userId[..20] : userId;
+
+        if (_connection.State != ConnectionState.Open)
+            _connection.Open();
+
+        using var tr = _connection.BeginTransaction();
+        try
+        {
+            var lines = (await _connection.QueryAsync<(int ProductId, decimal QtdOrdered, decimal Quantity, decimal Stock)>(
+                new CommandDefinition(sqlLines, new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false)).ToList();
+
+            foreach (var line in lines)
+            {
+                if (line.QtdOrdered > line.Quantity + line.Stock)
+                    throw new InvalidOperationException("Erro no sistema de estoque, consulte o administrador.");
+
+                if (line.QtdOrdered > line.Quantity)
+                {
+                    var delta = line.QtdOrdered - line.Quantity;
+                    await OperateStockAsync(line.ProductId, orderId, order.ClientId, -delta,
+                        "Realizando Venda de Orçamento pedido " + orderId, uid, cancellationToken, tr).ConfigureAwait(false);
+                }
+
+                const string updQty = @"
+                    UPDATE [ORDER_DETAILS] SET QUANTITY = @Quantity
+                    WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
+                await _connection.ExecuteAsync(new CommandDefinition(updQty,
+                    new { OrderId = orderId, ProductId = line.ProductId, Quantity = line.QtdOrdered },
+                    cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+            }
+
+            const string sendServices = @"
+                UPDATE [ORDER_DETAILS] SET QUANTITY = QTD_ORDERED
+                WHERE ORDER_ID = @OrderId AND HAS_COST_IND = 0";
+            await _connection.ExecuteAsync(new CommandDefinition(sendServices, new { OrderId = orderId },
+                cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+
+            await _connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE [ORDER] SET MODE = 'S' WHERE PKId = @OrderId",
+                new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+
+            tr.Commit();
+        }
+        catch
+        {
+            tr.Rollback();
+            throw;
+        }
+    }
+
+    private async Task<bool> IsEligibleForQuoteSaleAsync(int orderId, CancellationToken cancellationToken)
+    {
+        const string sql = @"
+            SELECT od.QTD_ORDERED - od.QUANTITY - p.STOCK AS CartBalance
+            FROM [ORDER_DETAILS] od
+            JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+            JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
+            WHERE od.ORDER_ID = @OrderId AND pc.PROD_SRV_IND = 'P'";
+
+        var balances = await _connection.QueryAsync<decimal>(
+            new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return balances.All(b => b <= 0);
+    }
+
     private async Task<bool> HasPaymentAsync(int btrId, CancellationToken cancellationToken)
     {
         const string sql = "SELECT 1 FROM [FINANCE_RECEIVE] WHERE FINANCE_BTR_ID = @BtrId";
@@ -744,7 +958,6 @@ public class OrderService : IOrderService
     {
         const string sqlHeader = @"
             SELECT o.PKId AS OrderId, c.PKId AS ClientId, o.SYS_CREATION_DATE AS OrderDate, o.RECEIPT AS Receipt, ISNULL(o.MEMO, '') AS Memo,
-                o.ML_ORDER_ID AS MlOrderId, o.ML_ORDER_DATE AS MlOrderDate, o.ML_SHIPMENT_COST AS MlShipmentCost,
                 ISNULL(o.CREDIT, 0) AS Credit, ISNULL(o.DISCOUNT, 0) AS Discount,
                 ISNULL(o.OTHER_EXPENSES, 0) AS OtherExpenses, ISNULL(o.SHIPMENT_COST, 0) AS ShipmentCost,
                 c.SOCIAL_NAME AS SocialName, c.FANTASY_NAME AS ClientName, ISNULL(c.CNPJPF, '') AS CnpjPf, ISNULL(c.STATE_INSCR, '') AS StateInscr,
@@ -792,12 +1005,6 @@ public class OrderService : IOrderService
         }
 
         string mlOrderId = "";
-        if (header.MlOrderId != null && header.MlOrderId.ToString()!.Length > 1)
-        {
-            mlOrderId = "ML #" + header.MlOrderId;
-            if (header.MlOrderDate != null)
-                mlOrderId += " / " + ((DateTime)header.MlOrderDate).ToString("dd/MM/yyyy");
-        }
 
         return new OrderForPrintDto
         {
@@ -820,8 +1027,8 @@ public class OrderService : IOrderService
             Receipt = header.Receipt != null ? (int?)header.Receipt : null,
             Memo = (string)header.Memo,
             MlOrderId = mlOrderId,
-            MlOrderDate = header.MlOrderDate != null ? (DateTime?)header.MlOrderDate : null,
-            MlShipmentCost = header.MlShipmentCost != null ? (decimal?)header.MlShipmentCost : null,
+            MlOrderDate = null,
+            MlShipmentCost = null,
             Credit = (decimal)header.Credit,
             Discount = (decimal)header.Discount,
             OtherExpenses = (decimal)header.OtherExpenses,
@@ -836,7 +1043,7 @@ public class OrderService : IOrderService
     public async Task<OrderLabelDto?> GetOrderLabelAsync(int orderId, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT o.PKId AS OrderId, o.ML_ORDER_ID AS MlOrderId,
+            SELECT o.PKId AS OrderId,
                 c.SOCIAL_NAME AS SocialName, c.ADDRESS_STREET AS AddressStreet,
                 ISNULL(c.ADDRESS_NUMBER, '') AS AddressNumber, ISNULL(c.ADDRESS_COMPLEMENT, '') AS AddressComplement,
                 ISNULL(c.ADDRESS_BLOCK, '') AS AddressBlock, ci.NAME AS City, st.CODE AS State,
@@ -884,51 +1091,67 @@ public class OrderService : IOrderService
             SELECT o.PKId AS OrderId, o.SYS_CREATION_DATE AS CreationDate, o.STATUS AS Status, c.FANTASY_NAME AS ClientFantasyName
             FROM [ORDER] o
             INNER JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
-            WHERE o.RECEIPT = @ReceiptNumber";
+            WHERE o.RECEIPT = @ReceiptNumber OR o.NFES_NO = @NfesNo";
         var list = await _connection.QueryAsync<OrderSearchResultDto>(
-            new CommandDefinition(sql, new { ReceiptNumber = receiptNumber }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(sql, new { ReceiptNumber = receiptNumber, NfesNo = receiptNumber.ToString() }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return list.ToList();
     }
 
-    public async Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByMeliAsync(string mlOrderId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByCarAsync(string carDescription, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(mlOrderId)) return new List<OrderSearchResultDto>();
+        var desc = (carDescription ?? "").Trim();
+        if (desc.Length < 2)
+            return Array.Empty<OrderSearchResultDto>();
+
         const string sql = @"
-            SELECT o.PKId AS OrderId, o.SYS_CREATION_DATE AS CreationDate, o.STATUS AS Status, c.FANTASY_NAME AS ClientFantasyName
+            SELECT TOP 15
+                o.PKId AS OrderId,
+                o.SYS_CREATION_DATE AS CreationDate,
+                o.STATUS AS Status,
+                c.FANTASY_NAME AS ClientFantasyName
             FROM [ORDER] o
             INNER JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
-            WHERE o.ML_ORDER_ID = @MlOrderId";
+            INNER JOIN CAR ca ON ca.PKId = o.CAR_ID
+            WHERE ca.DESCRIPTION LIKE @Like
+            ORDER BY o.PKId DESC";
         var list = await _connection.QueryAsync<OrderSearchResultDto>(
-            new CommandDefinition(sql, new { MlOrderId = mlOrderId.Trim() }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(sql, new { Like = $"%{desc}%" }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return list.ToList();
     }
 
-    public async Task<bool> MlOrderExistsAsync(string mlOrderId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByCarPlateAsync(string carPlate, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(mlOrderId)) return false;
-        const string sql = "SELECT 1 FROM [ORDER] WHERE ML_ORDER_ID = @MlOrderId";
-        var v = await _connection.ExecuteScalarAsync<int?>(new CommandDefinition(sql, new { MlOrderId = mlOrderId.Trim() }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return v.HasValue && v.Value == 1;
-    }
+        var plate = (carPlate ?? "").Trim();
+        if (plate.Length < 2)
+            return Array.Empty<OrderSearchResultDto>();
 
-    public async Task UnlinkMlOrderAsync(string mlOrderId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(mlOrderId)) return;
-        const string sql = "UPDATE [ORDER] SET ML_ORDER_ID = NULL, ML_ORDER_DATE = NULL, ML_SHIPMENT_COST = NULL WHERE ML_ORDER_ID = @MlOrderId";
-        await _connection.ExecuteAsync(new CommandDefinition(sql, new { MlOrderId = mlOrderId.Trim() }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-    }
-
-    public async Task<IReadOnlyList<MlOrderRowDto>> GetOrdersByMlIdsAsync(IReadOnlyList<string> mlOrderIds, CancellationToken cancellationToken = default)
-    {
-        if (mlOrderIds == null || mlOrderIds.Count == 0) return new List<MlOrderRowDto>();
-        var param = new DynamicParameters();
-        var inClause = string.Join(",", mlOrderIds.Select((_, i) => "@p" + i));
-        for (var i = 0; i < mlOrderIds.Count; i++)
-            param.Add("p" + i, mlOrderIds[i].Trim());
-        var sql = $"SELECT PKId, NFE_RECEIPT AS NfeReceipt, ML_ORDER_ID AS MlOrderId FROM [ORDER] WHERE ML_ORDER_ID IN ({inClause})";
-        var list = await _connection.QueryAsync<MlOrderRowDto>(new CommandDefinition(sql, param, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        const string sql = @"
+            SELECT
+                o.PKId AS OrderId,
+                o.SYS_CREATION_DATE AS CreationDate,
+                o.STATUS AS Status,
+                c.FANTASY_NAME AS ClientFantasyName
+            FROM [ORDER] o
+            INNER JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
+            INNER JOIN CAR ca ON ca.PKId = o.CAR_ID
+            WHERE ca.PLATE LIKE @Like
+            ORDER BY o.PKId DESC";
+        var list = await _connection.QueryAsync<OrderSearchResultDto>(
+            new CommandDefinition(sql, new { Like = $"%{plate}%" }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return list.ToList();
     }
+
+    public Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByMeliAsync(string mlOrderId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<OrderSearchResultDto>>(Array.Empty<OrderSearchResultDto>());
+
+    public Task<bool> MlOrderExistsAsync(string mlOrderId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
+
+    public Task UnlinkMlOrderAsync(string mlOrderId, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public Task<IReadOnlyList<MlOrderRowDto>> GetOrdersByMlIdsAsync(IReadOnlyList<string> mlOrderIds, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<MlOrderRowDto>>(Array.Empty<MlOrderRowDto>());
 
     public async Task<IReadOnlyList<OrderSearchResultDto>> GetLastClosedOrdersAsync(int top = 30, CancellationToken cancellationToken = default)
     {
@@ -1075,8 +1298,8 @@ public class OrderService : IOrderService
             SELECT
                 c.FANTASY_NAME AS ClientName,
                 ISNULL(c.EMAIL, '') AS Email,
-                ISNULL(o.TRACK, '') AS Track,
-                ISNULL(o.VIA, '') AS Via,
+                '' AS Track,
+                '' AS Via,
                 ISNULL(o.NFE_KEY, '') AS NfeKey,
                 ISNULL(o.RECEIPT, '') AS Receipt
             FROM [ORDER] o
@@ -1084,7 +1307,7 @@ public class OrderService : IOrderService
             JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
             LEFT JOIN [RECEIPT_CANCEL] rc ON rc.RECEIPT_NO = o.RECEIPT
             WHERE o.PKId = @OrderId
-            GROUP BY c.FANTASY_NAME, c.EMAIL, o.TRACK, o.VIA, o.NFE_KEY, o.RECEIPT";
+            GROUP BY c.FANTASY_NAME, c.EMAIL, o.NFE_KEY, o.RECEIPT";
         var row = await _connection.QueryFirstOrDefaultAsync<ClientByOrderDto>(
             new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return row;
@@ -1097,8 +1320,8 @@ public class OrderService : IOrderService
                 CAST(o.PKId AS NVARCHAR(20)) AS OrderId,
                 ISNULL(c.FANTASY_NAME, '') AS ClientName,
                 ISNULL(c.EMAIL, '') AS Email,
-                ISNULL(CAST(o.SITE_ORDER_ID AS NVARCHAR(50)), '') AS SiteOrderId,
-                ISNULL(o.ML_ORDER_ID, '') AS MlOrderId
+                '' AS SiteOrderId,
+                '' AS MlOrderId
             FROM [ORDER] o
             JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
             WHERE o.NFE_KEY = @NfeKey";
@@ -1119,7 +1342,6 @@ public class OrderService : IOrderService
             FROM [ORDER] o
             JOIN [CLIENT] c ON c.PKId = o.CLIENT_ID
             WHERE o.STATUS = 'E'
-                AND o.TRACKER_IND IS NULL
                 AND o.NFE_KEY IS NOT NULL
                 AND c.EMAIL IS NOT NULL
                 AND o.SENT_DATE > GETDATE() - 7";
@@ -1128,37 +1350,11 @@ public class OrderService : IOrderService
         return list.ToList();
     }
 
-    public async Task<bool> UpdateOrderViaAsync(int orderId, string via, CancellationToken cancellationToken = default)
-    {
-        const string sql = "UPDATE [ORDER] SET VIA = @Via WHERE PKId = @OrderId";
-        var rows = await _connection.ExecuteAsync(
-            new CommandDefinition(sql, new { OrderId = orderId, Via = via ?? string.Empty }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return rows > 0;
-    }
+    public Task<bool> UpdateOrderViaAsync(int orderId, string via, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
 
-    public async Task<bool> UpdateOrderTrackAsync(int orderId, string? track, string? via, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrEmpty(track) && string.IsNullOrEmpty(via))
-            return false;
-        const string check = "SELECT 1 FROM [ORDER] WHERE PKId = @OrderId";
-        var exists = await _connection.ExecuteScalarAsync<int?>(new CommandDefinition(check, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (exists != 1)
-            return false;
-        if (!string.IsNullOrEmpty(via))
-        {
-            const string sqlVia = "UPDATE [ORDER] SET VIA = @Via WHERE PKId = @OrderId";
-            await _connection.ExecuteAsync(new CommandDefinition(sqlVia, new { OrderId = orderId, Via = via }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        }
-        if (!string.IsNullOrEmpty(track))
-        {
-            const string sqlTrack = "UPDATE [ORDER] SET TRACK = @Track WHERE PKId = @OrderId";
-            await _connection.ExecuteAsync(new CommandDefinition(sqlTrack, new { OrderId = orderId, Track = track }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        }
-
-        const string sqlProcessed = "UPDATE [ORDER] SET TRACKER_IND = @TrackerInd WHERE PKId = @OrderId";
-        await _connection.ExecuteAsync(new CommandDefinition(sqlProcessed, new { OrderId = orderId, TrackerInd = "P" }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return true;
-    }
+    public Task<bool> UpdateOrderTrackAsync(int orderId, string? track, string? via, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
 
     private static string GetOrderStatusName(string status) => status switch
     {

@@ -1,4 +1,5 @@
 @page "/vendas/os/{OrderId:int}"
+@using EUROERP.Application.Clients
 @using EUROERP.Application.Orders
 @using Microsoft.AspNetCore.Components.Authorization
 @rendermode InteractiveServer
@@ -8,6 +9,10 @@
 @if (_header == null && !_loadingHeader)
 {
     <div class="alert alert-warning">OS não encontrada.</div>
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert alert-danger">@_errorMessage</div>
+    }
     return;
 }
 
@@ -21,14 +26,6 @@
     <div class="card-body py-2 px-3">
         <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 mb-1 small">
             <span class="order-header-order-id">#@_header!.OrderId</span>
-            @if (!string.IsNullOrWhiteSpace(_header.MlOrderId))
-            {
-                <span class="text-muted">ML <strong class="text-body">@_header.MlOrderId.Trim()</strong></span>
-            }
-            @if (_header.SiteOrderId is > 0)
-            {
-                <span class="text-muted">Site <strong class="text-body">#@_header.SiteOrderId</strong></span>
-            }
             <span class="badge @GetOrderStatusBadgeClass(_header.Status)">@GetOrderStatusName(_header.Status)</span>
             <span class="badge @GetOrderModeBadgeClass(_header.Mode)">@(!string.IsNullOrWhiteSpace(_header.ModeDescription) ? _header.ModeDescription : (_header.Mode == "Q" ? "Orçamento" : "Venda"))</span>
             <span class="text-muted">Produtos</span>
@@ -62,26 +59,69 @@
     </div>
 </div>
 
-@if (_canEdit && _header != null)
+@if (_header != null && (_canEdit || HasOrderCar(_header) || !string.IsNullOrWhiteSpace(_header.CarProblem)))
 {
     <div class="card mb-2">
         <div class="card-body py-2 px-3 small">
-            <div class="row g-2 align-items-end">
-                @if (_header.CarId.HasValue && _header.CarId.Value > 0)
+            <div class="row g-2 align-items-start">
+                <div class="col-auto pt-1">
+                    @if (_canEdit)
+                    {
+                        <button type="button" class="btn btn-link p-0 border-0 os-truck-btn" title="Selecionar veículo da frota" @onclick="AbrirModalFrota" disabled="@_carBusy">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M0 3.5A1.5 1.5 0 0 1 1.5 2h9A1.5 1.5 0 0 1 12 3.5V5h1.02a1.5 1.5 0 0 1 1.17.563l1.481 1.85a1.5 1.5 0 0 1 .329.938V10.5a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 1 1-4 0H5a2 2 0 1 1-3.998-.085A1.5 1.5 0 0 1 0 10.5v-7zm1.294 7.456A1.999 1.999 0 0 1 4.002 13h5.996a2 1.999 0 0 1 .998-1.75v-.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5v.5a1.999 1.999 0 0 1 .346 1.456zM12 5.5a.5.5 0 0 1 .5.5v.293l-1.378 1.378A.5.5 0 0 1 11 7.207V5.5a.5.5 0 0 1 .5-.5z"/>
+                            </svg>
+                        </button>
+                    }
+                </div>
+                @if (HasOrderCar(_header))
                 {
-                    <div class="col-md-4">
-                        <strong>Veículo:</strong> @_header.CarDescription — @_header.CarPlate
+                    <div class="col-md-3">
+                        <div class="text-muted mb-0">Descrição</div>
+                        <strong>@_header.CarDescription</strong>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label mb-0">KM atual</label>
-                        <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_carKm" />
+                        <div class="text-muted mb-0">Placa</div>
+                        <strong>@_header.CarPlate</strong>
                     </div>
+                    <div class="col-md-2">
+                        <div class="text-muted mb-0">KM atual</div>
+                        @if (_canEdit)
+                        {
+                            <input type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_carKm" />
+                        }
+                        else
+                        {
+                            <strong>@(_carKm?.ToString("N0") ?? "—")</strong>
+                        }
+                    </div>
+                    @if (_canEdit)
+                    {
+                        <div class="col-auto pt-4">
+                            <button type="button" class="btn btn-outline-danger btn-sm" @onclick="RemoverVeiculo" disabled="@_carBusy" title="Remover veículo">×</button>
+                        </div>
+                    }
                 }
-                <div class="@(_header.CarId.HasValue && _header.CarId.Value > 0 ? "col-md-6" : "col-md-12")">
+                else if (_canEdit)
+                {
+                    <div class="col pt-2 text-muted">Clique no caminhão para vincular um veículo da frota do cliente.</div>
+                }
+                <div class="@(HasOrderCar(_header) ? "col-md" : "col")">
                     <label class="form-label mb-0">Dados adicionais / problema</label>
-                    <textarea class="form-control form-control-sm" rows="2" @bind="_carProblem"></textarea>
+                    @if (_canEdit)
+                    {
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_carProblem"></textarea>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_carProblem))
+                    {
+                        <div>@_carProblem</div>
+                    }
                 </div>
             </div>
+            @if (!string.IsNullOrEmpty(_carMessage))
+            {
+                <div class="alert alert-danger py-1 small mt-2 mb-0">@_carMessage</div>
+            }
         </div>
     </div>
 }
@@ -174,6 +214,8 @@
             </div>
             <div class="p-3 border-bottom">
                 <input type="text"
+                       id="pedido-busca-rica-input"
+                       @ref="_buscaRicaInputRef"
                        class="form-control form-control-sm"
                        placeholder="Digite pelo menos 2 caracteres..."
                        @bind="_buscaRicaSearch"
@@ -225,8 +267,118 @@
     </div>
 }
 
+@* Modal seleção de veículo (frota) *@
+@if (_showCarModal)
+{
+    <div class="modal-backdrop-pedido" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1050;" @onclick="FecharModalFrota">
+        <div class="modal-dialog-pedido" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; z-index: 1051;" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <h6 class="mb-0">Frota — @_header?.SocialName</h6>
+                <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @onclick="FecharModalFrota" aria-label="Fechar">×</button>
+            </div>
+            <div class="p-0 flex-grow-1 overflow-auto" style="min-height: 160px;">
+                @if (_loadingCars)
+                {
+                    <div class="p-3 text-muted small">Carregando frota...</div>
+                }
+                else if (_clientCars.Count == 0)
+                {
+                    <div class="p-3 text-muted small">Nenhum veículo cadastrado para este cliente. Cadastre em Clientes → Frota.</div>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Descrição</th>
+                                <th>Placa</th>
+                                <th class="text-end">Últ. KM</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var car in _clientCars)
+                            {
+                                var isSelected = _header?.CarId == car.Id;
+                                <tr class="@(isSelected ? "table-primary" : null)">
+                                    <td>@car.Description</td>
+                                    <td>@car.Plate</td>
+                                    <td class="text-end">@car.LastKm.ToString("N0")</td>
+                                    <td class="text-end">
+                                        @if (isSelected)
+                                        {
+                                            <span class="badge bg-primary">Atual</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SelecionarVeiculo(car.Id)" disabled="@_carBusy">Selecionar</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="p-3 border-top">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="FecharModalFrota">Fechar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Modal desconto individual por produto (legacy discountProduct.aspx) *@
+@if (_showItemDiscountModal && _discountItem != null)
+{
+    <div class="modal-backdrop-pedido" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1050;" @onclick="FecharModalDescontoItem">
+        <div class="modal-dialog-pedido" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 420px; width: 90%; z-index: 1051;" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <h6 class="mb-0">Desconto individual</h6>
+                <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @onclick="FecharModalDescontoItem" aria-label="Fechar">×</button>
+            </div>
+            <div class="p-3">
+                <p class="small mb-1">Produto: <strong>@_discountItem.Name</strong></p>
+                <p class="small mb-3">Preço atual: <strong>R$ @_discountItem.Price.ToString("N2")</strong></p>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label small" for="item-discount-pct">Desconto</label>
+                        <div class="input-group input-group-sm">
+                            <input id="item-discount-pct" type="number" class="form-control form-control-sm" step="0.01" min="0" max="100" @bind="_itemDiscountPercent" />
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small" for="item-new-price">Novo preço</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">R$</span>
+                            <input id="item-new-price" type="number" class="form-control form-control-sm" step="0.01" min="0" @bind="_itemNewListPrice" placeholder="opcional" />
+                        </div>
+                    </div>
+                </div>
+                <p class="small text-muted mt-2 mb-0">
+                    Preço com desconto: R$ @CalcularPrecoComDesconto(_itemNewListPrice ?? _discountItem.Price, _itemDiscountPercent).ToString("N2")
+                </p>
+                @if (!string.IsNullOrEmpty(_itemDiscountMessage))
+                {
+                    <div class="alert alert-danger py-2 small mt-2 mb-0">@_itemDiscountMessage</div>
+                }
+            </div>
+            <div class="p-3 border-top d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" @onclick="GravarDescontoItemAsync" disabled="@_itemDiscountBusy">@(_itemDiscountBusy ? "Gravando..." : "Gravar")</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="FecharModalDescontoItem">Fechar</button>
+            </div>
+        </div>
+    </div>
+}
+
 <div class="card grid-card mb-3 pedido-cart-card">
-    <div class="card-header py-1"><h6 class="mb-0">Carrinho</h6></div>
+    <div class="card-header py-2 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0">Carrinho</h6>
+        @if (_details.Count > 0)
+        {
+            <span class="badge rounded-pill pedido-cart-count">@_details.Count @(_details.Count == 1 ? "item" : "itens")</span>
+        }
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm table-bordered mb-0 data-grid-table pedido-cart-table">
@@ -253,13 +405,13 @@
                     {
                         @foreach (var d in _details)
                         {
-                            <tr>
-                                <td class="small">@d.LionCode</td>
-                                <td class="small">@d.Name</td>
-                                <td class="small">@d.Quantity</td>
-                                <td class="small">@d.Price.ToString("N2")</td>
-                                <td class="small">@d.Discount.ToString("N1")</td>
-                                <td class="small">@d.TotalPrice.ToString("N2")</td>
+                            <tr class="pedido-cart-row">
+                                <td class="pedido-cart-code">@d.LionCode</td>
+                                <td class="pedido-cart-name">@d.Name</td>
+                                <td class="pedido-cart-qty text-end">@d.Quantity</td>
+                                <td class="pedido-cart-price text-end">@d.Price.ToString("N2")</td>
+                                <td class="pedido-cart-disc text-end">@d.Discount.ToString("N1")</td>
+                                <td class="pedido-cart-total text-end">@d.TotalPrice.ToString("N2")</td>
                                 @if (_canEdit)
                                 {
                                     <td class="pedido-cart-actions">
@@ -268,6 +420,9 @@
                                         </button>
                                         <button type="button" class="pedido-icon-btn pedido-icon-btn-edit" @onclick="() => EditarItem(d)" title="Editar" aria-label="Editar">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
+                                        </button>
+                                        <button type="button" class="pedido-icon-btn pedido-icon-btn-discount" @onclick="() => AbrirModalDescontoItem(d)" title="Desconto individual" aria-label="Desconto individual">
+                                            <span class="pedido-icon-percent" aria-hidden="true">%</span>
                                         </button>
                                     </td>
                                 }
@@ -367,7 +522,7 @@
     </div>
 
     <div class="d-flex flex-wrap gap-2 mb-3 pedido-footer-buttons">
-        <button type="button" class="btn btn-sm btn-danger" @onclick="CancelarCompra" disabled="@_busy">Cancelar Compra</button>
+        <button type="button" class="btn btn-sm btn-danger" @onclick="CancelarCompra" disabled="@_busy">Cancelar OS</button>
         <button type="button" class="btn btn-sm btn-warning" @onclick="ZerarCarrinho" disabled="@_busy">ZERAR</button>
         <button type="button" class="btn btn-sm btn-success" @onclick="Continuar" disabled="@_busy">Continuar</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Sair">Sair</button>
@@ -378,11 +533,12 @@ else
     <div class="d-flex flex-wrap gap-2 mb-3 pedido-footer-buttons align-items-center">
         @if (_showClosedOrderActions)
         {
-            <button type="button" class="btn btn-sm btn-warning" @onclick="ReabrirCompra" disabled="@_busy">Reabrir Compra</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(1)">Imprimir</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(2)">Imprimir Pedido</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalImpressao(3)">Packing Slip</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirModalEtiqueta()">Etiquetas</button>
+            @if (_showPerformSale)
+            {
+                <button type="button" class="btn btn-sm btn-info" @onclick="EfetuarVenda" disabled="@_busy">Efetuar Venda</button>
+            }
+            <button type="button" class="btn btn-sm btn-warning" @onclick="ReabrirCompra" disabled="@_busy">Reabrir OS</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AbrirModalImpressao">Imprimir</button>
         }
         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Sair">Sair</button>
     </div>
@@ -393,13 +549,13 @@ else
     <div class="alert alert-danger">@_errorMessage</div>
 }
 
-@* Modal de impressão / etiqueta (preserva a janela atual). *@
+@* Modal de impressão (preserva a janela atual). *@
 @if (_printModalOpen)
 {
     <div class="pedido-print-modal-backdrop" @onclick="FecharModalImpressao">
         <div class="pedido-print-modal-dialog" @onclick:stopPropagation="true">
             <div class="pedido-print-modal-header d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
-                <span class="fw-bold small">@(_printModalKind == "label" ? "Etiqueta" : (_printModalType == 1 ? "Imprimir" : _printModalType == 2 ? "Imprimir Pedido" : "Packing Slip"))</span>
+                <span class="fw-bold small">Imprimir</span>
                 <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @onclick="FecharModalImpressao" aria-label="Fechar">×</button>
             </div>
             <div class="pedido-print-modal-body p-3 overflow-auto">
@@ -407,47 +563,44 @@ else
                 {
                     <p class="text-muted small">Carregando...</p>
                 }
-                else if (_printModalKind == "print" && _printModalData != null)
+                else if (_printModalData != null)
                 {
                     <div class="print-modal-content pedido-print-container">
-                        @if (_printModalType != 3)
-                        {
-                            <div class="pedido-print-header-legacy mb-2">
-                                <table border="0" cellspacing="0" cellpadding="0" class="w-100 pedido-print-header-table">
-                                    <tr>
-                                        <td colspan="6" class="pedido-print-header-empresa">Aquanimal — Rua Nazaré, 166 - Vila Madalena - CEP: 05448-000 - São Paulo / SP</td>
-                                    </tr>
-                                    <tr class="pedido-print-header-spacer"><td colspan="6" class="pedido-print-header-spacer">&#160;</td></tr>
-                                    <tr>
-                                        <td rowspan="7" class="pedido-print-header-logo-td"><img src="/images/lionbw.jpg" alt="Aquanimal" class="pedido-print-header-logo" /></td>
-                                        <td rowspan="7">&#160;</td>
-                                        <td class="pedido-print-header-cell"><b>OS #</b> &#160; @_printModalData.OrderId</td>
-                                        <td class="pedido-print-header-cell"><b>DATA:</b> &#160; @_printModalData.OrderDate.ToString("dd/MM/yyyy")</td>
-                                        <td class="pedido-print-header-cell"><b>Usuário</b> &#160; @_printModalData.SalesAgent</td>
-                                        <td class="pedido-print-header-cell"><b>Vendedor:</b> &#160; @_printModalData.SalesAgent</td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="4" class="pedido-print-header-cell"><b>Cliente:</b> &#160; @_printModalData.ClientId - @_printModalData.SocialName / @_printModalData.ClientName</td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="2" class="pedido-print-header-cell"><b>CNPJ/CPF:</b> &#160; @_printModalData.CnpjPf</td>
-                                        <td colspan="2" class="pedido-print-header-cell"><b>Inc. Est.:</b> &#160; @_printModalData.StateInscr</td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="4" class="pedido-print-header-cell"><b>Endereço:</b> &#160; @_printModalData.AddressStreet &#160; @_printModalData.AddressNumber &#160; @_printModalData.AddressComplement — @_printModalData.City / @_printModalData.State &#160; CEP: @_printModalData.AddressZipCode</td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="4" class="pedido-print-header-cell"><b>Telefones:</b> &#160; @_printModalData.Phone1</td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="2" class="pedido-print-header-cell"><b>Obs:</b> &#160; @_printModalData.Memo</td>
-                                        <td class="pedido-print-header-cell"><b>NF #</b> &#160; @(_printModalData.Receipt?.ToString() ?? "—")</td>
-                                        <td class="pedido-print-header-cell">@_printModalData.MlOrderId</td>
-                                    </tr>
-                                </table>
-                                <br />
-                            </div>
-                        }
+                        <div class="pedido-print-header-legacy mb-2">
+                            <table border="0" cellspacing="0" cellpadding="0" class="w-100 pedido-print-header-table">
+                                <tr>
+                                    <td colspan="6" class="pedido-print-header-empresa">Aquanimal — Rua Nazaré, 166 - Vila Madalena - CEP: 05448-000 - São Paulo / SP</td>
+                                </tr>
+                                <tr class="pedido-print-header-spacer"><td colspan="6" class="pedido-print-header-spacer">&#160;</td></tr>
+                                <tr>
+                                    <td rowspan="7" class="pedido-print-header-logo-td"><img src="/images/lionbw.jpg" alt="Aquanimal" class="pedido-print-header-logo" /></td>
+                                    <td rowspan="7">&#160;</td>
+                                    <td class="pedido-print-header-cell"><b>OS #</b> &#160; @_printModalData.OrderId</td>
+                                    <td class="pedido-print-header-cell"><b>DATA:</b> &#160; @_printModalData.OrderDate.ToString("dd/MM/yyyy")</td>
+                                    <td class="pedido-print-header-cell"><b>Usuário</b> &#160; @_printModalData.SalesAgent</td>
+                                    <td class="pedido-print-header-cell"><b>Vendedor:</b> &#160; @_printModalData.SalesAgent</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="pedido-print-header-cell"><b>Cliente:</b> &#160; @_printModalData.ClientId - @_printModalData.SocialName / @_printModalData.ClientName</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2" class="pedido-print-header-cell"><b>CNPJ/CPF:</b> &#160; @_printModalData.CnpjPf</td>
+                                    <td colspan="2" class="pedido-print-header-cell"><b>Inc. Est.:</b> &#160; @_printModalData.StateInscr</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="pedido-print-header-cell"><b>Endereço:</b> &#160; @_printModalData.AddressStreet &#160; @_printModalData.AddressNumber &#160; @_printModalData.AddressComplement — @_printModalData.City / @_printModalData.State &#160; CEP: @_printModalData.AddressZipCode</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="pedido-print-header-cell"><b>Telefones:</b> &#160; @_printModalData.Phone1</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2" class="pedido-print-header-cell"><b>Obs:</b> &#160; @_printModalData.Memo</td>
+                                    <td class="pedido-print-header-cell"><b>NF #</b> &#160; @(_printModalData.Receipt?.ToString() ?? "—")</td>
+                                    <td class="pedido-print-header-cell">@_printModalData.MlOrderId</td>
+                                </tr>
+                            </table>
+                            <br />
+                        </div>
                         <table class="table table-sm table-bordered pedido-print-table mb-3">
                             <thead class="table-light">
                                 <tr>
@@ -463,18 +616,15 @@ else
                                     </tr>
                                 }
                             </tbody>
-                            @if (_printModalType != 3)
-                            {
-                                <tfoot class="table-light">
-                                    @if (_printModalData.Credit != 0) { <tr><td colspan="5" class="text-end">(-) Crédito</td><td class="text-end">@_printModalData.Credit.ToString("N2")</td></tr> }
-                                    @if (_printModalData.Discount != 0) { <tr><td colspan="5" class="text-end">(-) Desconto @_printModalData.Discount.ToString("N1")%</td><td class="text-end">—</td></tr> }
-                                    @if (_printModalData.OtherExpenses != 0) { <tr><td colspan="5" class="text-end">(+) Outras despesas</td><td class="text-end">@_printModalData.OtherExpenses.ToString("N2")</td></tr> }
-                                    @if (_printModalData.ShipmentCost != 0) { <tr><td colspan="5" class="text-end">(+) Frete</td><td class="text-end">@_printModalData.ShipmentCost.ToString("N2")</td></tr> }
-                                    <tr class="fw-bold"><td colspan="5" class="text-end">Total</td><td class="text-end">@_printModalData.CurrencySymbol @_printModalData.Total.ToString("N2")</td></tr>
-                                </tfoot>
-                            }
+                            <tfoot class="table-light">
+                                @if (_printModalData.Credit != 0) { <tr><td colspan="5" class="text-end">(-) Crédito</td><td class="text-end">@_printModalData.Credit.ToString("N2")</td></tr> }
+                                @if (_printModalData.Discount != 0) { <tr><td colspan="5" class="text-end">(-) Desconto @_printModalData.Discount.ToString("N1")%</td><td class="text-end">—</td></tr> }
+                                @if (_printModalData.OtherExpenses != 0) { <tr><td colspan="5" class="text-end">(+) Outras despesas</td><td class="text-end">@_printModalData.OtherExpenses.ToString("N2")</td></tr> }
+                                @if (_printModalData.ShipmentCost != 0) { <tr><td colspan="5" class="text-end">(+) Frete</td><td class="text-end">@_printModalData.ShipmentCost.ToString("N2")</td></tr> }
+                                <tr class="fw-bold"><td colspan="5" class="text-end">Total</td><td class="text-end">@_printModalData.CurrencySymbol @_printModalData.Total.ToString("N2")</td></tr>
+                            </tfoot>
                         </table>
-                        @if (_printModalType == 1 && _printModalData.PaymentDetails.Count > 0)
+                        @if (_printModalData.PaymentDetails.Count > 0)
                         {
                             <div class="pedido-print-payment mb-3">
                                 <div class="small fw-bold">Detalhes do pagamento</div>
@@ -493,65 +643,6 @@ else
                             <hr /><div class="small text-muted">_________________________________________</div>
                             <div class="small text-muted" style="margin-right: 90px;">Assinatura do Cliente</div>
                         </div>
-                        <div class="mt-4 pedido-print-label-block">
-                            <table class="pedido-print-label-table" border="1">
-                                <tr><td>
-                                    <table border="0" class="w-100">
-                                        <tr valign="top">
-                                            <td rowspan="2" class="pedido-print-label-logo"><img src="/images/lionbw.jpg" alt="Aquanimal" /></td>
-                                            <td valign="bottom" class="pedido-print-label-pedido">OS #@_printModalData.OrderId</td>
-                                        </tr>
-                                        <tr valign="top">
-                                            <td class="pedido-print-label-ml">@if (!string.IsNullOrEmpty(_printModalData.MlOrderId)) { <span>@_printModalData.MlOrderId</span> }</td>
-                                        </tr>
-                                        <tr>
-                                            <td colspan="2" class="pedido-print-label-dest">
-                                                <strong>Destinatário:</strong><br />
-                                                @_printModalData.SocialName<br />
-                                                @_printModalData.AddressStreet @_printModalData.AddressNumber
-                                                @if (!string.IsNullOrWhiteSpace(_printModalData.AddressComplement)) { <br />@_printModalData.AddressComplement }
-                                                <br />@_printModalData.AddressBlock<br />
-                                                @_printModalData.City / @_printModalData.State<br />
-                                                CEP: @_printModalData.AddressZipCode<br />
-                                                Telefone: @_printModalData.Phone1
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td></tr>
-                            </table>
-                        </div>
-                    </div>
-                }
-                else if (_printModalKind == "label" && _printModalLabelData != null)
-                {
-                    <div class="print-modal-content pedido-label-container">
-                        <div class="pedido-print-label-block">
-                            <table class="pedido-print-label-table" border="1">
-                                <tr><td>
-                                    <table border="0" class="w-100">
-                                        <tr valign="top">
-                                            <td rowspan="2" class="pedido-print-label-logo"><img src="/images/lionbw.jpg" alt="Aquanimal" /></td>
-                                            <td valign="bottom" class="pedido-print-label-pedido">OS #@_printModalLabelData.OrderId</td>
-                                        </tr>
-                                        <tr valign="top">
-                                            <td class="pedido-print-label-ml">@if (!string.IsNullOrEmpty(_printModalLabelData.MlOrderId)) { <span>ML #@_printModalLabelData.MlOrderId</span> }</td>
-                                        </tr>
-                                        <tr>
-                                            <td colspan="2" class="pedido-print-label-dest">
-                                                <strong>Destinatário:</strong><br />
-                                                @_printModalLabelData.SocialName<br />
-                                                @_printModalLabelData.AddressStreet @_printModalLabelData.AddressNumber
-                                                @if (!string.IsNullOrWhiteSpace(_printModalLabelData.AddressComplement)) { <br />@_printModalLabelData.AddressComplement }
-                                                <br />@_printModalLabelData.AddressBlock<br />
-                                                @_printModalLabelData.City / @_printModalLabelData.State<br />
-                                                CEP: @_printModalLabelData.AddressZipCode<br />
-                                                Telefone: @_printModalLabelData.Phone
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td></tr>
-                            </table>
-                        </div>
                     </div>
                 }
             </div>
@@ -567,18 +658,20 @@ else
     [Parameter]
     public int OrderId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "from")]
+    public string? From { get; set; }
+
     private OrderHeaderDto? _header;
     private List<OrderDetailItemDto> _details = new();
-    private bool _loadingHeader;
+    private bool _loadingHeader = true;
+    private int _loadedOrderId;
     private bool _canEdit;
     private bool _showClosedOrderActions;
+    private bool _showPerformSale;
 
     private bool _printModalOpen;
-    private string? _printModalKind;
-    private int _printModalType;
     private bool _printModalLoading;
     private OrderForPrintDto? _printModalData;
-    private OrderLabelDto? _printModalLabelData;
 
     private string _productSearch = "";
     private int _selectedProductId;
@@ -594,6 +687,8 @@ else
     private string? _productMessage;
 
     private bool _showBuscaRicaModal;
+    private bool _buscaRicaFocusPending;
+    private ElementReference _buscaRicaInputRef;
     private string _buscaRicaSearch = "";
     private List<ProductForSaleSuggestionDto> _buscaRicaSuggestions = new();
     private bool _loadingBuscaRica;
@@ -606,6 +701,17 @@ else
     private bool _chargeShipment = true;
     private decimal? _carKm;
     private string? _carProblem;
+    private string? _carMessage;
+    private bool _carBusy;
+    private bool _showCarModal;
+    private bool _loadingCars;
+    private IReadOnlyList<ClientCarDto> _clientCars = Array.Empty<ClientCarDto>();
+    private bool _showItemDiscountModal;
+    private OrderDetailItemDto? _discountItem;
+    private decimal _itemDiscountPercent;
+    private decimal? _itemNewListPrice;
+    private string? _itemDiscountMessage;
+    private bool _itemDiscountBusy;
     private string? _extraMessage;
     private bool _busy;
     private bool _aplicando;
@@ -616,6 +722,7 @@ else
     private bool _productInputFocusedOnce;
 
     [Inject] private IOrderService OrderService { get; set; } = null!;
+    [Inject] private IClientService ClientService { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
     [Inject] private IConfiguration Configuration { get; set; } = null!;
@@ -626,6 +733,20 @@ else
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         _currentUserId = state.User.Identity?.Name ?? "SYS";
         _applicationId = Configuration["Authentication:ApplicationName"] ?? "LionSystem";
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (OrderId <= 0)
+        {
+            _header = null;
+            _loadingHeader = false;
+            _errorMessage = "Número da OS inválido.";
+            return;
+        }
+        if (_loadedOrderId == OrderId && _header != null)
+            return;
+        _loadedOrderId = OrderId;
         await CarregarPedidoAsync();
     }
 
@@ -636,6 +757,17 @@ else
             _productInputFocusedOnce = true;
             await Task.Delay(50);
             await FocusProductInputAsync();
+        }
+
+        if (_buscaRicaFocusPending && _showBuscaRicaModal)
+        {
+            _buscaRicaFocusPending = false;
+            try
+            {
+                await Task.Delay(50);
+                await _buscaRicaInputRef.FocusAsync();
+            }
+            catch { /* ignore */ }
         }
     }
 
@@ -650,6 +782,7 @@ else
                 return;
             _canEdit = _header.Status == "I" || _header.Status == "R";
             _showClosedOrderActions = _header.Status == "F" || _header.Status == "E";
+            _showPerformSale = _header.Status == "F" && _header.Mode == "Q";
             _credit = _header.Credit;
             _discount = _header.Discount;
             _otherExpenses = _header.OtherExpenses;
@@ -682,6 +815,89 @@ else
         catch (Exception ex)
         {
             _errorMessage = "Erro ao carregar itens: " + ex.Message;
+        }
+    }
+
+    private static bool HasOrderCar(OrderHeaderDto header) =>
+        header.CarId.HasValue && header.CarId.Value > 0;
+
+    private async Task RefreshCarHeaderAsync()
+    {
+        _header = await OrderService.GetOrderHeaderAsync(OrderId);
+        if (_header == null)
+            return;
+        _carKm = _header.CarKm;
+        _carProblem = _header.CarProblem;
+    }
+
+    private async Task AbrirModalFrota()
+    {
+        if (_header == null || !_canEdit)
+            return;
+        _carMessage = null;
+        _showCarModal = true;
+        _loadingCars = true;
+        StateHasChanged();
+        try
+        {
+            _clientCars = await ClientService.GetCarsByClientAsync(_header.ClientId);
+        }
+        catch (Exception ex)
+        {
+            _carMessage = ex.Message;
+            _clientCars = Array.Empty<ClientCarDto>();
+        }
+        finally
+        {
+            _loadingCars = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FecharModalFrota()
+    {
+        _showCarModal = false;
+        _clientCars = Array.Empty<ClientCarDto>();
+    }
+
+    private async Task SelecionarVeiculo(int carId)
+    {
+        _carMessage = null;
+        _carBusy = true;
+        try
+        {
+            await OrderService.AssignOrderCarAsync(OrderId, carId);
+            await RefreshCarHeaderAsync();
+            FecharModalFrota();
+        }
+        catch (Exception ex)
+        {
+            _carMessage = ex.Message;
+        }
+        finally
+        {
+            _carBusy = false;
+        }
+    }
+
+    private async Task RemoverVeiculo()
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Remover o veículo desta OS?"))
+            return;
+        _carMessage = null;
+        _carBusy = true;
+        try
+        {
+            await OrderService.RemoveOrderCarAsync(OrderId);
+            await RefreshCarHeaderAsync();
+        }
+        catch (Exception ex)
+        {
+            _carMessage = ex.Message;
+        }
+        finally
+        {
+            _carBusy = false;
         }
     }
 
@@ -761,6 +977,7 @@ else
         {
             _showBuscaRicaModal = true;
             _buscaRicaSearch = _productSearch ?? "";
+            _buscaRicaFocusPending = true;
             if (_buscaRicaSearch.Trim().Length >= 2)
                 await BuscarBuscaRicaAsync();
             StateHasChanged();
@@ -967,6 +1184,61 @@ else
         }
     }
 
+    private void AbrirModalDescontoItem(OrderDetailItemDto d)
+    {
+        _discountItem = d;
+        _itemDiscountPercent = d.Discount;
+        _itemNewListPrice = null;
+        _itemDiscountMessage = null;
+        _showItemDiscountModal = true;
+    }
+
+    private void FecharModalDescontoItem()
+    {
+        _showItemDiscountModal = false;
+        _discountItem = null;
+        _itemDiscountMessage = null;
+    }
+
+    private static decimal CalcularPrecoComDesconto(decimal listPrice, decimal discountPercent) =>
+        decimal.Round(decimal.Round(listPrice, 2) * (1 - discountPercent / 100m), 2);
+
+    private async Task GravarDescontoItemAsync()
+    {
+        if (_discountItem == null) return;
+        _itemDiscountMessage = null;
+        if (_itemDiscountPercent < 0 || _itemDiscountPercent > 100)
+        {
+            _itemDiscountMessage = "Desconto deve estar entre 0 e 100.";
+            return;
+        }
+        if (_itemNewListPrice is < 0)
+        {
+            _itemDiscountMessage = "Preço inválido.";
+            return;
+        }
+
+        _itemDiscountBusy = true;
+        try
+        {
+            await OrderService.UpdateOrderProductDiscountAsync(
+                OrderId,
+                _discountItem.ProductId,
+                _itemDiscountPercent,
+                _itemNewListPrice);
+            FecharModalDescontoItem();
+            await CarregarDetalhesAsync();
+        }
+        catch (Exception ex)
+        {
+            _itemDiscountMessage = ex.Message;
+        }
+        finally
+        {
+            _itemDiscountBusy = false;
+        }
+    }
+
     private async Task ZerarCarrinho()
     {
         if (!await JSRuntime.InvokeAsync<bool>("confirm", "Zerar todo o carrinho e devolver estoque?")) return;
@@ -1081,38 +1353,37 @@ else
         }
     }
 
-    private async Task AbrirModalImpressao(int printType)
+    private async Task EfetuarVenda()
     {
-        _printModalOpen = true;
-        _printModalKind = "print";
-        _printModalType = printType;
-        _printModalData = null;
-        _printModalLabelData = null;
-        _printModalLoading = true;
-        StateHasChanged();
+        if (_header == null || !_showPerformSale) return;
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja mesmo efetuar esta venda?");
+        if (!confirmed) return;
+        _busy = true;
+        _errorMessage = null;
         try
         {
-            _printModalData = await OrderService.GetOrderForPrintAsync(OrderId, (byte)printType);
+            await OrderService.PerformQuoteSaleAsync(OrderId, _currentUserId ?? "SYS");
+            await CarregarPedidoAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
         }
         finally
         {
-            _printModalLoading = false;
-            StateHasChanged();
+            _busy = false;
         }
     }
 
-    private async Task AbrirModalEtiqueta()
+    private async Task AbrirModalImpressao()
     {
         _printModalOpen = true;
-        _printModalKind = "label";
-        _printModalType = 0;
         _printModalData = null;
-        _printModalLabelData = null;
         _printModalLoading = true;
         StateHasChanged();
         try
         {
-            _printModalLabelData = await OrderService.GetOrderLabelAsync(OrderId);
+            _printModalData = await OrderService.GetOrderForPrintAsync(OrderId, 1);
         }
         finally
         {
@@ -1124,9 +1395,7 @@ else
     private void FecharModalImpressao()
     {
         _printModalOpen = false;
-        _printModalKind = null;
         _printModalData = null;
-        _printModalLabelData = null;
     }
 
     private async Task ImprimirNoModal()
@@ -1136,7 +1405,7 @@ else
 
     private void Sair()
     {
-        Navigation.NavigateTo("/vendas/nova-os", forceLoad: false);
+        Navigation.NavigateTo(From == "consultar" ? "/vendas/consultar-os" : "/vendas/nova-os", forceLoad: false);
     }
 
     private static string GetOrderModeBadgeClass(string mode) => mode == "Q" ? "bg-secondary" : "bg-success";

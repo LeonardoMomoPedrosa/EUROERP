@@ -76,6 +76,22 @@ public class ClientService : IClientService
         return list.ToList();
     }
 
+    public async Task<IReadOnlyList<string>> GetCarPlateSuggestionsAsync(string term, int limit = 15, CancellationToken cancellationToken = default)
+    {
+        var t = (term ?? "").Trim();
+        if (t.Length < 2)
+            return Array.Empty<string>();
+
+        const string sql = @"
+            SELECT DISTINCT TOP (@Limit) PLATE
+            FROM CAR
+            WHERE PLATE LIKE @Like
+            ORDER BY PLATE";
+        var list = await _connection.QueryAsync<string>(
+            new CommandDefinition(sql, new { Like = $"%{t}%", Limit = limit }, cancellationToken: cancellationToken));
+        return list.ToList();
+    }
+
     public async Task<ClientEditDto?> GetByIdAsync(int clientId, CancellationToken cancellationToken = default)
     {
         const string sqlClient = @"

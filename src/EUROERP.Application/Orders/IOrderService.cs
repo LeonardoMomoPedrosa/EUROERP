@@ -16,9 +16,13 @@ public interface IOrderService
     /// <summary>Add order detail from site import with explicit price (no market lookup). Deducts stock except for <c>Ecom:AnimalTaxLionProductId</c> (fee line is imported without stock movement).</summary>
     Task AddOrderDetailFromSiteAsync(int orderId, int productId, int quantity, decimal price, int clientId, string applicationId, string userId, CancellationToken cancellationToken = default);
     Task RemoveOrderDetailAsync(int orderId, int productId, int clientId, CancellationToken cancellationToken = default);
+    /// <summary>Line discount / price override — legacy <c>discountProduct.aspx</c>.</summary>
+    Task UpdateOrderProductDiscountAsync(int orderId, int productId, decimal discountPercent, decimal? newListPrice, CancellationToken cancellationToken = default);
     Task ResetOrderAsync(int orderId, CancellationToken cancellationToken = default);
     Task UpdateOrderExtraTaxesAsync(int orderId, decimal? discount, decimal? credit, decimal? otherExpenses, decimal? shipmentCost, bool? chargeShipment = null, CancellationToken cancellationToken = default);
     Task UpdateOrderCarKmAndProblemAsync(int orderId, decimal? carKm, string? carProblem, CancellationToken cancellationToken = default);
+    Task AssignOrderCarAsync(int orderId, int carId, CancellationToken cancellationToken = default);
+    Task RemoveOrderCarAsync(int orderId, CancellationToken cancellationToken = default);
     Task UpdateOrderCfeAsync(int orderId, string cfeProtocol, string applicationId, string userId, CancellationToken cancellationToken = default);
     Task CancelOrderAsync(int orderId, string applicationId, string userId, CancellationToken cancellationToken = default);
 
@@ -27,15 +31,20 @@ public interface IOrderService
     /// <summary>Loads payment summary row and sets <see cref="OrderPaymentSummaryDto.TotalToPay"/> from <paramref name="precomputedTotalToPay"/> (skips duplicate line-total query).</summary>
     Task<OrderPaymentSummaryDto?> GetOrderPaymentSummaryAsync(int orderId, decimal precomputedTotalToPay, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PaymentMethodOptionDto>> GetAllowedPaymentMethodsAsync(int clientId, decimal totalToPay, CancellationToken cancellationToken = default);
-    Task FinishOrderWithPaymentAsync(int orderId, byte paymentMethodId, IReadOnlyList<BtrDetailDto> details, string applicationId, string userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<BtrDetailDto>> GetOrderPaymentTermsAsync(int orderId, CancellationToken cancellationToken = default);
+    Task FinishOrderWithPaymentAsync(int orderId, byte paymentMethodId, byte paymentSubMethodId, IReadOnlyList<BtrDetailDto> details, string applicationId, string userId, CancellationToken cancellationToken = default);
 
     Task ReopenOrderAsync(int orderId, CancellationToken cancellationToken = default);
+    /// <summary>Converts closed quote (MODE=Q, STATUS=F) to sale — legacy <c>performSale</c>.</summary>
+    Task PerformQuoteSaleAsync(int orderId, string userId, CancellationToken cancellationToken = default);
     Task<OrderForPrintDto?> GetOrderForPrintAsync(int orderId, byte printType, CancellationToken cancellationToken = default);
     Task<OrderLabelDto?> GetOrderLabelAsync(int orderId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByClientAsync(int clientId, int top = 40, CancellationToken cancellationToken = default);
     Task<OrderSearchResultDto?> SearchOrderByIdAsync(int orderId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByReceiptAsync(int receiptNumber, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByCarAsync(string carDescription, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByCarPlateAsync(string carPlate, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OrderSearchResultDto>> SearchOrdersByMeliAsync(string mlOrderId, CancellationToken cancellationToken = default);
     Task<bool> MlOrderExistsAsync(string mlOrderId, CancellationToken cancellationToken = default);
     Task UnlinkMlOrderAsync(string mlOrderId, CancellationToken cancellationToken = default);

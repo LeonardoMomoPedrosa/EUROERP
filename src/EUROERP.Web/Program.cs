@@ -10,6 +10,7 @@ using EUROERP.Web.Components;
 using EUROERP.Web.Infrastructure;
 using EUROERP.Web.Services;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 
@@ -43,7 +44,13 @@ builder.Services.AddScoped<ILayoutStateService, LayoutStateService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddHubOptions(options =>
+    {
+        options.ClientTimeoutInterval = TimeSpan.FromMinutes(5);
+        options.HandshakeTimeout = TimeSpan.FromSeconds(30);
+        options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+    });
 
 var app = builder.Build();
 
@@ -55,6 +62,26 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+var nfeFilesPath = builder.Configuration["NFe:NfeXmlPath"];
+if (!string.IsNullOrWhiteSpace(nfeFilesPath))
+{
+    Directory.CreateDirectory(nfeFilesPath);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        RequestPath = "/NFE_FILES",
+        FileProvider = new PhysicalFileProvider(nfeFilesPath)
+    });
+}
+var nfeDownloadPath = builder.Configuration["NFe:NfeXmlDownloadPath"];
+if (!string.IsNullOrWhiteSpace(nfeDownloadPath))
+{
+    Directory.CreateDirectory(nfeDownloadPath);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        RequestPath = "/NFE_download",
+        FileProvider = new PhysicalFileProvider(nfeDownloadPath)
+    });
+}
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();

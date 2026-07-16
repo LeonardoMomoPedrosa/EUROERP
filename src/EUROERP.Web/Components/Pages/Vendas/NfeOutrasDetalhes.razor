@@ -1,0 +1,210 @@
+@page "/vendas/nfe/outras/detalhes/{ReceiptNo:int}"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+
+<PageTitle>Nota Fiscal Avulsa - Detalhes</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Nota Fiscal Avulsa — Detalhes</h5>
+        <a class="btn btn-sm btn-outline-secondary" href="/vendas/nfe/outras">Voltar</a>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <p class="text-muted small">Carregando...</p>
+        }
+        else if (_header == null)
+        {
+            <div class="alert alert-warning">NF @ReceiptNo não encontrada.</div>
+        }
+        else
+        {
+            <div class="row g-2 mb-3 small bg-light border rounded p-2">
+                <div class="col-md-6">
+                    <span class="text-danger fw-bold">#NF: @ReceiptNo</span>
+                    &nbsp;|&nbsp; Frete: @_header.ShipmOrigin / @_header.Shipment.ToString("C", _ptBr)
+                </div>
+                <div class="col-md-6">
+                    <span class="text-primary fw-bold">@_header.SupplierId — @_header.SupplierName</span>
+                </div>
+                <div class="col-md-6">ICMS ST: @_header.StAmount.ToString("C", _ptBr)</div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") py-2 small">@_message</div>
+            }
+
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-1">
+                    <label class="form-label small mb-0">Cód.</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_productCode" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Nome</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_productName" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">NCM</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_fiscalClass" />
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-0">IPI %</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_ipi" />
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-0">ICMS %</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_icms" />
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-0">Qtd.</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_quantity" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Preço</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_unitPrice" />
+                </div>
+                <div class="col-md-1">
+                    <button type="button" class="btn btn-sm btn-primary w-100" @onclick="AdicionarItem" disabled="@_saving">
+                        @(_saving ? "..." : "Add")
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th>Cód.</th>
+                            <th>Nome</th>
+                            <th>NCM</th>
+                            <th class="text-end">Qtd.</th>
+                            <th class="text-end">Preço</th>
+                            <th class="text-end">IPI %</th>
+                            <th class="text-end">ICMS %</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_details.Count == 0)
+                        {
+                            <tr><td colspan="8" class="text-muted small">Nenhum item.</td></tr>
+                        }
+                        @foreach (var d in _details)
+                        {
+                            <tr>
+                                <td>@d.ProductCode</td>
+                                <td>@d.ProductName</td>
+                                <td>@d.FiscalClass</td>
+                                <td class="text-end">@d.Quantity.ToString("N2", _ptBr)</td>
+                                <td class="text-end">@d.UnitPrice.ToString("N2", _ptBr)</td>
+                                <td class="text-end">@d.Ipi.ToString("N2", _ptBr)</td>
+                                <td class="text-end">@d.Icms.ToString("N2", _ptBr)</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0" @onclick="() => ExcluirItem(d.ProductCode)">×</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-muted small mb-0">Abra PDF/XML em Vendas → NFe → Imprimir após autorização SEFAZ.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int ReceiptNo { get; set; }
+    [Inject] private IReceiptInNfeDataService ReceiptInService { get; set; } = null!;
+
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private ReceiptInNfeDataDto? _header;
+    private List<ReceiptInDetailDto> _details = new();
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private bool _messageIsError;
+
+    private string _productCode = "";
+    private string _productName = "";
+    private string _fiscalClass = "";
+    private string _ipi = "0";
+    private string _icms = "0";
+    private string _quantity = "";
+    private string _unitPrice = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            _header = await ReceiptInService.GetByReceiptNoAsync(ReceiptNo, 1);
+            if (_header != null)
+                _details = (await ReceiptInService.GetDetailsAsync(ReceiptNo)).ToList();
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task AdicionarItem()
+    {
+        _message = null;
+        if (string.IsNullOrWhiteSpace(_productCode)) { ShowError("Informe o código."); return; }
+        if (string.IsNullOrWhiteSpace(_productName)) { ShowError("Informe o nome."); return; }
+        if (!TryParseDecimal(_quantity, out var qty) || qty <= 0) { ShowError("Quantidade inválida."); return; }
+        if (!TryParseDecimal(_unitPrice, out var price)) { ShowError("Preço inválido."); return; }
+        if (!TryParseDecimal(_ipi, out var ipi)) { ShowError("IPI inválido."); return; }
+        if (!TryParseDecimal(_icms, out var icms)) { ShowError("ICMS inválido."); return; }
+
+        _saving = true;
+        try
+        {
+            var (ok, msg) = await ReceiptInService.AddDetailAsync(new AddReceiptInDetailRequest
+            {
+                ReceiptNo = ReceiptNo,
+                ProductCode = _productCode.Trim(),
+                ProductName = _productName.Trim(),
+                FiscalClass = _fiscalClass.Trim(),
+                Quantity = qty,
+                UnitPrice = price,
+                Ipi = ipi,
+                Icms = icms
+            });
+            _message = msg;
+            _messageIsError = !ok;
+            if (ok)
+            {
+                _details = (await ReceiptInService.GetDetailsAsync(ReceiptNo)).ToList();
+                LimparFormulario();
+            }
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task ExcluirItem(string productCode)
+    {
+        await ReceiptInService.DeleteDetailAsync(ReceiptNo, productCode);
+        _details = (await ReceiptInService.GetDetailsAsync(ReceiptNo)).ToList();
+    }
+
+    private void LimparFormulario()
+    {
+        _productCode = "";
+        _productName = "";
+        _fiscalClass = "";
+        _ipi = "0";
+        _icms = "0";
+        _quantity = "";
+        _unitPrice = "";
+    }
+
+    private static bool TryParseDecimal(string? text, out decimal value)
+    {
+        if (string.IsNullOrWhiteSpace(text)) { value = 0; return true; }
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Number, _ptBr, out value)
+            || decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private void ShowError(string msg) { _message = msg; _messageIsError = true; }
+}
