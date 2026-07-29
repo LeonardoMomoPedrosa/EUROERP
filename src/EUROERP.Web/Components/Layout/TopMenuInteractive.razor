@@ -8,13 +8,20 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager Navigation
 @inject IConfiguration Configuration
+@implements IDisposable
 @rendermode InteractiveServer
 
 <div class="top-menu-bar">
-    <button type="button" class="mobile-hamburger-btn" @onclick="ToggleMobileDrawer" title="Menu" aria-label="Menu">
+    <button type="button" class="mobile-hamburger-btn" @onclick="ToggleMobileDrawer"
+            title="@(LayoutState.MobileDrawerOpen ? "Fechar menu" : "Abrir menu")"
+            aria-label="@(LayoutState.MobileDrawerOpen ? "Fechar menu" : "Abrir menu")"
+            aria-expanded="@LayoutState.MobileDrawerOpen"
+            aria-controls="main-layout-sidebar">
         ☰
     </button>
-    <button type="button" class="sidebar-toggle-btn" @onclick="ToggleSidebar" title="Minimizar menu" aria-label="Minimizar menu">
+    <button type="button" class="sidebar-toggle-btn" @onclick="ToggleSidebar"
+            title="@(LayoutState.SidebarCollapsed ? "Expandir menu" : "Minimizar menu")"
+            aria-label="@(LayoutState.SidebarCollapsed ? "Expandir menu" : "Minimizar menu")">
         @(LayoutState.SidebarCollapsed ? "▶" : "◀")
     </button>
     <a class="top-menu-brand" href="/">@_brandName</a>
@@ -48,12 +55,32 @@
     {
         _brandName = Configuration["App:BrandName"] ?? "Eurobus";
         _menuConfig = MenuService.GetMenuConfig();
+        SyncTopMenuFromUri();
         if (_menuConfig.TopMenuItems.Count > 0 && string.IsNullOrEmpty(MenuStateService.CurrentTopItemId))
             MenuStateService.SetCurrentTopItemId(_menuConfig.TopMenuItems[0].Id);
+
+        Navigation.LocationChanged += OnLocationChanged;
+        LayoutState.OnChange += OnLayoutStateChanged;
 
         var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         _isAuthenticated = state.User.Identity?.IsAuthenticated ?? false;
         _userName = state.User.Identity?.Name;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        SyncTopMenuFromUri();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLayoutStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void SyncTopMenuFromUri()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath;
+        var topId = MenuService.ResolveTopItemIdForPath(path);
+        if (!string.IsNullOrEmpty(topId))
+            MenuStateService.SetCurrentTopItemId(topId);
     }
 
     private void DoLogout() => Navigation.NavigateTo("/logout", forceLoad: true);
@@ -71,5 +98,11 @@
     {
         LayoutState.SetMobileDrawerOpen(!LayoutState.MobileDrawerOpen);
         StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        LayoutState.OnChange -= OnLayoutStateChanged;
     }
 }

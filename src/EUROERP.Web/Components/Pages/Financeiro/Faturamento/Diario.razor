@@ -1,0 +1,290 @@
+@page "/financeiro/faturamento/diario"
+@using EUROERP.Application.RevenueReporting
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Faturamento - Diário</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consultar Faturamento Diário</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        @if (_supplierIdFromQuery.HasValue)
+        {
+            <div class="alert alert-info py-2 mb-2">Contexto: Fornecedor #@_supplierIdFromQuery</div>
+        }
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data inicial <span class="text-danger">*</span></label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_firstDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data final</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_lastDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Método pagto.</label>
+                <select class="form-select form-select-sm" @bind="_paymentMethodId">
+                    <option value="0">Selecione (todos)</option>
+                    @foreach (var pm in _paymentMethods)
+                    {
+                        <option value="@pm.Id">@pm.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Usuário</label>
+                <select class="form-select form-select-sm" @bind="_salesAgentName">
+                    @foreach (var u in _salesAgents)
+                    {
+                        <option value="@u.Name">@u.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Vendedor</label>
+                <select class="form-select form-select-sm" @bind="_ofSalerName">
+                    @foreach (var u in _salesAgents)
+                    {
+                        <option value="@u.Name">@u.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Consulta")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card small">
+        <div class="card-header">
+            <h6 class="mb-0">Consulta do Faturamento Diário — @_result.Rows.Count registro(s)</h6>
+        </div>
+        <div class="card-body p-0 overflow-auto">
+            <table class="table table-sm table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Pedido</th>
+                        <th>Data</th>
+                        <th>Enviado</th>
+                        <th>Cliente</th>
+                        <th>Usuário</th>
+                        <th>Vend.</th>
+                        <th class="text-end text-nowrap">Valor</th>
+                        <th class="text-end text-nowrap">Desc.</th>
+                        <th class="text-end text-nowrap">Cred.</th>
+                        <th>Mét. Pagto.</th>
+                        <th>NF</th>
+                        <th>NFES</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _result.Rows)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@GetOrderUrl(r.OrderId)" target="_blank" rel="noopener noreferrer">@r.OrderId</a>
+                            </td>
+                            <td>@(r.OrderDate ?? "—")</td>
+                            <td>@(r.SentDate ?? "—")</td>
+                            <td>@(r.SocialName) @(string.IsNullOrEmpty(r.FantasyName) ? "" : "/ " + r.FantasyName)</td>
+                            <td>@(r.SalesAgent ?? "—")</td>
+                            <td>@(r.OfSaler ?? "—")</td>
+                            <td class="text-end text-nowrap">
+                                <a href="@GetValorUrl(r.OrderId)" target="_blank" rel="noopener noreferrer">@r.Amount.ToString("N2", _ptBr)</a>
+                            </td>
+                            <td class="text-end text-nowrap">@r.Discount.ToString("N2", _ptBr) %</td>
+                            <td class="text-end text-nowrap">@r.Credit.ToString("N2", _ptBr)</td>
+                            <td>@(r.PaymentMethod ?? "—")</td>
+                            <td>@(r.Receipt > 0 ? r.Receipt.ToString() : "—")</td>
+                            <td>@GetNfesDisplay(r)</td>
+                        </tr>
+                    }
+                    @if (_result.Rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="12" class="text-center text-muted py-3">Nenhum lançamento encontrado.</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    @foreach (var t in _result.TotalsByPaymentMethod)
+                    {
+                        <tr>
+                            <td colspan="6" class="text-end">TOTAL @t.PaymentMethod</td>
+                            <td class="text-end">@t.Total.ToString("N2", _ptBr)</td>
+                            <td colspan="5"></td>
+                        </tr>
+                    }
+                    <tr>
+                        <td colspan="6" class="text-end"><strong>TOTAL LOJA</strong></td>
+                        <td class="text-end"><strong>@_result.TotalLoja.ToString("N2", _ptBr)</strong></td>
+                        <td colspan="5"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" class="text-end"><strong>TOTAL SITE</strong></td>
+                        <td class="text-end"><strong>@_result.TotalSite.ToString("N2", _ptBr)</strong></td>
+                        <td colspan="5"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" class="text-end"><strong>TOTAL ML</strong></td>
+                        <td class="text-end"><strong>@_result.TotalMeli.ToString("N2", _ptBr)</strong></td>
+                        <td colspan="5"></td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" class="text-end"><strong>TOTAL</strong></td>
+                        <td class="text-end"><strong>@_result.Total.ToString("N2", _ptBr)</strong></td>
+                        <td colspan="5"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        @if (_result.SpecialClientTotals.Count > 0)
+        {
+            <div class="card-body border-top">
+                <h6 class="mb-2">Clientes especiais</h6>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        @foreach (var sc in _result.SpecialClientTotals)
+                        {
+                            <tr>
+                                <td class="text-end">@sc.SocialName</td>
+                                <td class="text-end" style="width: 120px;">@sc.Total.ToString("N2", _ptBr)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private int _paymentMethodId;
+    private string _salesAgentName = "Selecione";
+    private string _ofSalerName = "Selecione";
+    private int? _supplierIdFromQuery;
+    private IReadOnlyList<PaymentMethodRefDto> _paymentMethods = new List<PaymentMethodRefDto>();
+    private IReadOnlyList<UserIdNameDto> _salesAgents = new List<UserIdNameDto>();
+    private bool _loading;
+    private string? _validationError;
+    private DailyRevenueResultDto? _result;
+
+    [Inject] private IRevenueReportDailyService ReportService { get; set; } = null!;
+    [Inject] private IClientReferenceService ClientReference { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private string GetOrderUrl(int orderId) => $"/vendas/os/{orderId}";
+
+    private string GetValorUrl(int orderId) => $"/financeiro/contas-a-receber/consultar?oid={orderId}";
+
+    // Eurobus NFES_NO on ORDER
+    private static string GetNfesDisplay(DailyRevenueRowDto r) => r.NfesNo > 0 ? r.NfesNo.ToString() : "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _paymentMethods = await ClientReference.GetPaymentMethodsAsync();
+        var agents = await ClientReference.GetSalesAgentsAsync();
+        _salesAgents = new List<UserIdNameDto> { new UserIdNameDto { Id = "", Name = "Selecione" } }.Concat(agents).ToList();
+        var today = DateTime.Today;
+        _firstDateText = today.ToString("dd/MM/yyyy", _ptBr);
+        _lastDateText = "";
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = ParseQueryString(uri.Query);
+        var dateParam = query.GetValueOrDefault("date");
+        var supIdParam = query.GetValueOrDefault("supId");
+
+        if (!string.IsNullOrEmpty(supIdParam) && int.TryParse(supIdParam, out var supId) && supId > 0)
+        {
+            _supplierIdFromQuery = supId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dateParam) && DateTime.TryParseExact(dateParam.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var singleDate))
+        {
+            _firstDateText = singleDate.ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = "";
+            await Search();
+        }
+        else if (_supplierIdFromQuery.HasValue)
+        {
+            await Search();
+        }
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query)) return d;
+        var q = query.TrimStart('?');
+        foreach (var part in q.Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _result = null;
+        if (string.IsNullOrWhiteSpace(_firstDateText))
+        {
+            _validationError = "Data Inicial é obrigatória.";
+            return;
+        }
+        if (!DateTime.TryParseExact(_firstDateText.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var firstDate))
+        {
+            _validationError = "Data inicial inválida. Use dd/MM/yyyy.";
+            return;
+        }
+        var lastDate = firstDate;
+        if (!string.IsNullOrWhiteSpace(_lastDateText))
+        {
+            if (!DateTime.TryParseExact(_lastDateText.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out lastDate))
+            {
+                _validationError = "Data final inválida. Use dd/MM/yyyy.";
+                return;
+            }
+            if (lastDate < firstDate)
+            {
+                _validationError = "A Data Final deve ser maior que a inicial!";
+                return;
+            }
+        }
+
+        _loading = true;
+        try
+        {
+            var criteria = new DailyRevenueCriteriaDto
+            {
+                FirstDate = firstDate.Date,
+                LastDate = lastDate.Date,
+                PaymentMethodId = (byte)(_paymentMethodId > 255 ? 0 : _paymentMethodId),
+                SalesAgentName = _salesAgentName ?? "Selecione",
+                OfSalerName = _ofSalerName ?? "Selecione",
+                SupplierId = _supplierIdFromQuery ?? 0
+            };
+            _result = await ReportService.GetDailyRevenueReportAsync(criteria);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+}

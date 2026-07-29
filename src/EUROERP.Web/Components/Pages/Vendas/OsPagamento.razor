@@ -50,6 +50,18 @@
                     }
                 </div>
                 <div class="border-top pt-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Produtos</span>
+                        <span>@_summary.CurrencySymbol @_summary.ProductTotal.ToString("N2")</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Serviços</span>
+                        <span>@_summary.CurrencySymbol @_summary.ServiceTotal.ToString("N2")</span>
+                    </div>
+                    <div class="d-flex justify-content-between small fw-medium mb-2">
+                        <span>Subtotal itens</span>
+                        <span>@_summary.CurrencySymbol @_summary.ItemsSubtotal.ToString("N2")</span>
+                    </div>
                     <div class="d-flex justify-content-between small text-muted mb-1">
                         <span>(-) Crédito</span>
                         <span>@_summary.CurrencySymbol @_summary.Credit.ToString("N2")</span>
@@ -57,6 +69,10 @@
                     <div class="d-flex justify-content-between small text-muted mb-1">
                         <span>(-) Desconto</span>
                         <span>@_summary.Discount.ToString("N1")%</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Total parcial</span>
+                        <span>@_summary.CurrencySymbol @_summary.PartialTotal.ToString("N2")</span>
                     </div>
                     @if (_summary.OtherExpenses > 0)
                     {
@@ -72,8 +88,12 @@
                             <span>@_summary.CurrencySymbol @_summary.ShipmentCost.ToString("N2")</span>
                         </div>
                     }
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>Faturar frete</span>
+                        <span>@(_summary.ChargeShipment ? "Sim" : "Não")</span>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
-                        <span class="fw-semibold">Total a pagar</span>
+                        <span class="fw-semibold">Valor total da OS</span>
                         <span class="fs-5 fw-bold text-primary">@_summary.CurrencySymbol @_summary.TotalToPay.ToString("N2")</span>
                     </div>
                 </div>

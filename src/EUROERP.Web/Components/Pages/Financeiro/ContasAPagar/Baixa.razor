@@ -1,0 +1,350 @@
+﻿@page "/financeiro/contas-a-pagar/baixa"
+@using EUROERP.Application.AccountsPayable
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>@(IsFormMode ? "Dar baixa" : "Baixa de Conta a Pagar")</PageTitle>
+
+@if (IsFormMode)
+{
+    <div class="card">
+        <div class="card-header"><h5 class="mb-0">Inserir pagamento (dar baixa)</h5></div>
+        <div class="card-body">
+            @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+            @if (_detail == null && _error == null && _billId > 0)
+            { <p class="text-muted">Carregando...</p> }
+            @if (_detail != null)
+            {
+                <p class="small">Lançamento @_billId — Parcela @_detail.TermNo/@_detail.Terms — @_detail.SupplierName</p>
+                <p class="small text-muted">Vencimento: @_detail.DueDate.ToString("dd/MM/yyyy", _ptBr) @(string.IsNullOrEmpty(_detail.Memo) || _detail.Memo == "--" ? "" : " — Memo: " + _detail.Memo)</p>
+                <p class="small text-muted">Saldo a pagar: <strong>@_detail.Left.ToString("N2", _ptBr) @_detail.Symbol</strong> <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="FillAmountWithBalance" title="Preencher com o saldo">↳</button></p>
+                <div class="row g-2">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">Data do pagamento <span class="text-danger">*</span></label>
+                        <input id="payDate" type="text" class="form-control form-control-sm date-mask-ddmmyyyy" value="@_paymentDateText" @onblur="SyncPayDate" placeholder="dd/MM/yyyy" maxlength="10" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">Valor <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm text-end" @bind="_amountText" placeholder="0,00" />
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Memo</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_memo" maxlength="200" />
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">@(_saving ? "Salvando..." : "Registrar pagamento")</button>
+                    <a href="@GetBackToEntryUrl()" class="btn btn-secondary btn-sm ms-2">Voltar</a>
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0">Baixa de Conta a Pagar</h5></div>
+        <div class="card-body">
+            @if (_loadError != null) { <div class="alert alert-warning">@_loadError</div> }
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-0">Lançamento</label>
+                    <input type="text" class="form-control form-control-sm" style="width: 100px;" @bind="_billIdInput" placeholder="ID" @onkeydown="HandleEntryKeydown" />
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="LoadByBillId" disabled="@_loading">@(_loading ? "Carregando..." : "Carregar")</button>
+                </div>
+                @if (_result != null && _result.Rows.Count > 0)
+                {
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ClearEntry">Limpar</button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (_result != null && _result.Rows.Count > 0)
+    {
+        <div class="card">
+            <div class="card-header"><strong>Lançamento @_result.Rows[0].PkId — @_result.Rows[0].SocialName</strong></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Vencimento</th>
+                                <th>Fornecedor</th>
+                                <th class="text-center">Parc.</th>
+                                <th class="text-center">Pedido</th>
+                                <th class="text-center">Lançado</th>
+                                <th class="text-center">$ ext.</th>
+                                <th class="text-end">R$</th>
+                                <th class="text-end">Pago</th>
+                                <th class="text-end">Saldo</th>
+                                <th>Obs</th>
+                                <th>Pagto.</th>
+                                <th>Usr.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _result.Rows.OrderBy(r => r.TermNo))
+                            {
+                                var q = GetRowQuery(row);
+                                <tr>
+                                    <td class="text-center">
+                                        <a href="@GetActionUrl("alterar-vencimento", q)" class="text-primary" title="Alterar data de vencimento">@row.PkId</a>
+                                    </td>
+                                    <td>@row.SocialName</td>
+                                    <td class="text-center">@row.TermNo/@row.Terms</td>
+                                    <td class="text-center small">
+                                        <a href="@GetActionUrl("alterar-pedido", q)" class="text-primary" title="Alterar data do pedido">@row.OrderDate</a>
+                                    </td>
+                                    <td class="text-center small">@row.SysCreationDate</td>
+                                    <td class="text-center small">
+                                        @if (row.CurrencyId > 1)
+                                        {
+                                            @row.Symbol @row.Amount.ToString("N2", _ptBr)
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("alterar-valor", q)" class="text-primary" title="Alterar valor">@row.ConvertedAmount.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            @row.ConvertedAmount.ToString("N2", _ptBr)
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("baixa", q)" class="text-primary" title="Inserir pagamento (dar baixa)">@row.ConvertedPaid.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            <a href="@GetActionUrl("pagamentos", q)" class="text-primary" title="Listar pagamentos">@row.ConvertedPaid.ToString("N2", _ptBr)</a>
+                                        }
+                                        @if (row.ConvertedPaid > 0)
+                                        {
+                                            <a href="@GetActionUrl("pagamentos", q)" class="text-primary ms-1" title="Listar pagamentos">📋</a>
+                                        }
+                                    </td>
+                                    <td class="text-end">@row.Balance.ToString("N2", _ptBr)</td>
+                                    <td class="small">
+                                        <a href="@GetActionUrl("alterar-memo", q)" class="text-primary" title="Alterar memo">@(string.IsNullOrEmpty(row.Memo) || row.Memo == "--" ? "—" : row.Memo)</a>
+                                    </td>
+                                    <td class="small">
+                                        <a href="@GetActionUrl("alterar-metodo-pagamento", q)" class="text-primary" title="Alterar método de pagamento">@row.PymMethod</a>
+                                    </td>
+                                    <td class="small">@row.UserId</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @{
+                    var totalAmount = _result.Rows.Sum(r => r.ConvertedAmount);
+                    var totalPaid = _result.Rows.Sum(r => r.ConvertedPaid);
+                }
+                <div class="p-2 bg-light border-top small">
+                    <strong>Total R$:</strong> @totalAmount.ToString("N2", _ptBr) — <strong>Pago:</strong> @totalPaid.ToString("N2", _ptBr) — <strong>Saldo:</strong> @((totalAmount - totalPaid).ToString("N2", _ptBr))
+                </div>
+            </div>
+        </div>
+    }
+    else if (_result != null && _result.Rows.Count == 0 && !_loading)
+    {
+        <div class="alert alert-info">Nenhuma parcela encontrada para este lançamento.</div>
+    }
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private bool IsFormMode => _billId > 0 && _termNo > 0;
+
+    private string _billIdInput = "";
+    private BillsToPaySearchResultDto? _result;
+    private string? _loadError;
+    private bool _loading;
+
+    private int _billId;
+    private byte _termNo;
+    private BillToPayDetailDto? _detail;
+    private string _paymentDateText = "";
+    private string _amountText = "";
+    private string _memo = "";
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private IBillsToPaySearchService SearchService { get; set; } = null!;
+    [Inject] private IUpdateBillsToPayService UpdateService { get; set; } = null!;
+    [Inject] private IBillsToPayPaymentService PaymentService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+
+        var hasIdl = int.TryParse(q.GetValueOrDefault("IDL"), out var idl);
+        var hasTermNo = byte.TryParse(q.GetValueOrDefault("TERM_NO"), out var termNo);
+
+        if (hasIdl && hasTermNo && idl > 0)
+        {
+            _billId = idl;
+            _termNo = termNo;
+            _paymentDateText = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+            _detail = await UpdateService.GetDetailAsync(_billId, _termNo);
+            if (_detail == null)
+                _error = "Lançamento não encontrado.";
+            else
+                _amountText = _detail.Left.ToString("N2", _ptBr);
+            return;
+        }
+
+        var btpidStr = q.GetValueOrDefault("btpid");
+        if (!string.IsNullOrWhiteSpace(btpidStr))
+        {
+            _billIdInput = btpidStr.Trim();
+            await LoadByBillId();
+        }
+    }
+
+    private async Task HandleEntryKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await LoadByBillId();
+    }
+
+    private async Task LoadByBillId()
+    {
+        _loadError = null;
+        var trimmed = _billIdInput?.Trim() ?? "";
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            _loadError = "Informe o número do lançamento.";
+            return;
+        }
+        if (!int.TryParse(trimmed, out var id) || id <= 0)
+        {
+            _loadError = "Informe um número de lançamento válido.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var criteria = new BillsToPaySearchCriteriaDto { IdStr = id.ToString() };
+            _result = await SearchService.SearchAsync(criteria);
+            if (_result.Rows.Count == 0)
+                _loadError = "Lançamento não encontrado.";
+            else
+                _billIdInput = ""; // como no legado: cleanForm() após carregar a tabela
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+            _result = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FillAmountWithBalance()
+    {
+        if (_detail != null)
+            _amountText = _detail.Left.ToString("N2", _ptBr);
+        StateHasChanged();
+    }
+
+    private void ClearEntry()
+    {
+        _billIdInput = "";
+        _result = null;
+        _loadError = null;
+        StateHasChanged();
+    }
+
+    private string GetBackToEntryUrl() => $"{Navigation.BaseUri}financeiro/contas-a-pagar/baixa?btpid={_billId}";
+
+    private static Dictionary<string, string> GetRowQuery(BillsToPayReportRowDto row)
+    {
+        var left = (row.ConvertedAmount - row.ConvertedPaid).ToString("N2", _ptBr);
+        return new Dictionary<string, string>
+        {
+            ["IDL"] = row.PkId.ToString(),
+            ["TERM_NO"] = row.TermNo.ToString(),
+            ["TERMS"] = row.Terms.ToString(),
+            ["VCTO"] = row.DueDate,
+            ["FORN"] = row.SocialName ?? "",
+            ["ORDER_DATE"] = row.OrderDate ?? "",
+            ["BANCO"] = row.Bank ?? "",
+            ["AMOUNT"] = row.Amount.ToString("N2", _ptBr),
+            ["PAID"] = row.ConvertedPaid.ToString("N2", _ptBr),
+            ["LEFT"] = left,
+            ["SYMBOL"] = row.Symbol ?? "",
+            ["PYM_METHOD_ID"] = row.PaymentMethodId.ToString()
+        };
+    }
+
+    private string GetActionUrl(string action, Dictionary<string, string> query)
+    {
+        var qs = string.Join("&", query.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
+        return $"{Navigation.BaseUri}financeiro/contas-a-pagar/{action}?{qs}";
+    }
+
+    private async Task SyncPayDate()
+    {
+        try { var v = await JSRuntime.InvokeAsync<string>("euroerpGetDateInputValue", "payDate"); if (v != null) _paymentDateText = v; } catch { }
+        StateHasChanged();
+    }
+
+    private static DateTime? ParseDate(string? t)
+    {
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        if (DateTime.TryParseExact(t.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d)) return d;
+        return DateTime.TryParse(t, _ptBr, System.Globalization.DateTimeStyles.None, out d) ? d : null;
+    }
+
+    private async Task Save()
+    {
+        await SyncPayDate();
+        var d = ParseDate(_paymentDateText);
+        if (!d.HasValue) { _error = "Data do pagamento inválida (dd/MM/yyyy)."; return; }
+        if (!decimal.TryParse(_amountText, System.Globalization.NumberStyles.Any, _ptBr, out var amount) || amount <= 0)
+        { _error = "Informe um valor válido."; return; }
+        if (_detail != null && amount > _detail.Left)
+        {
+            var confirmar = await JSRuntime.InvokeAsync<bool>("confirm", "O valor a pagar é maior que o valor atual. Deseja pagar mesmo assim atualizando o valor?");
+            if (!confirmar) return;
+        }
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.Identity?.Name ?? "SYS";
+        var applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+        _saving = true; _error = null;
+        try
+        {
+            await PaymentService.RegisterPaymentAsync(_billId, _termNo, amount, d.Value, _memo ?? "", applicationId, userId);
+            Navigation.NavigateTo($"/financeiro/contas-a-pagar/baixa?btpid={_billId}", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

@@ -1,0 +1,162 @@
+@page "/financeiro/contas-a-receber/relatorios/baixas"
+@using EUROERP.Application.AccountsReceivable
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Contas a Receber - Relatório de Baixas</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Relatório de Baixas (Recebimentos por Período)</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data inicial <span class="text-danger">*</span></label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_firstDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data final <span class="text-danger">*</span></label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_lastDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Modo de pagamento</label>
+                <select class="form-select form-select-sm" @bind="_paymentMethodId">
+                    @foreach (var pm in _paymentMethods)
+                    {
+                        <option value="@pm.Id">@pm.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Enviar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card relat-baixas-result">
+        <div class="card-header">
+            <h6 class="mb-0">Período: @_result.FirstDate.ToString("dd/MM/yyyy", _ptBr) a @_result.LastDate.ToString("dd/MM/yyyy", _ptBr) — @_result.Rows.Count registro(s)</h6>
+        </div>
+        <div class="card-body p-0 overflow-auto">
+            <table class="table table-sm table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Pedido</th>
+                        <th>Cliente</th>
+                        <th>Parc.</th>
+                        <th>Modo</th>
+                        <th class="text-end">Valor</th>
+                        <th>Dt.Venc.</th>
+                        <th class="text-end">Baixa</th>
+                        <th>Dt.Baixa</th>
+                        <th>Usuário</th>
+                        <th>Obs.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _result.Rows)
+                    {
+                        <tr>
+                            <td>
+                                <a href="/vendas/os/@r.OrderId" target="_blank" rel="noopener noreferrer">@r.OrderId</a>
+                            </td>
+                            <td>@r.ClientFantasyName</td>
+                            <td>@r.TermNo/@r.Terms</td>
+                            <td>@r.PaymentMethodName</td>
+                            <td class="text-end">@r.OriginalAmount.ToString("N2", _ptBr)</td>
+                            <td>@r.DueDate</td>
+                            <td class="text-end">@r.Amount.ToString("N2", _ptBr)</td>
+                            <td>@r.ReceiveDate</td>
+                            <td>@r.UserId</td>
+                            <td>@(r.Memo ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <td colspan="4" class="text-end"><strong>Total</strong></td>
+                        <td class="text-end"><strong>@_result.TotalOriginal.ToString("N2", _ptBr)</strong></td>
+                        <td></td>
+                        <td class="text-end"><strong>@_result.TotalBaixa.ToString("N2", _ptBr)</strong></td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private byte _paymentMethodId;
+    private IReadOnlyList<PaymentMethodRefDto> _paymentMethods = new List<PaymentMethodRefDto>();
+    private bool _loading;
+    private string? _validationError;
+    private ReceiveReportResultDto? _result;
+
+    [Inject] private IBillsToReceiveReportService ReportService { get; set; } = null!;
+    [Inject] private IClientReferenceService ClientReference { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _paymentMethods = await ClientReference.GetPaymentMethodsAsync();
+        var today = DateTime.Today;
+        // Eurobus receive_request: Mon → Fri–Sun weekend range
+        _firstDateText = today.DayOfWeek == DayOfWeek.Monday ? today.AddDays(-3).ToString("dd/MM/yyyy", _ptBr) : today.ToString("dd/MM/yyyy", _ptBr);
+        _lastDateText = today.DayOfWeek == DayOfWeek.Monday ? today.AddDays(-1).ToString("dd/MM/yyyy", _ptBr) : today.ToString("dd/MM/yyyy", _ptBr);
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _result = null;
+        if (!DateTime.TryParseExact(_firstDateText.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var firstDate))
+        {
+            _validationError = "Data inicial inválida. Use dd/MM/yyyy.";
+            return;
+        }
+        if (!DateTime.TryParseExact(_lastDateText.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var lastDate))
+        {
+            _validationError = "Data final inválida. Use dd/MM/yyyy.";
+            return;
+        }
+        if (lastDate < firstDate)
+        {
+            _validationError = "Data final deve ser maior ou igual à data inicial.";
+            return;
+        }
+        var days = (lastDate.Date - firstDate.Date).TotalDays;
+        if (days < 0 || days > 31)
+        {
+            _validationError = "O intervalo de datas é inválido, não deve ultrapassar 31 dias.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var criteria = new ReceiveReportCriteriaDto
+            {
+                FirstDate = firstDate.Date,
+                LastDate = lastDate.Date,
+                PaymentMethodId = _paymentMethodId
+            };
+            _result = await ReportService.GetReceiveReportAsync(criteria);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

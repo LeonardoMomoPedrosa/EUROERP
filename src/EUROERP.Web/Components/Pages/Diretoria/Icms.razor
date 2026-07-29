@@ -1,0 +1,104 @@
+@page "/diretoria/icms"
+@using System.Globalization
+@using EUROERP.Application.Config
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Alíquota ICMS</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Alíquota ICMS</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        @if (_loading)
+        {
+            <p class="text-muted mb-0">Carregando...</p>
+        }
+        else
+        {
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-3">
+                    <label class="form-label">Alíquota atual (%)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_value" maxlength="10" />
+                    <span class="small text-muted">Use ponto ou vírgula como separador decimal.</span>
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string IcmsCode = "ICMS_ALIQ";
+
+    private string _value = "";
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private ISysControlService SysControl { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _value = await SysControl.GetValueAsync(IcmsCode) ?? "";
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        var normalized = (_value ?? "").Trim().Replace(',', '.');
+        if (normalized.Length == 0)
+        {
+            _message = "Informe a alíquota.";
+            _messageSuccess = false;
+            return;
+        }
+        if (!decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) || parsed < 0 || parsed > 100)
+        {
+            _message = "Alíquota inválida. Informe um número entre 0 e 100.";
+            _messageSuccess = false;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+        try
+        {
+            await SysControl.SetValueAsync(IcmsCode, normalized);
+            _value = normalized;
+            _message = "Alíquota salva.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}

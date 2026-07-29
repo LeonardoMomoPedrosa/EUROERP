@@ -278,6 +278,9 @@
 @code {
     private readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
 
+    [SupplyParameterFromQuery(Name = "orderId")]
+    public int? OrderIdFromQuery { get; set; }
+
     private string _orderIdInput = "";
     private string _nfeNumber = "";
     private string? _clientName;
@@ -319,6 +322,11 @@
         _cfopList = (await NfeService.GetCfopListAsync(default)).ToList();
         _transportList = (await NfeService.GetTransportSuppliersAsync(default)).ToList();
         await LoadLastOrdersAsync();
+        if (OrderIdFromQuery is > 0)
+        {
+            _orderIdInput = OrderIdFromQuery.Value.ToString();
+            await OnOrderIdChanged();
+        }
     }
 
     private async Task LoadReceiptNoAsync()

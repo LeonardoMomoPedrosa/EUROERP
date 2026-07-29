@@ -1,0 +1,57 @@
+@page "/acesso-negado"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+<PageTitle>Acesso negado</PageTitle>
+
+<div class="acesso-negado-wrapper">
+    <div class="acesso-negado-card card border-0 shadow-sm">
+        <div class="card-body text-center py-5 px-4">
+            <div class="acesso-negado-icon mb-3" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+                </svg>
+            </div>
+            <h1 class="h4 fw-semibold text-secondary mb-2">Acesso não permitido</h1>
+            <p class="text-muted mb-4 mx-auto acesso-negado-message">
+                Você não possui permissão para acessar esta página. Se acredita que deveria ter acesso, entre em contato com o administrador do sistema.
+            </p>
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                <a href="/" class="btn btn-primary">Ir para o início</a>
+                <button type="button" class="btn btn-outline-secondary" @onclick="Voltar">Voltar à página anterior</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .acesso-negado-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        padding: 2rem 1rem;
+    }
+
+    .acesso-negado-card {
+        max-width: 420px;
+        width: 100%;
+    }
+
+    .acesso-negado-icon {
+        color: var(--bs-warning);
+        opacity: 0.9;
+    }
+
+    .acesso-negado-message {
+        max-width: 360px;
+        line-height: 1.5;
+    }
+</style>
+
+@code {
+    private async Task Voltar()
+    {
+        await JS.InvokeVoidAsync("eval", "history.back()");
+    }
+}

@@ -165,16 +165,21 @@ Legacy: `Eurobus4/components/sales/OrderDetailsEngine.ascx` → **Efetuar Venda*
 
 ---
 
-## EPIC 9 — Sales reports (Relatórios Vendas)
+## EPIC 9 — Sales reports (Relatórios Vendas) — **DONE**
 
-**Story 9.1 — ABC** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/invoicing/search_by_group.aspx` (+ result pages)
+All stories complete (9.1–9.3). Routes under `/vendas/relatorios/*`; Eurobus SQL + XSL via `ISalesGroupReportService` / `IClientSalesRankService`.
 
-**Story 9.2 — Minhas vendas** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/sales/mySalesInput.aspx`
+**Story 9.1 — ABC** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/finance/invoicing/search_by_group.aspx` (+ result pages)  
+**EUROERP:** `Abc.razor` → `/vendas/relatorios/abc`; resultados with tabs Grupos/Produtos/Clientes/Vendedores/Técnicos/Cort-Garant.; drill-downs under `/vendas/relatorios/abc/...`.
 
-**Story 9.3 — Cliente / Vendedor** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/rank/client_per_saler.aspx`
+**Story 9.2 — Minhas vendas** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/mySalesInput.aspx`  
+**EUROERP:** `MinhasVendas.razor` → `/vendas/relatorios/minhas-vendas` (filter by logged-in `SALES_AGENT`, `COMMISSION=1`).
+
+**Story 9.3 — Cliente / Vendedor** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/finance/rank/client_per_saler.aspx`  
+**EUROERP:** `ClienteVendedor.razor` → `/vendas/relatorios/cliente-vendedor` (role Vendas picker; fixed ~6-month period; month cell → ABC client month).
 
 ---
 
@@ -232,8 +237,14 @@ Legacy: `Eurobus4/principal/sales/nfe/status.aspx`
 **EUROERP:** `NfeImprimir.razor` at `/vendas/nfe/imprimir` — search by OS, Últimas Saídas (NFe + NFES) + Últimas Entradas, detail with PDF/XML via `/NFE_FILES/` (ERPCOM3 pattern). No SEFAZ poll / email (same as ERPCOM3 10.2).
 
 **Story 12.4 — Cancelar NFe** — **STATUS: Done**  
-Legacy: `Eurobus4/principal/sales/nfe/cancel.aspx`  
-**EUROERP:** `NfeCancelar.razor` at `/vendas/nfe/cancelar` — SEFAZ evento 110111 via `CancelNfeAsync`; grid of today's `RECEIPT_CANCEL`. Inutilização de número **not** implemented (same as ERPCOM3 10.3).
+Legacy: `Eurobus4/principal/sales/nfe/cancel.aspx` *(radio “Cancelar NF”)*  
+**EUROERP:** `NfeCancelar.razor` at `/vendas/nfe/cancelar` — SEFAZ evento 110111 via `CancelNfeAsync`; grid of today's `RECEIPT_CANCEL`. Inutilização de número is a separate story (**12.4-INUT**).
+
+**Story 12.4-INUT — Inutilizar NFe** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/sales/nfe/cancel.aspx` *(radio “Inutilizar número da NF” → `voidNFE`)* + `NfeController.inutilizaNfe` / `NFeInutilizacao4`  
+Same screen shape as cancel (date, NF number, motivo ≥15 chars; today’s cancels/inuts grid), but SEFAZ **inutilização** (`TInutNFe` / `retInutNFe`, model 55, serie 0, `nNFIni`=`nNFFin`) instead of event 110111.  
+On success: persist via `cancelReceipt(..., memo + " - Prot.Inut:" + nProt)` (legacy) into `RECEIPT_CANCEL`; save signed ped-inut XML under `NFE_files/INUT/`.  
+**EUROERP:** `NfeInutilizar.razor` at `/vendas/nfe/inutilizar` — `InutilizarNfeAsync` + `NfeInutilizacaoAsync` (SOAP NFeInutilizacao4); accepts cStat **102** (official) and **101** (legacy); grid via `GetTodayCanceledReceiptsAsync`. Not in ERPCOM3.
 
 **Story 12.5 — Cancelar NFES (batch)** — **STATUS: Done** *(Eurobus)*  
 Legacy: `Eurobus4/principal/sales/nfe/cancel_nfes.aspx`  
@@ -255,102 +266,128 @@ Legacy: `Eurobus4/principal/sales/nfe/nfe_download.aspx`, `status_servico.aspx`
 
 ## EPIC 13 — Accounts payable (Contas a Pagar)
 
-**Story 13.1 — Consultar AP** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btp2/search.aspx`
+**Story 13.1 — Consultar AP** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btp2/search.aspx`  
+EUROERP: `/financeiro/contas-a-pagar/consultar` — port from ERPCOM3; supplier autocomplete via `ISupplierService`; groups/payment methods via `ISupplierReferenceService`; no activity codes.
 
-**Story 13.2 — Criar AP** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btp/new.aspx`
+**Story 13.2 — Criar AP** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btp/new.aspx`  
+EUROERP: `/financeiro/contas-a-pagar/criar` — creates detail rows with STATUS=`U` (pending approval, Eurobus).
 
-**Story 13.3 — AP actions (search list)** — **STATUS: Pending**  
-Pattern: ERPCOM3 Epic 13 Story 13.3
+**Story 13.3 — AP actions (search list)** — **STATUS: Done**  
+Pattern: ERPCOM3 Epic 13 Story 13.3  
+EUROERP: alterar-vencimento / alterar-valor / alterar-memo / alterar-pedido / alterar-metodo-pagamento. Due-date, amount, and memo updates write `FINANCE_BTP_CHG_HST` (Eurobus `insertBtpHistory`).
 
-**Story 13.4 — Baixa AP** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btp2/down.aspx`
+**Story 13.4 — Baixa AP** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btp2/down.aspx`  
+EUROERP: `/financeiro/contas-a-pagar/baixa` + `/financeiro/contas-a-pagar/pagamentos`.
 
-**Story 13.5 — AP reports (semanal, pagto por grupo)** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btp2/reports/*`
+**Story 13.5 — AP reports (semanal, pagto por grupo)** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btp2/reports/*`  
+EUROERP: `/financeiro/contas-a-pagar/relatorios/semanal` (alias `/diario`); `/relatorios/pagto-grupo` + `/detalhe`.
 
-**Story 13.6 — Pendentes (approve)** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btp2/approve_ajax.aspx`
-
----
-
-## EPIC 14 — Accounts receivable (Contas a Receber)
-
-**Story 14.1 — Consultar AR** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btr/search.aspx`
-
-**Story 14.2 — AR actions** — **STATUS: Pending**  
-Change due date/amount, receive, change payment method.
-
-**Story 14.3 — Relatório de baixas** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/btr/reports/receive_request.aspx`
+**Story 13.6 — Pendentes (approve)** — **STATUS: Done** *(Eurobus)*  
+Legacy: `Eurobus4/principal/finance/btp2/approve_ajax.aspx`  
+EUROERP: `/financeiro/contas-a-pagar/pendentes` — list STATUS=`U`, approve → `A` via `IBillsToPayApproveService`.
 
 ---
 
-## EPIC 15 — Revenue & finance reports
+## EPIC 14 — Accounts receivable (Contas a Receber) — **DONE**
 
-**Story 15.1 — Faturamento diário** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/invoicing/search.aspx`
+All stories complete (14.1–14.3). Port from ERPCOM3 Contas a Receber + Eurobus BTR (`FINANCE_BTR_CHG_HST`, NFES, TYPE=`M`). Cheque split not implemented.
 
-**Story 15.2 — Faturamento mensal (geral + fornecedor)** — **STATUS: Pending**  
-Legacy: `monthInvoicingSearch.aspx`, `monthInvoicingSupplierSearch.aspx`
+**Story 14.1 — Consultar AR** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btr/search.aspx`  
+EUROERP: `/financeiro/contas-a-receber/consultar` — client autocomplete, due-date range, payment method, status, usuário/vendedor, order id, ABC view; NFE/NFES columns.
 
-**Story 15.3 — Faturamento anual** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/invoicing/yearInvoicingSearch.aspx`
+**Story 14.2 — AR actions** — **STATUS: Done**  
+Change due date/amount (writes `FINANCE_BTR_CHG_HST`), receive/baixa, list/cancel receives, change payment method (blocked if any baixa).  
+Routes: `alterar-vencimento`, `alterar-valor`, `receber`, `recebimentos`, `alterar-metodo-pagamento`.
 
-**Story 15.4 — Fluxo de caixa** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/cashflow/cashflow_day.aspx`, `cashflow_day_results.aspx`
-
-**Story 15.5 — Liberar cliente (inadimplência)** — **STATUS: Pending**  
-Legacy: `Eurobus4/principal/finance/delinq.aspx`
+**Story 14.3 — Relatório de baixas** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/btr/reports/receive_request.aspx`  
+EUROERP: `/financeiro/contas-a-receber/relatorios/baixas` — period ≤31 days; optional payment-method filter.
 
 ---
 
-## EPIC 16 — Reference data (Referência)
+## EPIC 15 — Revenue & finance reports — **DONE**
 
-**Story 16.1 — Grupo de produtos** — **STATUS: Pending**  
-Legacy: `Eurobus4/operation/reference/product_group.aspx`
+All stories complete (15.1–15.5). Port from ERPCOM3 Epic 16 + Eurobus-only fornecedor monthly and cash flow.
 
-**Story 16.2 — Classificação fiscal** — **STATUS: Pending**  
-Legacy: `Eurobus4/operation/reference/fiscal_class.aspx`
+**Story 15.1 — Faturamento diário** — **STATUS: Done**  
+Legacy: `Eurobus4/principal/finance/invoicing/search.aspx`  
+EUROERP: `/financeiro/faturamento/diario` — SENT_DATE range; payment method / usuário / vendedor; NF + NFES; `?date=` / `?supId=` drill-downs.
 
-**Story 16.3 — Conversão de moedas** — **STATUS: Pending**  
-Legacy: `Eurobus4/operation/currency/currency.aspx`
+**Story 15.2 — Faturamento mensal (geral + fornecedor)** — **STATUS: Done**  
+EUROERP: `/financeiro/faturamento/mensal/geral` + `/financeiro/faturamento/mensal/fornecedor` (line totals via `ORDER_DETAILS` + `PRODUCT_SUPPLIER_LINK`).
+
+**Story 15.3 — Faturamento anual** — **STATUS: Done**  
+EUROERP: `/financeiro/faturamento/anual` — month range; link to mensal.
+
+**Story 15.4 — Fluxo de caixa** — **STATUS: Done**  
+Legacy: `cashflow_day.aspx`  
+EUROERP: `/financeiro/fluxo-caixa` — composes AR + AP due-date searches; running balance from caixa inicial.
+
+**Story 15.5 — Liberar cliente (inadimplência)** — **STATUS: Done**  
+Legacy: `delinq.aspx`  
+EUROERP: `/financeiro/liberar-cliente` — `ALLOW_DELINQ` / `IGNORE_DELINQ`.
+
+---
+
+## EPIC 16 — Reference data (Referência) — **DONE**
+
+All stories complete (16.1–16.3).
+
+**Story 16.1 — Grupo de produtos** — **STATUS: Done**  
+Legacy: `Eurobus4/operation/reference/product_group.aspx`  
+EUROERP: `/referencia/grupos-produtos` — list/create/edit/delete; `IGNORE_ORDER_DISC`; class from `PRODUCT_CLASS`.
+
+**Story 16.2 — Classificação fiscal** — **STATUS: Done**  
+Legacy: `Eurobus4/operation/reference/fiscal_class.aspx`  
+EUROERP: `/referencia/classe-fiscal` — user-supplied PK; VALUE/IPI/**ICMSST**/NAME (Eurobus ICMSST kept).
+
+**Story 16.3 — Conversão de moedas** — **STATUS: Done**  
+Legacy: `Eurobus4/operation/currency/currency.aspx`  
+EUROERP: `/referencia/moedas` — edit `CURRENCY_CONVERSION` rates only (decimal 4,3).
 
 ---
 
 ## EPIC 17 — Admin & security (Diretoria)
 
-**Story 17.1 — User management** — **STATUS: Pending**  
-Legacy: `Eurobus4/manager/members/manageMembers.aspx`, `delMember.aspx`
+**Story 17.1 — User management** — **STATUS: Done**  
+Legacy: `Eurobus4/manager/members/manageMembers.aspx`, `delMember.aspx`  
+EUROERP: `/diretoria/usuarios/novo`, `/diretoria/usuarios/remover` — create (PasswordFormat=1, auto MARKET_USER market 1); delete cleans related rows; cannot delete self.
 
-**Story 17.2 — Roles (aspnet_roles2)** — **STATUS: Pending**  
-Pattern: ERPCOM3 Epic 18 Stories 18.2–18.3
+**Story 17.2 — Roles** — **STATUS: Done**  
+EUROERP: `/diretoria/usuarios/funcoes` — CRUD `aspnet_Roles` + user↔role assignment (`aspnet_UsersInRoles`). Protected: Admin, Master. (Live tables — not aspnet_roles2.)
 
-**Story 17.3 — Activities & role-activity mapping** — **STATUS: Pending**  
-Legacy: `manager/activity/*` — use `SEC_ACTIVITY`, `ACTIVITY_ROLE`  
-Pattern: ERPCOM3 Epic 18 Stories 18.4–18.7
+**Story 17.3 — Activities & role-activity mapping** — **STATUS: Done**  
+Legacy: `manager/activity/*` — `SEC_ACTIVITY`, `ACTIVITY_ROLE`  
+EUROERP: `/diretoria/atividades/gerenciar`, `/diretoria/atividades/associar`; login loads ActivityCodes claim; `RequireActivity` + `/acesso-negado`.
 
-**Story 17.4 — Mercados (user markets)** — **STATUS: Pending** *(Eurobus)*  
+**Story 17.4 — Mercados (user markets)** — **STATUS: Done** *(Eurobus)*  
 Legacy: `Eurobus4/manager/members/userMarket.aspx`  
-Tables: `MARKET`, `MARKET_USER`, `MARKET_PRODUCT`
+EUROERP: `/diretoria/usuarios/mercados` — dual-list `MARKET` / `MARKET_USER`.
 
-**Story 17.5 — Alíq. ICMS** — **STATUS: Pending**  
-Legacy: `Eurobus4/manager/creditIcms.aspx`
+**Story 17.5 — Alíq. ICMS** — **STATUS: Done**  
+Legacy: `Eurobus4/manager/creditIcms.aspx`  
+EUROERP: `/diretoria/icms` — edits `SYS_CONTROL` `ICMS_ALIQ`; NFe emit + DANFE read from SYS_CONTROL (appsettings fallback).
 
-**Story 17.6 — Master functions** — **STATUS: Pending**  
-Legacy: `Eurobus4/manager/master/master.aspx`, `sql.aspx` (Master role only)
+**Story 17.6 — Master functions** — **STATUS: Done**  
+Legacy: `Eurobus4/manager/master/master.aspx`, `sql.aspx`  
+EUROERP: `/diretoria/master/sql` — gated by activity `SQL`; SELECT capped; non-SELECT logged.
 
 ---
 
 ## EPIC 18 — Cadastro & dashboard
 
-**Story 18.1 — Alterar senha / e-mail** — **STATUS: Pending**  
-Legacy: `Eurobus4/security/changePassword.aspx`, `changeEmail.aspx`
+**Story 18.1 — Alterar senha / e-mail** — **STATUS: Done**  
+Legacy: `Eurobus4/security/changePassword.aspx`, `changeEmail.aspx`  
+EUROERP: `/cadastro/alterar-senha`, `/cadastro/alterar-email` — `IAccountService` valida a senha atual como o login (PasswordFormat 0/1), regrava com salt novo e PasswordFormat 1 (7–10 caracteres, letras + números) e atualiza `LastPasswordChangedDate`; e-mail exige `.*@.*\..*` e é único por ApplicationId (`Email` + `LoweredEmail`).
 
-**Story 18.2 — Dashboard + widgets** — **STATUS: Pending**  
-Pattern: ERPCOM3 Epic 19 (daily sales, NFes, shortcuts) — adapt to Eurobus needs
+**Story 18.2 — Dashboard + widgets** — **STATUS: Done**  
+Pattern: ERPCOM3 Epic 19 (daily sales, NFes, shortcuts)  
+EUROERP: Home (`/`) mostra o widget fixo de certificado NFe (validade piscante a ≤45 dias) mais os widgets escolhidos pelo usuário: faturamento diário e acumulado (Chart.js, cache 2h sobre `IRevenueReportMonthlyService`), últimas 7 NF-e (PDF/XML, "Ver todas" → `/vendas/nfe/imprimir`) e atalhos de menu. Preferências em `/cadastro/widgets` (`USER_WIDGET`, `USER_SHORTCUT` — scripts em `docs/sql/`); as leituras toleram tabelas ausentes.
 
 ---
 
@@ -363,11 +400,12 @@ Auth: `X-Api-Token` pattern from ERPCOM3
 
 ---
 
-## EPIC 20 — Mobile layout *(optional, later)*
+## EPIC 20 — Mobile layout — **DONE**
 
-**Story 20.1 — Responsive shell** — **STATUS: Pending**  
+**Story 20.1 — Responsive shell** — **STATUS: Done**  
 Collapsible menu on small screens; do not change desktop layout.  
-Pattern: ERPCOM3 Epic 21
+Pattern: ERPCOM3 Epic 21  
+**EUROERP:** hamburger + overlay drawer ≤768px; top sections in drawer; desktop unchanged. Plan: `STORY_PLAN/Epic20-Story1-Responsive-Shell.md`
 
 ---
 
@@ -379,10 +417,11 @@ Pattern: ERPCOM3 Epic 21
 | Master data | 2–5 | 18 |
 | Stock & lists | 6–7 | 6 |
 | OS / Vendas | 8–9, 11 | 11 |
-| NFe | 12 | 8 |
+| NFe | 12 | 9 |
 | Finance | 13–15 | 14 |
 | Platform | 16–19 | 12 |
-| Optional (to be implemented) | 10, 20 | 4 |
-| **Total** | **20** | **~76** |
+| Optional (to be implemented) | 10 | 3 |
+| Optional (mobile) | 20 | 1 (Done) |
+| **Total** | **20** | **~77** |
 
 See also: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)

@@ -1,0 +1,152 @@
+@page "/vendas/relatorios/cliente-vendedor"
+@page "/vendas/relatorios/cliente-vendedor/{UserName}"
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Ranking de Clientes por Vendedor</PageTitle>
+
+@if (string.IsNullOrEmpty(UserName) && !_autoRedirected)
+{
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">Selecione o Vendedor</h5>
+        </div>
+        <div class="card-body">
+            @if (_loadingAgents)
+            {
+                <p class="text-muted">Carregando...</p>
+            }
+            else if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="text-danger">@_error</p>
+            }
+            else if (_agents.Count == 0)
+            {
+                <p class="text-muted">Nenhum usuário no papel Vendas.</p>
+            }
+            else
+            {
+                <div class="list-group list-group-flush" style="max-width: 20rem;">
+                    @foreach (var a in _agents)
+                    {
+                        <a class="list-group-item list-group-item-action py-2"
+                           href="/vendas/relatorios/cliente-vendedor/@Uri.EscapeDataString(a)">@a</a>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+else if (!string.IsNullOrEmpty(UserName))
+{
+    <div class="card mb-3">
+        <div class="card-header d-flex flex-wrap justify-content-between gap-2">
+            <div>
+                <h5 class="mb-0">Ranking — @UserName</h5>
+                <span class="small text-muted">@_periodLabel</span>
+            </div>
+            <a class="small" href="/vendas/relatorios/cliente-vendedor">Trocar vendedor</a>
+        </div>
+        <div class="card-body">
+            @if (_loadingReport)
+            {
+                <div class="d-flex align-items-center gap-2 py-4 text-muted">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></div>
+                    <span>Processando…</span>
+                </div>
+            }
+            else if (_reportHtml != null)
+            {
+                <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+            }
+            else if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="text-danger">@_error</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? UserName { get; set; }
+
+    private List<string> _agents = new();
+    private bool _loadingAgents = true;
+    private bool _loadingReport;
+    private bool _autoRedirected;
+    private string? _reportHtml;
+    private string? _error;
+    private string? _periodLabel;
+
+    [Inject] private IClientSalesRankService RankService { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _error = null;
+        if (string.IsNullOrEmpty(UserName))
+        {
+            await LoadPickerAsync().ConfigureAwait(true);
+            return;
+        }
+
+        await LoadReportAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadPickerAsync()
+    {
+        _loadingAgents = true;
+        try
+        {
+            // Without RANKCLIE activity (not yet in EUROERP), show picker for all authenticated users.
+            // If only one agent matches current user, auto-open (legacy without RANKCLIE).
+            _agents = (await RankService.GetSalesAgentsInVendasRoleAsync().ConfigureAwait(true)).ToList();
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync().ConfigureAwait(true);
+            var me = auth.User.Identity?.Name;
+            if (!string.IsNullOrEmpty(me) && _agents.Count > 0)
+            {
+                var match = _agents.FirstOrDefault(a => a.Equals(me, StringComparison.OrdinalIgnoreCase));
+                // Keep picker when multiple agents exist (admin/manager use case like RANKCLIE).
+                // Auto-redirect only when current user is the sole agent or not in list (see own ranking).
+                if (match != null && _agents.Count == 1)
+                {
+                    _autoRedirected = true;
+                    Nav.NavigateTo($"/vendas/relatorios/cliente-vendedor/{Uri.EscapeDataString(match)}");
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingAgents = false;
+        }
+    }
+
+    private async Task LoadReportAsync()
+    {
+        _loadingReport = true;
+        _reportHtml = null;
+        try
+        {
+            var data = await RankService.GetRankingAsync(UserName!).ConfigureAwait(true);
+            _periodLabel = $"{data.FirstDate:dd/MM/yyyy} até {data.LastDate:dd/MM/yyyy}";
+            _reportHtml = Transform.Transform(data.ReportXml, "ranking_client_per_salers.xsl", null);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingReport = false;
+        }
+    }
+}

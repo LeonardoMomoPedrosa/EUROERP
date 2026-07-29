@@ -4,6 +4,8 @@ using EUROERP.Application.Address;
 using EUROERP.Application.Auth;
 using EUROERP.Application.Nfes;
 using EUROERP.Application.Products;
+using EUROERP.Application.UserActivities;
+using EUROERP.Application.UserRoles;
 using EUROERP.Infrastructure;
 using EUROERP.Infrastructure.Address;
 using EUROERP.Web.Components;
@@ -41,6 +43,8 @@ builder.Services.AddSingleton<IAuthorizationHandler, AllowAnonymousForBlazorFram
 builder.Services.AddSingleton<IMenuService, MenuService>();
 builder.Services.AddScoped<IMenuStateService, MenuStateService>();
 builder.Services.AddScoped<ILayoutStateService, LayoutStateService>();
+builder.Services.AddScoped<SalesReportStateService>();
+builder.Services.AddScoped<SalesReportTransformService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddRazorComponents()
@@ -92,7 +96,7 @@ app.MapGet("/logout", async (HttpContext ctx) =>
     return Results.Redirect("/login");
 }).AllowAnonymous();
 
-app.MapPost("/auth/login", async (HttpContext ctx, IAuthService authService) =>
+app.MapPost("/auth/login", async (HttpContext ctx, IAuthService authService, IUserRolesService userRolesService, IUserActivityService userActivityService) =>
 {
     var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
     var userName = form["UserName"].ToString();
@@ -109,6 +113,26 @@ app.MapPost("/auth/login", async (HttpContext ctx, IAuthService authService) =>
         new(ClaimTypes.NameIdentifier, result.UserId.Value.ToString()),
         new(ClaimTypes.Name, result.UserName)
     };
+    try
+    {
+        var roleNames = await userRolesService.GetRoleNamesForUserAsync(result.UserId.Value, ctx.RequestAborted);
+        foreach (var roleName in roleNames)
+            claims.Add(new Claim(ClaimTypes.Role, roleName));
+    }
+    catch
+    {
+        // Login without roles if membership tables are unavailable
+    }
+    try
+    {
+        var activityCodes = await userActivityService.GetActivityCodesForUserAsync(result.UserId.Value, ctx.RequestAborted);
+        if (activityCodes.Count > 0)
+            claims.Add(new Claim(IUserActivityService.ActivityCodesClaimType, string.Join(",", activityCodes)));
+    }
+    catch
+    {
+        // Login without activity codes if SEC_ACTIVITY / ACTIVITY_ROLE are unavailable
+    }
     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
     await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity),
         new AuthenticationProperties { IsPersistent = true });

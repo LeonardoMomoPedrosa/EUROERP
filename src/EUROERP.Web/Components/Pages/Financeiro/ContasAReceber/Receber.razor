@@ -1,0 +1,100 @@
+@page "/financeiro/contas-a-receber/receber"
+@using EUROERP.Application.AccountsReceivable
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Receber (dar baixa)</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Receber (dar baixa)</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail == null && _error == null && _btrId > 0)
+        { <p class="text-muted">Carregando...</p> }
+        @if (_detail != null)
+        {
+            <p class="small">Conta @_btrId — Parcela @_detail.TermNo/@_detail.Terms — @_detail.ClientName</p>
+            <p class="small text-muted">Vencimento: @_detail.DueDate.ToString("dd/MM/yyyy", _ptBr) @(string.IsNullOrEmpty(_detail.Memo) ? "" : " — Memo: " + _detail.Memo)</p>
+            <p class="small text-muted">Saldo a receber: <strong>R$ @_detail.Left.ToString("N2", _ptBr)</strong> <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="FillAmountWithBalance" title="Preencher com o saldo">↳</button></p>
+            <div class="row g-2">
+                <div class="col-12 col-md-3">
+                    <label class="form-label">Valor a receber <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm text-end" @bind="_amountText" placeholder="0,00" />
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label">Memo</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_memo" maxlength="200" />
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">@(_saving ? "Salvando..." : "Registrar recebimento")</button>
+                <a href="/financeiro/contas-a-receber/consultar" class="btn btn-secondary btn-sm ms-2">Voltar</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _btrId;
+    private byte _termNo;
+    private BillsToReceiveDetailDto? _detail;
+    private string _amountText = "";
+    private string _memo = "";
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToReceiveService UpdateService { get; set; } = null!;
+    [Inject] private IBillsToReceiveReceiveService ReceiveService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("BTR_ID"), out _btrId) || !byte.TryParse(q.GetValueOrDefault("TERM_NO"), out _termNo) || _btrId <= 0)
+        {
+            _error = "Parâmetros BTR_ID e TERM_NO são obrigatórios.";
+            return;
+        }
+        _detail = await UpdateService.GetDetailAsync(_btrId, _termNo);
+        if (_detail == null)
+            _error = "Conta não encontrada.";
+        else
+            _amountText = _detail.Left.ToString("N2", _ptBr);
+    }
+
+    private void FillAmountWithBalance()
+    {
+        if (_detail != null)
+            _amountText = _detail.Left.ToString("N2", _ptBr);
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        if (!decimal.TryParse(_amountText, System.Globalization.NumberStyles.Any, _ptBr, out var amount) || amount <= 0)
+        { _error = "Informe um valor válido."; return; }
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.Identity?.Name ?? "SYS";
+        var applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+        _saving = true; _error = null;
+        try
+        {
+            await ReceiveService.RegisterReceiveAsync(_btrId, _termNo, amount, _memo ?? "", applicationId, userId);
+            Navigation.NavigateTo("/financeiro/contas-a-receber/consultar", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

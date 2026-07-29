@@ -1,0 +1,136 @@
+@page "/vendas/relatorios/minhas-vendas"
+@using System.Globalization
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Minhas Vendas</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Minhas Vendas</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger py-2 mb-3" role="alert">@_error</div>
+        }
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-3">
+                <label class="form-label small text-muted mb-0" for="firstDate">Data Inicial</label>
+                <input id="firstDate" type="text" class="form-control form-control-sm date-mask-ddmmyyyy"
+                       value="@_firstDateText" @onblur="HandleFirstDateBlur"
+                       placeholder="dd/MM/yyyy" maxlength="10" autocomplete="off" />
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small text-muted mb-0" for="lastDate">Data Final</label>
+                <input id="lastDate" type="text" class="form-control form-control-sm date-mask-ddmmyyyy"
+                       value="@_lastDateText" @onblur="HandleLastDateBlur"
+                       placeholder="dd/MM/yyyy" maxlength="10" autocomplete="off" />
+            </div>
+            <div class="col-12 col-md-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="OnSubmit" disabled="@_loading">
+                    @(_loading ? "Aguarde..." : "Enviar")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
+    private const string DateFormat = "dd/MM/yyyy";
+
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private bool _loading;
+    private string? _error;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportStateService State { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override void OnInitialized()
+    {
+        _firstDateText = DateTime.Today.AddMonths(-1).ToString(DateFormat, PtBr);
+        _lastDateText = DateTime.Today.ToString(DateFormat, PtBr);
+    }
+
+    private async Task SyncDateFromInput(bool isFirst)
+    {
+        try
+        {
+            var id = isFirst ? "firstDate" : "lastDate";
+            var value = await JSRuntime.InvokeAsync<string>("euroerpGetDateInputValue", id).ConfigureAwait(true);
+            if (isFirst)
+                _firstDateText = value ?? "";
+            else
+                _lastDateText = value ?? "";
+        }
+        catch
+        {
+            // JS may not be ready yet
+        }
+    }
+
+    private Task HandleFirstDateBlur() => SyncDateFromInput(true);
+    private Task HandleLastDateBlur() => SyncDateFromInput(false);
+
+    private async Task OnSubmit()
+    {
+        _error = null;
+        await SyncDateFromInput(true).ConfigureAwait(true);
+        await SyncDateFromInput(false).ConfigureAwait(true);
+
+        if (!DateTime.TryParseExact(_firstDateText.Trim(), DateFormat, PtBr, DateTimeStyles.None, out var firstDate))
+        {
+            _error = "Data inicial inválida. Use o formato dd/MM/yyyy.";
+            return;
+        }
+        if (!DateTime.TryParseExact(_lastDateText.Trim(), DateFormat, PtBr, DateTimeStyles.None, out var lastDate))
+        {
+            _error = "Data final inválida. Use o formato dd/MM/yyyy.";
+            return;
+        }
+        if (firstDate > lastDate)
+        {
+            _error = "Data inicial não pode ser maior que a data final.";
+            return;
+        }
+        if (firstDate.Year < 2005 || lastDate.Year > 2030)
+        {
+            _error = "Datas devem estar entre 2005 e 2030.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync().ConfigureAwait(true);
+            var userName = auth.User.Identity?.Name?.ToUpperInvariant() ?? "";
+
+            State.Clear();
+            State.SetDateRange(firstDate, lastDate);
+            State.SetCommissionMode(true);
+            State.SetSalesAgent(userName);
+
+            var data = await ReportService.GetMySalesReportDataAsync(State.DateRange!, userName).ConfigureAwait(true);
+            State.SetReportData(data);
+
+            var first = firstDate.ToString("yyyy-MM-dd");
+            var last = lastDate.ToString("yyyy-MM-dd");
+            Nav.NavigateTo($"/vendas/relatorios/minhas-vendas/resultados?first={first}&last={last}&saler={Uri.EscapeDataString(userName)}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

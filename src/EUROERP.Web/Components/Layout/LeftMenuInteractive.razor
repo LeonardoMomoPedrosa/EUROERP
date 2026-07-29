@@ -4,6 +4,7 @@
 @implements IDisposable
 @rendermode InteractiveServer
 
+@* On mobile only (CSS): top-level sections (Principal, Vendas, etc.) – hidden on desktop *@
 <div class="sidebar-mobile-top-nav">
     <ul class="sidebar-mobile-top-list">
         @foreach (var item in _menuConfig.TopMenuItems)
@@ -46,6 +47,15 @@
     }
 
     private void SelectTopItem(TopMenuItemDto item) => MenuStateService.SetCurrentTopItemId(item.Id);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            UpdateFromState();
+            StateHasChanged();
+        }
+    }
 
     public void Dispose() => MenuStateService.OnChange -= OnStateChanged;
 

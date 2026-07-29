@@ -1,0 +1,236 @@
+@page "/financeiro/faturamento/mensal/fornecedor"
+@using EUROERP.Application.RevenueReporting
+@using EUROERP.Application.Suppliers
+@rendermode InteractiveServer
+
+<PageTitle>Faturamento - Mensal - Fornecedor</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Faturamento Mensal por Fornecedor</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-lg-5">
+                <label class="form-label">Fornecedor <span class="text-danger">*</span></label>
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" placeholder="Nome ou parte do nome" @bind="_supplierFilter" @bind:event="oninput" />
+                    <button type="button" class="btn btn-outline-secondary" @onclick="FilterSuppliers" disabled="@_loadingSuppliers">Busca</button>
+                </div>
+                @if (_supplierSuggestions.Count > 0)
+                {
+                    <div class="border rounded mt-1 overflow-auto" style="max-height: 140px;">
+                        <table class="table table-sm table-hover mb-0">
+                            <tbody>
+                                @foreach (var s in _supplierSuggestions)
+                                {
+                                    <tr role="button" class="@(_selectedSupplierId == s.Id ? "table-primary" : "")" @onclick="() => SelectSupplier(s)">
+                                        <td class="small">@s.Id</td>
+                                        <td class="small">@s.SocialName</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (_selectedSupplierId.HasValue)
+                {
+                    <p class="small text-success mb-0 mt-1">Selecionado: @_selectedSupplierName</p>
+                }
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Mês <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_month" min="1" max="12" placeholder="1-12" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Ano <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_year" min="2006" max="2030" placeholder="Ex: 2025" />
+            </div>
+            <div class="col-12 col-lg-2 d-flex align-items-end">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card small">
+        <div class="card-header">
+            <h6 class="mb-0">Faturamento Mensal — @_result.SupplierName — @_month/@_year</h6>
+        </div>
+        <div class="card-body p-0 overflow-auto">
+            <table class="table table-sm table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Data</th>
+                        <th class="text-end text-nowrap">Loja R$</th>
+                        <th class="text-end text-nowrap">Baixa</th>
+                        <th class="text-end text-nowrap">Uso</th>
+                        <th class="text-end text-nowrap">F/P.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _result.Days)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@GetDailyUrl(row.Date)">@row.Date</a>
+                            </td>
+                            <td class="text-end text-nowrap">@row.Amount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.BaixaAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.UsoAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.FpAmount.ToString("N2", _ptBr)</td>
+                        </tr>
+                    }
+                    @if (_result.Days.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-3">Nenhum lançamento encontrado.</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <td class="text-end"><strong>Total</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalAmount.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalBaixa.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalUso.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalFp.ToString("N2", _ptBr)</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private string _supplierFilter = "";
+    private int? _selectedSupplierId;
+    private string? _selectedSupplierName;
+    private IReadOnlyList<SupplierSummaryDto> _supplierSuggestions = new List<SupplierSummaryDto>();
+    private bool _loadingSuppliers;
+    private int _month = DateTime.Today.Month;
+    private int _year = DateTime.Today.Year;
+    private bool _loading;
+    private string? _validationError;
+    private MonthlySupplierRevenueResultDto? _result;
+
+    [Inject] private IRevenueReportMonthlySupplierService ReportService { get; set; } = null!;
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = ParseQueryString(uri.Query);
+        if (query.TryGetValue("supId", out var supIdStr) && int.TryParse(supIdStr, out var supId) && supId > 0
+            && query.TryGetValue("month", out var monthStr) && query.TryGetValue("year", out var yearStr)
+            && int.TryParse(monthStr, out var m) && int.TryParse(yearStr, out var y)
+            && m >= 1 && m <= 12 && y >= 2006 && y <= 2030)
+        {
+            _selectedSupplierId = supId;
+            _month = m;
+            _year = y;
+            await DoSearch();
+        }
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query)) return d;
+        var q = query.TrimStart('?');
+        foreach (var part in q.Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private string GetDailyUrl(string dateDdMmYyyy)
+    {
+        var url = $"/financeiro/faturamento/diario?date={Uri.EscapeDataString(dateDdMmYyyy)}";
+        if (_selectedSupplierId.HasValue)
+            url += $"&supId={_selectedSupplierId}";
+        return url;
+    }
+
+    private async Task FilterSuppliers()
+    {
+        _loadingSuppliers = true;
+        try
+        {
+            _supplierSuggestions = await SupplierService.GetSuggestionsAsync(_supplierFilter.Trim(), 0, 15);
+        }
+        finally
+        {
+            _loadingSuppliers = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectSupplier(SupplierSummaryDto s)
+    {
+        _selectedSupplierId = s.Id;
+        _selectedSupplierName = s.SocialName;
+        _supplierSuggestions = new List<SupplierSummaryDto>();
+        StateHasChanged();
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        if (!_selectedSupplierId.HasValue)
+        {
+            _validationError = "Selecione um fornecedor.";
+            return;
+        }
+        if (_month < 1 || _month > 12)
+        {
+            _validationError = "Mês inválido. Informe um valor entre 1 e 12.";
+            return;
+        }
+        if (_year < 2006 || _year > 2030)
+        {
+            _validationError = "Ano inválido. Informe um valor entre 2006 e 2030.";
+            return;
+        }
+
+        await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        _loading = true;
+        try
+        {
+            var criteria = new MonthlySupplierRevenueCriteriaDto
+            {
+                SupplierId = _selectedSupplierId!.Value,
+                Month = (byte)_month,
+                Year = _year
+            };
+            _result = await ReportService.GetMonthlySupplierRevenueReportAsync(criteria);
+            if (string.IsNullOrEmpty(_selectedSupplierName) && !string.IsNullOrEmpty(_result?.SupplierName))
+                _selectedSupplierName = _result!.SupplierName;
+        }
+        catch (Exception ex)
+        {
+            _validationError = ex.Message;
+            _result = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+}

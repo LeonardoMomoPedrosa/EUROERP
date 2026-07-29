@@ -1,0 +1,156 @@
+@page "/vendas/relatorios/minhas-vendas/resultados"
+@page "/vendas/relatorios/minhas-vendas/resultados/{View}"
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@rendermode InteractiveServer
+
+<PageTitle>Minhas Vendas - Resultados</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex flex-wrap align-items-center gap-2">
+        <h5 class="mb-0">Minhas Vendas — @_saler</h5>
+        <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+            <span class="small text-muted">@_periodLabel</span>
+            <div class="d-flex gap-1 small">
+                <a href="@ResultadosLink("")" class="@(_view == "geral" ? "text-muted text-decoration-none" : "")">Geral</a>
+                <span>|</span>
+                <a href="@ResultadosLink("clientes")" class="@(_view == "clientes" ? "text-muted text-decoration-none" : "")">Clientes</a>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <div class="d-flex align-items-center gap-2 py-4 text-muted">
+                <div class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></div>
+                <span>Processando…</span>
+            </div>
+        }
+        else if (_reportHtml != null)
+        {
+            <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="text-danger">@_error</p>
+        }
+    </div>
+</div>
+
+@code {
+    private string _view = "geral";
+    private string _saler = "";
+    private string? _periodLabel;
+    private string? _reportHtml;
+    private string? _error;
+    private bool _loading = true;
+    private string? _loadedKey;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportStateService State { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+
+    [Parameter] public string? View { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "first")] public string? QueryFirst { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "last")] public string? QueryLast { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "saler")] public string? QuerySaler { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _view = string.IsNullOrEmpty(View) ? "geral" : View.ToLowerInvariant();
+        if (_view != "geral" && _view != "clientes")
+            _view = "geral";
+
+        if (!string.IsNullOrWhiteSpace(QuerySaler))
+            State.SetSalesAgent(QuerySaler);
+
+        State.SetCommissionMode(true);
+
+        if (State.DateRange == null
+            && !string.IsNullOrEmpty(QueryFirst) && !string.IsNullOrEmpty(QueryLast)
+            && DateTime.TryParse(QueryFirst, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var qFirst)
+            && DateTime.TryParse(QueryLast, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var qLast))
+        {
+            State.SetDateRange(qFirst, qLast);
+        }
+
+        if (State.DateRange == null)
+        {
+            _loading = false;
+            Nav.NavigateTo("/vendas/relatorios/minhas-vendas");
+            return;
+        }
+
+        _saler = State.SalesAgent ?? QuerySaler ?? "";
+        _periodLabel = $"Período: {State.DateRange.FirstDate:dd/MM/yyyy} até {State.DateRange.LastDate:dd/MM/yyyy}";
+
+        // Reload when period/saler changes (e.g. popup from ABC Vendedores)
+        var key = $"{State.DateRange.FirstDate:yyyy-MM-dd}|{State.DateRange.LastDate:yyyy-MM-dd}|{_saler}|C";
+        if (_loadedKey != key || !State.HasData || !State.CommissionMode)
+        {
+            try
+            {
+                var data = await ReportService.GetMySalesReportDataAsync(State.DateRange, _saler).ConfigureAwait(true);
+                State.SetReportData(data);
+                _loadedKey = key;
+            }
+            catch (Exception ex)
+            {
+                _error = ex.Message;
+            }
+        }
+
+        if (State.HasData)
+            RenderView();
+        _loading = false;
+    }
+
+    private void RenderView()
+    {
+        if (State.ReportData == null || State.DateRange == null) return;
+        var d = State.ReportData;
+        var args = new Dictionary<string, string>
+        {
+            ["first"] = State.DateRange.FirstDate.ToString("yyyy-MM-dd"),
+            ["last"] = State.DateRange.LastDate.ToString("yyyy-MM-dd"),
+            ["saler"] = _saler,
+            ["agent"] = _saler,
+            ["userName"] = _saler
+        };
+
+        try
+        {
+            _error = null;
+            if (_view == "clientes")
+            {
+                var xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                args["detailPage"] = "/vendas/relatorios/minhas-vendas/clientes/detalhe";
+                _reportHtml = Transform.Transform(xml, "invoicingByGroupClientsResumed.xsl", args);
+            }
+            else
+            {
+                var xml = "<GROUP_REPORT>" + d.GroupRefReportXml + d.GroupReportXml + "</GROUP_REPORT>";
+                args["detailPage"] = "/vendas/relatorios/minhas-vendas/detalhe";
+                _reportHtml = Transform.Transform(xml, "invoicingByGroupSalersReport.xsl", args);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = "Erro ao gerar relatório: " + ex.Message;
+            _reportHtml = null;
+        }
+    }
+
+    private string ResultadosLink(string viewSegment)
+    {
+        var path = string.IsNullOrEmpty(viewSegment)
+            ? "/vendas/relatorios/minhas-vendas/resultados"
+            : $"/vendas/relatorios/minhas-vendas/resultados/{viewSegment}";
+        if (State.DateRange == null) return path;
+        var first = State.DateRange.FirstDate.ToString("yyyy-MM-dd");
+        var last = State.DateRange.LastDate.ToString("yyyy-MM-dd");
+        return $"{path}?first={Uri.EscapeDataString(first)}&last={Uri.EscapeDataString(last)}&saler={Uri.EscapeDataString(_saler)}";
+    }
+}

@@ -1,0 +1,432 @@
+﻿@page "/financeiro/contas-a-pagar/consultar"
+@using EUROERP.Application.AccountsPayable
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Contas a Pagar - Consultar</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consulta Contas a Pagar</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label">Fornecedor (opcional)</label>
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" placeholder="Nome ou parte do nome" @bind="_supplierFilter" @bind:event="oninput" />
+                    <button type="button" class="btn btn-outline-secondary" @onclick="FilterSuppliers" disabled="@_loadingSuppliers">Filtrar</button>
+                </div>
+                @if (_supplierSuggestions.Count > 0)
+                {
+                    <div class="border rounded mt-1 overflow-auto" style="max-height: 140px;">
+                        <table class="table table-sm table-hover mb-0">
+                            <tbody>
+                                @foreach (var s in _supplierSuggestions)
+                                {
+                                    <tr role="button" class="@(_selectedSupplierId == s.Id ? "table-primary" : "")" @onclick="() => SelectSupplier(s)">
+                                        <td class="small">@s.Id</td>
+                                        <td class="small">@s.SocialName</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (_selectedSupplierId.HasValue)
+                {
+                    <p class="small text-success mb-0 mt-1">Selecionado: @_selectedSupplierName</p>
+                }
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label">Grupo de fornecedor</label>
+                <select class="form-select form-select-sm" @bind="_criteria.SupplierGroupId">
+                    @foreach (var g in _supplierGroups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data inicial</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_firstDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data final</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_lastDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label d-block">Critério de data</label>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="datecrit" id="dueDate" checked="@_criteria.DueDateCriteria" @onchange="() => _criteria.DueDateCriteria = true" />
+                    <label class="form-check-label small" for="dueDate">Vencimento</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="datecrit" id="orderDate" checked="@(!_criteria.DueDateCriteria)" @onchange="() => _criteria.DueDateCriteria = false" />
+                    <label class="form-check-label small" for="orderDate">Pedido</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Lançamentos (ex: 108, 111)</label>
+                <input type="text" class="form-control form-control-sm" placeholder="opcional" @bind="_criteria.IdStr" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label d-block">Status</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chkPaid" @bind="_checkPaid" />
+                    <label class="form-check-label small" for="chkPaid">Contas pagas</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chkUnpaid" @bind="_checkUnpaid" />
+                    <label class="form-check-label small" for="chkUnpaid">Contas não pagas</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Método pagto.</label>
+                <select class="form-select form-select-sm" @bind="_criteria.PaymentMethodId">
+                    @foreach (var pm in _paymentMethods)
+                    {
+                        <option value="@pm.Id">@pm.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label d-block">Exibição</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="abc" checked="@_criteria.Abc" @onclick="() => SetAbc(true)" />
+                    <label class="form-check-label small" for="abc">ABC Geral</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="abcGroup" checked="@_criteria.AbcGroup" @onclick="() => SetAbc(false)" />
+                    <label class="form-check-label small" for="abcGroup">ABC Agrupado</label>
+                </div>
+            </div>
+            <div class="col-12 col-lg-2 d-flex align-items-end">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Busca")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card">
+        <div class="card-header">
+            <strong>Período: @_result.FirstDate.ToString("dd/MM/yyyy") até @_result.LastDate.ToString("dd/MM/yyyy")</strong>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0 data-grid-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Vencimento</th>
+                            <th>Fornecedor</th>
+                            <th class="text-center">Parc.</th>
+                            <th class="text-center">Pedido</th>
+                            <th class="text-center">Lançado</th>
+                            <th class="text-center">$ ext.</th>
+                            <th class="text-end">R$</th>
+                            <th class="text-end">Pago</th>
+                            <th class="text-end">Saldo</th>
+                            <th>Obs</th>
+                            <th>Pagto.</th>
+                            <th>Usr.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            var grouped = _criteria.AbcGroup
+                                ? _result.Rows.GroupBy(r => new { r.PymMethod, r.DueDateOrder }).OrderBy(g => g.Key.PymMethod).ThenBy(g => g.Key.DueDateOrder).Select(g => (Key: g.Key.DueDateOrder, Rows: g.ToList(), DateLabel: g.First().DueDate))
+                                : _result.Rows.GroupBy(r => r.DueDateOrder).OrderBy(g => g.Key).Select(g => (Key: g.Key, Rows: g.ToList(), DateLabel: g.First().DueDate));
+                        }
+                        @foreach (var group in grouped)
+                        {
+                            <tr class="table-secondary">
+                                <td colspan="12"><strong>@(group.DateLabel)@(_criteria.AbcGroup ? " — " + group.Rows.First().PymMethod : "")</strong></td>
+                            </tr>
+                            @foreach (var row in group.Rows.OrderBy(r => r.SocialName).ThenBy(r => r.PkId).ThenBy(r => r.TermNo))
+                            {
+                                var q = GetRowQuery(row);
+                                <tr>
+                                    <td class="text-center">
+                                        <a href="@GetActionUrl("alterar-vencimento", q)" class="text-primary" title="Alterar data de vencimento">@row.PkId</a>
+                                    </td>
+                                    <td>@row.SocialName</td>
+                                    <td class="text-center">@row.TermNo/@row.Terms</td>
+                                    <td class="text-center small">
+                                        <a href="@GetActionUrl("alterar-pedido", q)" class="text-primary" title="Alterar data do pedido">@row.OrderDate</a>
+                                    </td>
+                                    <td class="text-center small">@row.SysCreationDate</td>
+                                    <td class="text-center small">
+                                        @if (row.CurrencyId > 1)
+                                        {
+                                            @row.Symbol @row.Amount.ToString("N2", _ptBr)
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("alterar-valor", q)" class="text-primary" title="Alterar valor">@row.ConvertedAmount.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            @row.ConvertedAmount.ToString("N2", _ptBr)
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("baixa", q)" class="text-primary" title="Inserir pagamento (dar baixa)">@row.ConvertedPaid.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            <a href="@GetActionUrl("pagamentos", q)" class="text-primary" title="Listar pagamentos">@row.ConvertedPaid.ToString("N2", _ptBr)</a>
+                                        }
+                                        @if (row.ConvertedPaid > 0)
+                                        {
+                                            <a href="@GetActionUrl("pagamentos", q)" class="text-primary ms-1" title="Listar pagamentos">📋</a>
+                                        }
+                                    </td>
+                                    <td class="text-end">@row.Balance.ToString("N2", _ptBr)</td>
+                                    <td class="small">
+                                        <a href="@GetActionUrl("alterar-memo", q)" class="text-primary" title="Alterar memo">@(string.IsNullOrEmpty(row.Memo) || row.Memo == "--" ? "—" : row.Memo)</a>
+                                    </td>
+                                    <td class="small">
+                                        <a href="@GetActionUrl("alterar-metodo-pagamento", q)" class="text-primary" title="Alterar método de pagamento">@row.PymMethod</a>
+                                    </td>
+                                    <td class="small">@row.UserId</td>
+                                </tr>
+                            }
+                        }
+                        @if (_result.Rows.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-3">Nenhum lançamento encontrado.</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (_result.Rows.Count > 0)
+            {
+                var totalAmount = _result.Rows.Sum(r => r.ConvertedAmount);
+                var totalPaid = _result.Rows.Sum(r => r.ConvertedPaid);
+                <div class="p-2 bg-light border-top small">
+                    <strong>Total R$:</strong> @totalAmount.ToString("N2", _ptBr) — <strong>Pago:</strong> @totalPaid.ToString("N2", _ptBr) — <strong>Saldo:</strong> @((totalAmount - totalPaid).ToString("N2", _ptBr))
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private readonly BillsToPaySearchCriteriaDto _criteria = new();
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private bool _checkPaid;
+    private bool _checkUnpaid = true;
+    private string _supplierFilter = "";
+    private int? _selectedSupplierId;
+    private string? _selectedSupplierName;
+    private IReadOnlyList<IdNameDto> _supplierGroups = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _paymentMethods = new List<IdNameDto>();
+    private IReadOnlyList<SupplierSummaryDto> _supplierSuggestions = new List<SupplierSummaryDto>();
+    private bool _loadingSuppliers;
+    private bool _loading;
+    private string? _validationError;
+    private BillsToPaySearchResultDto? _result;
+
+    [Inject] private IBillsToPaySearchService SearchService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService SupplierReference { get; set; } = null!;
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    /// <summary>Query string para as páginas de ação (equivalente ao XSL legado btp_report.xsl).</summary>
+    private static Dictionary<string, string> GetRowQuery(BillsToPayReportRowDto row)
+    {
+        var left = (row.ConvertedAmount - row.ConvertedPaid).ToString("N2", _ptBr);
+        return new Dictionary<string, string>
+        {
+            ["IDL"] = row.PkId.ToString(),
+            ["TERM_NO"] = row.TermNo.ToString(),
+            ["TERMS"] = row.Terms.ToString(),
+            ["VCTO"] = row.DueDate,
+            ["FORN"] = row.SocialName ?? "",
+            ["ORDER_DATE"] = row.OrderDate ?? "",
+            ["BANCO"] = row.Bank ?? "",
+            ["AMOUNT"] = row.Amount.ToString("N2", _ptBr),
+            ["PAID"] = row.ConvertedPaid.ToString("N2", _ptBr),
+            ["LEFT"] = left,
+            ["SYMBOL"] = row.Symbol ?? "",
+            ["PYM_METHOD_ID"] = row.PaymentMethodId.ToString()
+        };
+    }
+
+    private string GetActionUrl(string action, Dictionary<string, string> query)
+    {
+        var qs = string.Join("&", query.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
+        return $"{Navigation.BaseUri}financeiro/contas-a-pagar/{action}?{qs}";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _supplierGroups = await SupplierReference.GetSupplierGroupsAsync();
+        _paymentMethods = await SupplierReference.GetPaymentMethodsAsync();
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = ParseQueryString(uri.Query);
+        var monthStr = query.GetValueOrDefault("month");
+        var yearStr = query.GetValueOrDefault("year");
+        var sidStr = query.GetValueOrDefault("sid");
+        var btpidStr = query.GetValueOrDefault("btpid");
+        var dateStr = query.GetValueOrDefault("date");
+
+        if (!string.IsNullOrEmpty(btpidStr))
+        {
+            _criteria.IdStr = btpidStr;
+            _firstDateText = "";
+            _lastDateText = "";
+        }
+        else if (!string.IsNullOrEmpty(dateStr) && DateTime.TryParseExact(dateStr, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var singleDate))
+        {
+            _firstDateText = singleDate.ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = _firstDateText;
+            _criteria.DueDateCriteria = true;
+        }
+        else if (!string.IsNullOrEmpty(monthStr) && !string.IsNullOrEmpty(yearStr) && int.TryParse(monthStr, out var month) && int.TryParse(yearStr, out var year))
+        {
+            var first = new DateTime(year, month, 1);
+            var last = first.AddMonths(1).AddDays(-1);
+            _firstDateText = first.ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = last.ToString("dd/MM/yyyy", _ptBr);
+            if (!string.IsNullOrEmpty(sidStr) && int.TryParse(sidStr, out var sid))
+                _selectedSupplierId = sid;
+        }
+        else
+        {
+            var today = DateTime.Today;
+            _firstDateText = today.AddMonths(-1).ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = today.ToString("dd/MM/yyyy", _ptBr);
+        }
+
+        if (!string.IsNullOrEmpty(_criteria.IdStr))
+            await DoSearch();
+        else if (!string.IsNullOrEmpty(_firstDateText) && ParseDate(_firstDateText).HasValue)
+        {
+            _criteria.FirstDate = ParseDate(_firstDateText);
+            _criteria.LastDate = ParseDate(_lastDateText) ?? _criteria.FirstDate;
+            await DoSearch();
+        }
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query)) return d;
+        var q = query.TrimStart('?');
+        foreach (var part in q.Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private void SetAbc(bool abcGeral)
+    {
+        if (abcGeral) { _criteria.Abc = !_criteria.Abc; _criteria.AbcGroup = false; }
+        else { _criteria.AbcGroup = !_criteria.AbcGroup; _criteria.Abc = false; }
+        StateHasChanged();
+    }
+
+    private async Task FilterSuppliers()
+    {
+        _loadingSuppliers = true;
+        try
+        {
+            var groupId = _criteria.SupplierGroupId > 0 ? (int)_criteria.SupplierGroupId : 0;
+            _supplierSuggestions = await SupplierService.GetSuggestionsAsync(_supplierFilter.Trim(), groupId, 15);
+        }
+        finally
+        {
+            _loadingSuppliers = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectSupplier(SupplierSummaryDto s)
+    {
+        _selectedSupplierId = s.Id;
+        _selectedSupplierName = s.SocialName;
+        _supplierSuggestions = new List<SupplierSummaryDto>();
+        StateHasChanged();
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _criteria.SupplierId = _selectedSupplierId ?? 0;
+
+        if (!string.IsNullOrWhiteSpace(_criteria.IdStr))
+        {
+            // IdStr provided — no date required
+        }
+        else
+        {
+            var first = ParseDate(_firstDateText);
+            if (!first.HasValue)
+            {
+                _validationError = "Digite uma data ou um intervalo de datas (formato dd/MM/yyyy) ou informe os lançamentos (IDs).";
+                return;
+            }
+            _criteria.FirstDate = first;
+            _criteria.LastDate = ParseDate(_lastDateText) ?? first;
+        }
+
+        if (_checkPaid && !_checkUnpaid)
+            _criteria.Status = "P";
+        else if (_checkUnpaid && !_checkPaid)
+            _criteria.Status = "U";
+        else
+            _criteria.Status = null;
+
+        await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        _loading = true;
+        try
+        {
+            _result = await SearchService.SearchAsync(_criteria);
+        }
+        catch (Exception ex)
+        {
+            _validationError = ex.Message;
+            _result = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static DateTime? ParseDate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (DateTime.TryParseExact(text.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d))
+            return d;
+        if (DateTime.TryParse(text.Trim(), _ptBr, System.Globalization.DateTimeStyles.None, out d))
+            return d;
+        return null;
+    }
+}

@@ -1,0 +1,158 @@
+﻿@page "/financeiro/contas-a-pagar/relatorios/pagto-grupo"
+@using EUROERP.Application.AccountsPayable
+@rendermode InteractiveServer
+
+<PageTitle>Consultar Pagamentos por Grupo de Fornecedores</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Consultar Pagamentos por Grupo de Fornecedores</h5></div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning">@_error</div> }
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label mb-0">Data Inicial</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" style="width: 115px;" @bind="_firstDateText" placeholder="dd/MM/yyyy" maxlength="10" />
+            </div>
+            <div class="col-auto">
+                <label class="form-label mb-0">Data Final</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" style="width: 115px;" @bind="_lastDateText" placeholder="dd/MM/yyyy" maxlength="10" />
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Carregando..." : "Enviar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_rows != null)
+{
+    <div class="card">
+        <div class="card-header"><strong>Período: @_firstDateText até @_lastDateText</strong></div>
+        <div class="card-body p-0">
+            @if (_rows.Count == 0)
+            {
+                <p class="text-muted p-3 mb-0">Nenhum pagamento no período.</p>
+            }
+            else
+            {
+                var total = _rows.Sum(r => r.Amount);
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Grupo de Fornecedores</th>
+                                <th class="text-end">Total (R$)</th>
+                                <th class="text-end">Peso</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _rows)
+                            {
+                                var pct = total > 0 ? (r.Amount / total) * 100 : 0m;
+                                <tr>
+                                    <td>
+                                        <a href="@GetDetailUrl(r.GroupId)" class="text-primary">@r.Name</a>
+                                    </td>
+                                    <td class="text-end">@r.Amount.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@pct.ToString("N2", _ptBr)%</td>
+                                </tr>
+                            }
+                            <tr class="table-warning">
+                                <td class="text-end"><strong>TOTAL</strong></td>
+                                <td class="text-end"><strong>@total.ToString("N2", _ptBr)</strong></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private bool _loading;
+    private string? _error;
+    private IReadOnlyList<PaymentByGroupRowDto>? _rows;
+
+    [Inject] private IBillsToPayReportPaymentByGroupService ReportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        var firstStr = q.GetValueOrDefault("first");
+        var lastStr = q.GetValueOrDefault("last");
+        if (DateTime.TryParseExact(firstStr, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var first) &&
+            DateTime.TryParseExact(lastStr, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var last))
+        {
+            _firstDateText = first.ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = last.ToString("dd/MM/yyyy", _ptBr);
+            await Search();
+        }
+        else
+        {
+            var today = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+            if (string.IsNullOrWhiteSpace(_firstDateText)) _firstDateText = today;
+            if (string.IsNullOrWhiteSpace(_lastDateText)) _lastDateText = today;
+        }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private async Task Search()
+    {
+        var first = ParseDate(_firstDateText);
+        var last = ParseDate(_lastDateText);
+        if (!first.HasValue) { _error = "Data inicial inválida (dd/MM/yyyy)."; return; }
+        if (!last.HasValue) { _error = "Data final inválida (dd/MM/yyyy)."; return; }
+        if (first.Value > last.Value) { _error = "Data inicial não pode ser maior que a final."; return; }
+
+        _error = null;
+        _loading = true;
+        try
+        {
+            _rows = await ReportService.GetPaymentsByGroupAsync(first.Value.Date, last.Value.Date);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _rows = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetDetailUrl(int groupId)
+    {
+        var first = ParseDate(_firstDateText);
+        var last = ParseDate(_lastDateText);
+        if (!first.HasValue || !last.HasValue) return "#";
+        return $"{Navigation.BaseUri}financeiro/contas-a-pagar/relatorios/pagto-grupo/detalhe?group_id={groupId}&first={first.Value:yyyy-MM-dd}&last={last.Value:yyyy-MM-dd}";
+    }
+
+    private static DateTime? ParseDate(string? t)
+    {
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        if (DateTime.TryParseExact(t.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d)) return d;
+        return DateTime.TryParse(t, _ptBr, System.Globalization.DateTimeStyles.None, out d) ? d : null;
+    }
+}

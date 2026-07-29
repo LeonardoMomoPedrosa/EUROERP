@@ -1,0 +1,84 @@
+﻿@page "/financeiro/contas-a-pagar/alterar-metodo-pagamento"
+@using EUROERP.Application.AccountsPayable
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Alterar método de pagamento</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Alterar método de pagamento</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail == null && _error == null && _billId > 0)
+        { <p class="text-muted">Carregando...</p> }
+        @if (_detail != null)
+        {
+            <p class="small">Lançamento @_billId — @_detail.SupplierName</p>
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Método de pagamento</label>
+                    <select class="form-select form-select-sm" @bind="_paymentMethodId">
+                        @foreach (var pm in _paymentMethods)
+                        {
+                            if (pm.Id == 0) continue;
+                            <option value="@pm.Id">@pm.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                <a href="/financeiro/contas-a-pagar/consultar" class="btn btn-secondary btn-sm ms-2">Voltar</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int _billId;
+    private BillToPayDetailDto? _detail;
+    private byte _paymentMethodId;
+    private IReadOnlyList<IdNameDto> _paymentMethods = new List<IdNameDto>();
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToPayService UpdateService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService SupplierReference { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _paymentMethods = await SupplierReference.GetPaymentMethodsAsync();
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("IDL"), out _billId) || _billId <= 0)
+        { _error = "Parâmetro IDL é obrigatório."; return; }
+        var termNo = byte.TryParse(q.GetValueOrDefault("TERM_NO"), out var tn) ? tn : (byte)1;
+        _detail = await UpdateService.GetDetailAsync(_billId, termNo);
+        if (_detail == null) { _error = "Lançamento não encontrado."; return; }
+        _paymentMethodId = _detail.PaymentMethodId;
+        if (_paymentMethodId == 0 && _paymentMethods.Count > 1)
+            _paymentMethodId = (byte)_paymentMethods.First(p => p.Id != 0).Id;
+    }
+
+    private async Task Save()
+    {
+        _saving = true; _error = null;
+        try
+        {
+            await UpdateService.UpdatePaymentMethodAsync(_billId, _paymentMethodId);
+            Navigation.NavigateTo("/financeiro/contas-a-pagar/consultar", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

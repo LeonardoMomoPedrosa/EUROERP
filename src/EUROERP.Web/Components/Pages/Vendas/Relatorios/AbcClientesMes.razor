@@ -1,0 +1,72 @@
+@page "/vendas/relatorios/abc/clientes/mes"
+@layout EUROERP.Web.Components.Layout.PopupLayout
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@rendermode InteractiveServer
+
+<PageTitle>ABC - Cliente (mês)</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Cliente #@ClientId — @M/@Y</h5>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <p class="text-muted">Carregando...</p>
+        }
+        else if (_reportHtml != null)
+        {
+            <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="text-danger">@_error</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public int? ClientId { get; set; }
+    [Parameter, SupplyParameterFromQuery] public int? M { get; set; }
+    [Parameter, SupplyParameterFromQuery] public int? Y { get; set; }
+
+    private string? _reportHtml;
+    private string? _error;
+    private bool _loading = true;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ClientId.HasValue || !M.HasValue || !Y.HasValue || M < 1 || M > 12)
+        {
+            _error = "Parâmetros inválidos.";
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            var first = new DateTime(Y.Value, M.Value, 1);
+            var last = first.AddMonths(1).AddDays(-1);
+            var range = new DateRangeDto { FirstDate = first, LastDate = last };
+            var data = await ReportService.GetAbcReportDataAsync(range, null, ClientId.Value).ConfigureAwait(true);
+            var xml = "<GROUP_REPORT>" + data.GroupRefReportXml + data.GroupReportXml + "</GROUP_REPORT>";
+            var args = new Dictionary<string, string>
+            {
+                ["detailPage"] = "/vendas/relatorios/abc/clientes/grupo",
+                ["clientId"] = ClientId.Value.ToString(),
+                ["first"] = first.ToString("yyyy-MM-dd"),
+                ["last"] = last.ToString("yyyy-MM-dd")
+            };
+            _reportHtml = Transform.Transform(xml, "invoicingByGroupClientsReport.xsl", args);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        _loading = false;
+    }
+}

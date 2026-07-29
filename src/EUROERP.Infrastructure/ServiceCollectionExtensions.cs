@@ -1,5 +1,6 @@
 using System.Data;
 using EUROERP.Application;
+using EUROERP.Application.Account;
 using EUROERP.Application.Address;
 using EUROERP.Application.Auth;
 using EUROERP.Application.Clients;
@@ -11,9 +12,33 @@ using EUROERP.Application.Warranty;
 using EUROERP.Application.Config;
 using EUROERP.Application.NFe;
 using EUROERP.Application.Nfes;
+using EUROERP.Application.SalesReports;
+using EUROERP.Application.AccountsPayable;
+using EUROERP.Application.AccountsReceivable;
+using EUROERP.Application.CashFlow;
+using EUROERP.Application.ClearCustomer;
+using EUROERP.Application.ReferenceData;
+using EUROERP.Application.RevenueReporting;
+using EUROERP.Application.Activities;
+using EUROERP.Application.Markets;
+using EUROERP.Application.Master;
+using EUROERP.Application.RoleActivities;
+using EUROERP.Application.Roles;
+using EUROERP.Application.UserActivities;
+using EUROERP.Application.UserManagement;
+using EUROERP.Application.UserRoles;
+using EUROERP.Application.Widgets;
+using EUROERP.Infrastructure.Account;
+using EUROERP.Infrastructure.AccountsPayable;
+using EUROERP.Infrastructure.AccountsReceivable;
+using EUROERP.Infrastructure.CashFlow;
+using EUROERP.Infrastructure.ClearCustomer;
+using EUROERP.Infrastructure.ReferenceData;
+using EUROERP.Infrastructure.RevenueReporting;
 using EUROERP.Infrastructure.Config;
 using EUROERP.Infrastructure.NFe;
 using EUROERP.Infrastructure.Nfes;
+using EUROERP.Infrastructure.SalesReports;
 using EUROERP.Infrastructure.Address;
 using EUROERP.Infrastructure.Auth;
 using EUROERP.Infrastructure.Clients;
@@ -22,6 +47,15 @@ using EUROERP.Infrastructure.Products;
 using EUROERP.Infrastructure.Stock;
 using EUROERP.Infrastructure.Suppliers;
 using EUROERP.Infrastructure.Warranty;
+using EUROERP.Infrastructure.Activities;
+using EUROERP.Infrastructure.Markets;
+using EUROERP.Infrastructure.Master;
+using EUROERP.Infrastructure.RoleActivities;
+using EUROERP.Infrastructure.Roles;
+using EUROERP.Infrastructure.UserActivities;
+using EUROERP.Infrastructure.UserManagement;
+using EUROERP.Infrastructure.UserRoles;
+using EUROERP.Infrastructure.Widgets;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,8 +69,11 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
+        services.AddMemoryCache();
+
         services.AddScoped<IDbConnection>(_ => new SqlConnection(connectionString));
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IProductReferenceService, ProductReferenceService>();
         services.AddScoped<IProductHistoryService, ProductHistoryService>();
@@ -78,6 +115,45 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INfeSefazClient, NfeSefazClient>();
         services.AddScoped<INfeIndividualService, NfeIndividualService>();
         services.AddScoped<IReceiptInNfeDataService, ReceiptInNfeDataService>();
+        services.AddScoped<ISalesGroupReportService, SalesGroupReportService>();
+        services.AddScoped<IClientSalesRankService, ClientSalesRankService>();
+
+        services.AddScoped<IBillsToPaySearchService, BillsToPaySearchService>();
+        services.AddScoped<ICreateBillsToPayService, CreateBillsToPayService>();
+        services.AddScoped<IUpdateBillsToPayService, UpdateBillsToPayService>();
+        services.AddScoped<IBillsToPayPaymentService, BillsToPayPaymentService>();
+        services.AddScoped<IBillsToPayReportDailyService, BillsToPayReportDailyService>();
+        services.AddScoped<IBillsToPayReportPaymentByGroupService, BillsToPayReportPaymentByGroupService>();
+        services.AddScoped<IBillsToPayApproveService, BillsToPayApproveService>();
+
+        services.AddScoped<IBillsToReceiveSearchService, BillsToReceiveSearchService>();
+        services.AddScoped<IUpdateBillsToReceiveService, UpdateBillsToReceiveService>();
+        services.AddScoped<IBillsToReceiveReceiveService, BillsToReceiveReceiveService>();
+        services.AddScoped<IBillsToReceiveReportService, BillsToReceiveReportService>();
+
+        services.AddScoped<IRevenueReportDailyService, RevenueReportDailyService>();
+        services.AddScoped<IRevenueReportMonthlyService, RevenueReportMonthlyService>();
+        services.AddScoped<IRevenueReportMonthlySupplierService, RevenueReportMonthlySupplierService>();
+        services.AddScoped<IRevenueReportYearlyService, RevenueReportYearlyService>();
+        services.AddScoped<IClearCustomerService, ClearCustomerService>();
+        services.AddScoped<ICashFlowReportService, CashFlowReportService>();
+
+        services.AddScoped<IProductGroupService, ProductGroupService>();
+        services.AddScoped<IFiscalClassService, FiscalClassService>();
+        services.AddScoped<ICurrencyService, CurrencyService>();
+
+        services.AddScoped<IUserManagementService, UserManagementService>();
+        services.AddScoped<IRoleService, RoleService>();
+        services.AddScoped<IUserRolesService, UserRolesService>();
+        services.AddScoped<IActivityService, ActivityService>();
+        services.AddScoped<IRoleActivityService, RoleActivityService>();
+        services.AddScoped<IUserActivityService, UserActivityService>();
+        services.AddScoped<IMarketUserService, MarketUserService>();
+        services.AddScoped<IMasterSqlService, MasterSqlService>();
+
+        services.AddScoped<IWidgetPreferenceService, WidgetPreferenceService>();
+        services.AddScoped<IWidgetDailySalesDataService, WidgetDailySalesDataService>();
+        services.AddScoped<IUserShortcutService, UserShortcutService>();
 
         return services;
     }

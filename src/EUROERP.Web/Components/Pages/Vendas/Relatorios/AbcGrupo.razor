@@ -1,0 +1,70 @@
+@page "/vendas/relatorios/abc/grupo"
+@layout EUROERP.Web.Components.Layout.PopupLayout
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@rendermode InteractiveServer
+
+<PageTitle>ABC - Grupo (detalhe)</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Faturamento por Grupo</h5>
+        <span class="small text-muted">@_periodLabel</span>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <p class="text-muted">Carregando...</p>
+        }
+        else if (_reportHtml != null)
+        {
+            <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+        }
+        else
+        {
+            <p class="text-muted">Dados não disponíveis. <a href="/vendas/relatorios/abc">Definir período</a>.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public int? GroupId { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "first")] public string? QueryFirst { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "last")] public string? QueryLast { get; set; }
+
+    private string? _periodLabel;
+    private string? _reportHtml;
+    private bool _loading = true;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportStateService State { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await SalesReportPageHelper.EnsureAbcDataAsync(ReportService, State, QueryFirst, QueryLast).ConfigureAwait(true);
+
+        if (State.DateRange != null)
+            _periodLabel = $"Período: {State.DateRange.FirstDate:dd/MM/yyyy} até {State.DateRange.LastDate:dd/MM/yyyy}";
+
+        if (State.ReportData != null && GroupId.HasValue)
+        {
+            var xml = "<GROUP_REPORT>" + State.ReportData.GroupReportXml + "</GROUP_REPORT>";
+            var args = new Dictionary<string, string> { ["groupId"] = GroupId.ToString()! };
+            if (State.DateRange != null)
+            {
+                args["first"] = State.DateRange.FirstDate.ToString("yyyy-MM-dd");
+                args["last"] = State.DateRange.LastDate.ToString("yyyy-MM-dd");
+            }
+            try
+            {
+                _reportHtml = Transform.Transform(xml, "invoicingByGroupDetailReport.xsl", args);
+            }
+            catch (Exception ex)
+            {
+                _reportHtml = $"<p class='text-danger'>{ex.Message}</p>";
+            }
+        }
+        _loading = false;
+    }
+}

@@ -1,0 +1,124 @@
+@page "/diretoria/usuarios/remover"
+@using EUROERP.Application.UserManagement
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Remover usuário</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Remover usuário</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover table-bordered table-list">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome de usuário</th>
+                        <th>E-mail</th>
+                        <th>Criado em</th>
+                        <th>Último login</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading)
+                    {
+                        <tr><td colspan="5" class="text-center text-muted">Carregando...</td></tr>
+                    }
+                    else if (_users.Count == 0)
+                    {
+                        <tr><td colspan="5" class="text-center text-muted">Nenhum usuário.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var u in _users)
+                        {
+                            <tr>
+                                <td class="align-middle">@u.UserName</td>
+                                <td class="align-middle">@(u.Email ?? "—")</td>
+                                <td class="align-middle">@(u.CreateDate.HasValue ? u.CreateDate.Value.ToLocalTime().ToString("g") : "—")</td>
+                                <td class="align-middle">@(u.LastLoginDate.HasValue ? u.LastLoginDate.Value.ToLocalTime().ToString("g") : "—")</td>
+                                <td class="align-middle">
+                                    @if (string.Equals(u.UserName, _currentUserName, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="text-muted small">(você)</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" @onclick="() => DeleteAsync(u.UserId, u.UserName)">Excluir</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<UserListDto> _users = new();
+    private bool _loading = true;
+    private string? _currentUserName;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private IUserManagementService UserManagement { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _currentUserName = state.User.Identity?.Name;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _users = (await UserManagement.ListUsersAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteAsync(Guid userId, string userName)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Deseja realmente excluir o usuário \"{userName}\"?"))
+            return;
+        _message = null;
+        try
+        {
+            var result = await UserManagement.DeleteUserAsync(userId, _currentUserName);
+            _message = result.Message;
+            _messageSuccess = result.Success;
+            if (result.Success)
+                await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,107 @@
+@page "/financeiro/contas-a-receber/recebimentos"
+@using EUROERP.Application.AccountsReceivable
+@rendermode InteractiveServer
+
+<PageTitle>Recebimentos da parcela</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Recebimentos — Conta @_btrId — Parcela @_termNo</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail != null)
+        {
+            <p class="small">@_detail.ClientName — Total parcela: R$ @_detail.Amount.ToString("N2", _ptBr) — Recebido: R$ @_detail.Paid.ToString("N2", _ptBr) — Saldo: R$ @_detail.Left.ToString("N2", _ptBr)</p>
+        }
+        @if (_receives.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center">Baixa</th>
+                            <th class="text-center">Data</th>
+                            <th class="text-center">Hora</th>
+                            <th class="text-end">Valor</th>
+                            <th>Usuário</th>
+                            <th>Obs.</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _receives)
+                        {
+                            <tr>
+                                <td class="text-center">@p.PkId</td>
+                                <td class="text-center">@p.Date</td>
+                                <td class="text-center small">@p.Hour</td>
+                                <td class="text-end">@p.Amount.ToString("N2", _ptBr)</td>
+                                <td class="small">@p.UserId</td>
+                                <td class="small">@p.Memo@(p.ComId > 0 ? " C" : "")</td>
+                                <td>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => DeleteReceive(p.PkId)" disabled="@_deleting">Excluir</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_btrId > 0 && !_loading)
+        {
+            <p class="text-muted">Nenhum recebimento registrado para esta parcela.</p>
+        }
+        @if (_btrId > 0)
+        {
+            <div class="mt-2">
+                <a href="/financeiro/contas-a-receber/consultar" class="btn btn-secondary btn-sm">Voltar ao relatório</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _btrId;
+    private byte _termNo;
+    private BillsToReceiveDetailDto? _detail;
+    private IReadOnlyList<ReceiveRowDto> _receives = new List<ReceiveRowDto>();
+    private bool _loading = true;
+    private bool _deleting;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToReceiveService UpdateService { get; set; } = null!;
+    [Inject] private IBillsToReceiveReceiveService ReceiveService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("BTR_ID"), out _btrId) || !byte.TryParse(q.GetValueOrDefault("TERM_NO"), out _termNo) || _btrId <= 0)
+        { _error = "Parâmetros BTR_ID e TERM_NO são obrigatórios."; _loading = false; return; }
+        _detail = await UpdateService.GetDetailAsync(_btrId, _termNo);
+        _receives = await ReceiveService.GetReceivesAsync(_btrId, _termNo);
+        _loading = false;
+    }
+
+    private async Task DeleteReceive(int pkId)
+    {
+        _deleting = true; _error = null;
+        try
+        {
+            await ReceiveService.CancelReceiveAsync(pkId);
+            _receives = await ReceiveService.GetReceivesAsync(_btrId, _termNo);
+            _detail = await UpdateService.GetDetailAsync(_btrId, _termNo);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _deleting = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

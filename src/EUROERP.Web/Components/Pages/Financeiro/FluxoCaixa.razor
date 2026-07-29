@@ -1,0 +1,225 @@
+@page "/financeiro/fluxo-caixa"
+@using EUROERP.Application.CashFlow
+@using EUROERP.Application.AccountsReceivable
+@using EUROERP.Application.AccountsPayable
+@rendermode InteractiveServer
+
+<PageTitle>Financeiro - Fluxo de Caixa</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Fluxo de Caixa</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data inicial <span class="text-danger">*</span></label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_firstDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Quantidade de dias</label>
+                <input type="number" class="form-control form-control-sm" @bind="_days" min="1" max="180" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Caixa inicial</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" @bind="_openCashAmount" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card small">
+        <div class="card-header">
+            <h6 class="mb-0">Fluxo de Caixa — Caixa inicial: @_result.OpenCashAmount.ToString("N2", _ptBr)</h6>
+        </div>
+        <div class="card-body p-0 overflow-auto">
+            <table class="table table-sm table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 30px;"></th>
+                        <th>Data</th>
+                        <th class="text-end text-nowrap">Contas a Receber</th>
+                        <th class="text-end text-nowrap">Contas a Pagar</th>
+                        <th class="text-end text-nowrap">Saldo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var day in _result.Days)
+                    {
+                        <tr>
+                            <td>
+                                @if (day.Receivables.Count > 0 || day.Payables.Count > 0)
+                                {
+                                    <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => ToggleDay(day.Date)">
+                                        @(_expandedDays.Contains(day.Date) ? "▼" : "▶")
+                                    </button>
+                                }
+                            </td>
+                            <td>@day.Date</td>
+                            <td class="text-end text-nowrap text-success">@day.ReceivableAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap text-danger">@day.PayableAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap"><strong class="@(day.Balance < 0 ? "text-danger" : "text-primary")">@day.Balance.ToString("N2", _ptBr)</strong></td>
+                        </tr>
+                        @if (_expandedDays.Contains(day.Date))
+                        {
+                            <tr>
+                                <td></td>
+                                <td colspan="4">
+                                    <div class="row g-3">
+                                        <div class="col-12 col-lg-6">
+                                            <h6 class="small text-success mb-1">Contas a Receber</h6>
+                                            <table class="table table-sm table-bordered mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th>Pedido</th>
+                                                        <th>Cliente</th>
+                                                        <th class="text-end">Valor</th>
+                                                        <th class="text-end">Pago</th>
+                                                        <th class="text-end">Saldo</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var r in day.Receivables)
+                                                    {
+                                                        <tr>
+                                                            <td><a href="@GetOsUrl(r.OrderId)" target="_blank" rel="noopener noreferrer">@r.OrderId</a></td>
+                                                            <td class="small">@r.SocialName</td>
+                                                            <td class="text-end">@r.Amount.ToString("N2", _ptBr)</td>
+                                                            <td class="text-end">@r.Paid.ToString("N2", _ptBr)</td>
+                                                            <td class="text-end">@r.Balance.ToString("N2", _ptBr)</td>
+                                                        </tr>
+                                                    }
+                                                    @if (day.Receivables.Count == 0)
+                                                    {
+                                                        <tr><td colspan="5" class="text-center text-muted">Nenhum lançamento.</td></tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="col-12 col-lg-6">
+                                            <h6 class="small text-danger mb-1">Contas a Pagar</h6>
+                                            <table class="table table-sm table-bordered mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th>Lanç.</th>
+                                                        <th>Fornecedor</th>
+                                                        <th class="text-end">Valor</th>
+                                                        <th class="text-end">Pago</th>
+                                                        <th class="text-end">Saldo</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var p in day.Payables)
+                                                    {
+                                                        <tr>
+                                                            <td>@p.PkId</td>
+                                                            <td class="small">@p.SocialName</td>
+                                                            <td class="text-end">@p.ConvertedAmount.ToString("N2", _ptBr)</td>
+                                                            <td class="text-end">@p.ConvertedPaid.ToString("N2", _ptBr)</td>
+                                                            <td class="text-end">@p.Balance.ToString("N2", _ptBr)</td>
+                                                        </tr>
+                                                    }
+                                                    @if (day.Payables.Count == 0)
+                                                    {
+                                                        <tr><td colspan="5" class="text-center text-muted">Nenhum lançamento.</td></tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    @if (_result.Days.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-3">Nenhum dia encontrado.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private string _firstDateText = "";
+    private int _days = 30;
+    private decimal _openCashAmount;
+    private bool _loading;
+    private string? _validationError;
+    private CashFlowResultDto? _result;
+    private readonly HashSet<string> _expandedDays = new();
+
+    [Inject] private ICashFlowReportService ReportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override void OnInitialized()
+    {
+        _firstDateText = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+    }
+
+    private string GetOsUrl(int orderId) => $"/vendas/os/{orderId}";
+
+    private void ToggleDay(string date)
+    {
+        if (!_expandedDays.Add(date))
+            _expandedDays.Remove(date);
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _result = null;
+
+        if (string.IsNullOrWhiteSpace(_firstDateText))
+        {
+            _validationError = "Data Inicial é obrigatória.";
+            return;
+        }
+        if (!DateTime.TryParseExact(_firstDateText.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var firstDate))
+        {
+            _validationError = "Data inicial inválida. Use dd/MM/yyyy.";
+            return;
+        }
+        if (_days < 1 || _days > 180)
+        {
+            _validationError = "Quantidade de dias deve estar entre 1 e 180.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var criteria = new CashFlowCriteriaDto
+            {
+                FirstDate = firstDate.Date,
+                Days = _days,
+                OpenCashAmount = _openCashAmount
+            };
+            _result = await ReportService.GetCashFlowReportAsync(criteria);
+            _expandedDays.Clear();
+        }
+        catch (Exception ex)
+        {
+            _validationError = ex.Message;
+            _result = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+}

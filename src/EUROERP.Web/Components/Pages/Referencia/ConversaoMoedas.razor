@@ -1,0 +1,116 @@
+@page "/referencia/moedas"
+@using EUROERP.Application.ReferenceData
+@rendermode InteractiveServer
+
+<PageTitle>Conversão de Moedas</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Conversão de Moedas</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isSuccess ? "alert-success" : "alert-warning") py-2 mb-2">@_message</div>
+        }
+        <div class="table-responsive">
+            <table class="table table-sm table-hover table-bordered table-list">
+                <thead class="table-light">
+                    <tr>
+                        <th>Moeda destino</th>
+                        <th>Conversão</th>
+                        <th>Moeda origem</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _list)
+                    {
+                        var key = $"{row.SourceCurrencyId}-{row.TargetCurrencyId}";
+                        <tr>
+                            <td class="align-middle">@row.TargetName</td>
+                            @if (_editingKey == key)
+                            {
+                                <td class="align-middle">
+                                    <span class="small">1 @row.TargetSymbol = @row.SourceSymbol</span>
+                                    <input type="number" class="form-control form-control-sm d-inline-block ms-1" style="width:6rem"
+                                           @bind="_editConversion" step="0.001" min="0" max="9.999" />
+                                </td>
+                                <td class="align-middle">@row.SourceName</td>
+                                <td class="align-middle">
+                                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveEdit(row)" disabled="@_saving">Altera</button>
+                                    <button type="button" class="btn btn-sm btn-secondary ms-1" @onclick="CancelEdit">Cancelar</button>
+                                </td>
+                            }
+                            else
+                            {
+                                <td class="align-middle">
+                                    1 @row.TargetSymbol = @row.SourceSymbol @row.Conversion.ToString("0.###", _ptBr)
+                                </td>
+                                <td class="align-middle">@row.SourceName</td>
+                                <td class="align-middle">
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-primary" @onclick="() => StartEdit(row)">Alterar</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                    @if (_list.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">Nenhuma conversão cadastrada.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private List<CurrencyConversionDto> _list = new();
+    private string? _editingKey;
+    private decimal _editConversion;
+    private bool _saving;
+    private string? _message;
+    private bool _isSuccess;
+
+    [Inject] private ICurrencyService CurrencyService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _list = (await CurrencyService.GetConversionsAsync()).ToList();
+    }
+
+    private void StartEdit(CurrencyConversionDto row)
+    {
+        _editingKey = $"{row.SourceCurrencyId}-{row.TargetCurrencyId}";
+        _editConversion = row.Conversion;
+        _message = null;
+    }
+
+    private void CancelEdit() => _editingKey = null;
+
+    private async Task SaveEdit(CurrencyConversionDto row)
+    {
+        if (_editConversion < 0 || _editConversion >= 10)
+        {
+            _message = "Conversão deve estar entre 0 e 9,999.";
+            _isSuccess = false;
+            return;
+        }
+        _saving = true; _message = null;
+        try
+        {
+            await CurrencyService.UpdateConversionAsync(row.SourceCurrencyId, row.TargetCurrencyId, _editConversion);
+            _editingKey = null;
+            await LoadAsync();
+            _message = "Conversão atualizada.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+        finally { _saving = false; }
+    }
+}

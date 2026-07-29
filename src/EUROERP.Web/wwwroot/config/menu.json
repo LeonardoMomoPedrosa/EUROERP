@@ -108,6 +108,7 @@
             { "label": "Outras (novo)", "route": "/vendas/nfe/outras-novo" },
             { "label": "Imprimir", "route": "/vendas/nfe/imprimir" },
             { "label": "Cancelar NFe", "route": "/vendas/nfe/cancelar" },
+            { "label": "Inutilizar NFe", "route": "/vendas/nfe/inutilizar" },
             { "label": "Cancelar NFES", "route": "/vendas/nfe/cancelar-lote" },
             { "label": "Carta de correção", "route": "/vendas/nfe/carta-correcao" },
             { "label": "Relatório", "route": "/vendas/nfe/relatorio" },
@@ -198,7 +199,8 @@
         },
         { "label": "Alíq. ICMS", "route": "/diretoria/icms" },
         { "label": "Configuração NFES", "route": "/diretoria/admin/nfes-config" },
-        { "label": "Cancel Manual NFES", "route": "/diretoria/admin/nfes-cancel-manual" }
+        { "label": "Cancel Manual NFES", "route": "/diretoria/admin/nfes-cancel-manual" },
+        { "label": "Master SQL", "route": "/diretoria/master/sql" }
       ]
     },
     {
@@ -206,7 +208,8 @@
       "label": "Cadastro",
       "children": [
         { "label": "Alterar senha", "route": "/cadastro/alterar-senha" },
-        { "label": "Alterar e-mail", "route": "/cadastro/alterar-email" }
+        { "label": "Alterar e-mail", "route": "/cadastro/alterar-email" },
+        { "label": "Widgets", "route": "/cadastro/widgets" }
       ]
     }
   ]

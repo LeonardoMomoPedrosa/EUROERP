@@ -1,0 +1,129 @@
+﻿@page "/financeiro/contas-a-pagar/relatorios/pagto-grupo/detalhe"
+@using EUROERP.Application.AccountsPayable
+@using EUROERP.Application.Suppliers
+@rendermode InteractiveServer
+
+<PageTitle>Pagamentos por Fornecedor</PageTitle>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Pagamentos por Fornecedor</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-warning">@_error</div>
+        }
+        else if (_groupName != null)
+        {
+            <p class="mb-2"><strong>Grupo:</strong> @_groupName</p>
+            <p class="small text-muted mb-3">Período: @_firstDateText até @_lastDateText</p>
+            @if (_rows == null)
+            {
+                <p class="text-muted">Carregando...</p>
+            }
+            else if (_rows.Count == 0)
+            {
+                <p class="text-muted">Nenhum pagamento no período para este grupo.</p>
+            }
+            else
+            {
+                var total = _rows.Sum(r => r.Amount);
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Fornecedor</th>
+                                <th class="text-end">Total (R$)</th>
+                                <th class="text-end">Peso</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _rows)
+                            {
+                                var pct = total > 0 ? (r.Amount / total) * 100 : 0m;
+                                <tr>
+                                    <td>@r.SocialName</td>
+                                    <td class="text-end">@r.Amount.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@pct.ToString("N2", _ptBr)%</td>
+                                </tr>
+                            }
+                            <tr class="table-warning">
+                                <td class="text-end"><strong>TOTAL</strong></td>
+                                <td class="text-end"><strong>@total.ToString("N2", _ptBr)</strong></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <a href="@_backUrl" class="btn btn-secondary btn-sm">Voltar</a>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private string? _groupName;
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private string? _error;
+    private IReadOnlyList<PaymentBySupplierRowDto>? _rows;
+    private string _backUrl = "";
+
+    [Inject] private IBillsToPayReportPaymentByGroupService ReportService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService SupplierReference { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("group_id"), out var groupId) || groupId <= 0)
+        {
+            _error = "Parâmetro group_id inválido.";
+            return;
+        }
+        if (!DateTime.TryParseExact(q.GetValueOrDefault("first"), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var first))
+        {
+            _error = "Parâmetro first (data inicial) inválido.";
+            return;
+        }
+        if (!DateTime.TryParseExact(q.GetValueOrDefault("last"), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var last))
+        {
+            _error = "Parâmetro last (data final) inválido.";
+            return;
+        }
+
+        _firstDateText = first.ToString("dd/MM/yyyy", _ptBr);
+        _lastDateText = last.ToString("dd/MM/yyyy", _ptBr);
+        _backUrl = $"{Navigation.BaseUri}financeiro/contas-a-pagar/relatorios/pagto-grupo?first={first:yyyy-MM-dd}&last={last:yyyy-MM-dd}";
+
+        var groups = await SupplierReference.GetSupplierGroupsAsync();
+        _groupName = groups.FirstOrDefault(g => g.Id == groupId)?.Name ?? "Grupo " + groupId;
+
+        try
+        {
+            _rows = await ReportService.GetPaymentsByGroupAndDateAsync(first.Date, last.Date, groupId);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+}

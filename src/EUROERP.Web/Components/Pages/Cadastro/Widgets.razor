@@ -1,0 +1,153 @@
+@page "/cadastro/widgets"
+@using System.Security.Claims
+@using EUROERP.Application.Widgets
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Cadastro - Widgets</PageTitle>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Widgets do dashboard</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Selecione os widgets que deseja exibir na página inicial (dashboard).</p>
+        @if (!_userId.HasValue)
+        {
+            <p class="text-warning">Usuário não identificado.</p>
+        }
+        else
+        {
+            <div class="mb-3">
+                @foreach (var widget in _availableWidgets)
+                {
+                    <div class="form-check mb-3">
+                        <input class="form-check-input mt-1" type="checkbox" id="widget_@widget.Code"
+                               checked="@_selectedCodes.Contains(widget.Code)"
+                               @onchange="@(() => ToggleWidget(widget.Code))" />
+                        <label class="form-check-label w-100" for="widget_@widget.Code">
+                            <span class="fw-medium">@widget.Label</span>
+                            @if (!string.IsNullOrWhiteSpace(widget.Description))
+                            {
+                                <br /><span class="text-muted small">@widget.Description</span>
+                            }
+                        </label>
+                    </div>
+                }
+            </div>
+            @if (_selectedCodes.Contains(WidgetCodes.Shortcuts))
+            {
+                <div class="border rounded p-3 mb-3 bg-light">
+                    <h6 class="mb-2">Atalhos exibidos no dashboard</h6>
+                    <p class="text-muted small mb-2">Marque os atalhos que deseja ver na página inicial.</p>
+                    <div class="shortcuts-three-columns">
+                        @foreach (var item in _linkableMenuItems)
+                        {
+                            var sep = " » ";
+                            var idx = item.Label.LastIndexOf(sep, StringComparison.Ordinal);
+                            var shortcutPrefix = idx >= 0 ? item.Label[..(idx + sep.Length)] : "";
+                            var shortcutLastPart = idx >= 0 ? item.Label[(idx + sep.Length)..] : item.Label;
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="shortcut_@(item.Route.Replace("/", "_"))"
+                                       checked="@_selectedShortcutRoutes.Contains(item.Route)"
+                                       @onchange="@(() => ToggleShortcut(item.Route))" />
+                                <label class="form-check-label small" for="shortcut_@(item.Route.Replace("/", "_"))">@shortcutPrefix<strong>@shortcutLastPart</strong></label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                @(_saving ? "Salvando..." : "Salvar")
+            </button>
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") mt-3 mb-0">@_message</div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Inject] private IWidgetPreferenceService WidgetService { get; set; } = null!;
+    [Inject] private IUserShortcutService ShortcutService { get; set; } = null!;
+    [Inject] private IMenuService MenuService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthState { get; set; } = null!;
+
+    private Guid? _userId;
+    private IReadOnlyList<WidgetDefinitionDto> _availableWidgets = Array.Empty<WidgetDefinitionDto>();
+    private IReadOnlyList<(string Label, string Route)> _linkableMenuItems = Array.Empty<(string, string)>();
+    private HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _selectedShortcutRoutes = new(StringComparer.OrdinalIgnoreCase);
+    private bool _saving;
+    private string? _message;
+    private bool _messageSuccess;
+
+    protected override void OnInitialized()
+    {
+        _availableWidgets = WidgetService.GetAvailableWidgets();
+        _linkableMenuItems = MenuService.GetLinkableMenuItems();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync().ConfigureAwait(false);
+        var idClaim = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(idClaim, out var userId))
+        {
+            _userId = userId;
+            var enabled = await WidgetService.GetEnabledWidgetCodesAsync(userId).ConfigureAwait(false);
+            _selectedCodes = new HashSet<string>(enabled, StringComparer.OrdinalIgnoreCase);
+            var shortcuts = await ShortcutService.GetShortcutsAsync(userId).ConfigureAwait(false);
+            _selectedShortcutRoutes = new HashSet<string>(shortcuts.Select(s => s.Route), StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void ToggleWidget(string code)
+    {
+        if (_selectedCodes.Contains(code))
+            _selectedCodes.Remove(code);
+        else
+            _selectedCodes.Add(code);
+        _message = null;
+    }
+
+    private void ToggleShortcut(string route)
+    {
+        if (_selectedShortcutRoutes.Contains(route))
+            _selectedShortcutRoutes.Remove(route);
+        else
+            _selectedShortcutRoutes.Add(route);
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!_userId.HasValue || _saving) return;
+        _saving = true;
+        _message = null;
+        try
+        {
+            await WidgetService.SetEnabledWidgetsAsync(_userId.Value, _selectedCodes.ToList()).ConfigureAwait(false);
+            if (_selectedCodes.Contains(WidgetCodes.Shortcuts))
+            {
+                var routesInOrder = _linkableMenuItems
+                    .Where(x => _selectedShortcutRoutes.Contains(x.Route))
+                    .Select(x => x.Route)
+                    .ToList();
+                await ShortcutService.SetShortcutsAsync(_userId.Value, routesInOrder).ConfigureAwait(false);
+            }
+            _message = "Preferências salvas.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

@@ -1,0 +1,192 @@
+@page "/diretoria/usuarios/mercados"
+@using EUROERP.Application.Markets
+@using EUROERP.Application.UserManagement
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Mercados do usuário</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Mercados do usuário</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label">Usuário</label>
+                <select class="form-select form-select-sm" value="@_selectedUserId" @onchange="OnUserChangedAsync" disabled="@_loadingUsers">
+                    <option value="">Selecione o usuário</option>
+                    @foreach (var u in _users)
+                    {
+                        <option value="@u.UserId">@u.UserName</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (string.IsNullOrEmpty(_selectedUserId))
+        {
+            <p class="text-muted mb-0">Selecione um usuário para gerenciar os mercados.</p>
+        }
+        else if (_loadingMarkets)
+        {
+            <p class="text-muted mb-0">Carregando...</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12 col-md-5">
+                    <label class="form-label">Mercados disponíveis</label>
+                    <select class="form-select" size="8" @bind="_availableSelection">
+                        @foreach (var m in _available)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-2 d-flex flex-md-column justify-content-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AddAsync" disabled="@(_busy || string.IsNullOrEmpty(_availableSelection))">Adicionar &raquo;</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="RemoveAsync" disabled="@(_busy || string.IsNullOrEmpty(_assignedSelection))">&laquo; Remover</button>
+                </div>
+                <div class="col-12 col-md-5">
+                    <label class="form-label">Mercados do usuário</label>
+                    <select class="form-select" size="8" @bind="_assignedSelection">
+                        @foreach (var m in _assigned)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<UserListDto> _users = new();
+    private List<MarketDto> _available = new();
+    private List<MarketDto> _assigned = new();
+    private string _selectedUserId = "";
+    private string _availableSelection = "";
+    private string _assignedSelection = "";
+    private bool _loadingUsers = true;
+    private bool _loadingMarkets;
+    private bool _busy;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private IUserManagementService UserManagement { get; set; } = null!;
+    [Inject] private IMarketUserService MarketUserService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _users = (await UserManagement.ListUsersAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loadingUsers = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnUserChangedAsync(ChangeEventArgs e)
+    {
+        _selectedUserId = e.Value?.ToString() ?? "";
+        _availableSelection = _assignedSelection = "";
+        _message = null;
+        await LoadMarketsAsync();
+    }
+
+    private async Task LoadMarketsAsync()
+    {
+        if (!Guid.TryParse(_selectedUserId, out var userId))
+        {
+            _available.Clear();
+            _assigned.Clear();
+            StateHasChanged();
+            return;
+        }
+
+        _loadingMarkets = true;
+        StateHasChanged();
+        try
+        {
+            _assigned = (await MarketUserService.GetUserMarketsAsync(userId)).ToList();
+            _available = (await MarketUserService.GetAvailableMarketsAsync(userId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loadingMarkets = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (!Guid.TryParse(_selectedUserId, out var userId) || !byte.TryParse(_availableSelection, out var marketId))
+            return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            await MarketUserService.AddUserMarketAsync(userId, marketId);
+            _availableSelection = "";
+            await LoadMarketsAsync();
+            _message = "Mercado adicionado.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        if (!Guid.TryParse(_selectedUserId, out var userId) || !byte.TryParse(_assignedSelection, out var marketId))
+            return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            await MarketUserService.RemoveUserMarketAsync(userId, marketId);
+            _assignedSelection = "";
+            await LoadMarketsAsync();
+            _message = "Mercado removido.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,182 @@
+@page "/financeiro/contas-a-pagar/pendentes"
+@using EUROERP.Application.AccountsPayable
+@rendermode InteractiveServer
+
+<PageTitle>Contas a Pagar - Pendentes</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Aprovar Contas a Pagar</h5>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Load" disabled="@_loading">
+            @(_loading ? "Carregando..." : "Atualizar")
+        </button>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger py-2 mb-2">@_error</div>
+        }
+        @if (!string.IsNullOrEmpty(_success))
+        {
+            <div class="alert alert-success py-2 mb-2">@_success</div>
+        }
+        <p class="small text-muted mb-2">Contas com status <strong>U</strong> (pendentes de aprovação). Ao aprovar, o status passa para <strong>A</strong>.</p>
+        <div class="mb-2">
+            <button type="button" class="btn btn-primary btn-sm" @onclick="ApproveSelected" disabled="@(_saving || _selected.Count == 0)">
+                @(_saving ? "Aprovando..." : $"Aprovar selecionadas ({_selected.Count})")
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-1" @onclick="SelectAll" disabled="@(_rows.Count == 0)">Marcar todas</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-1" @onclick="ClearSelection" disabled="@(_selected.Count == 0)">Limpar</button>
+        </div>
+    </div>
+</div>
+
+@if (_loaded)
+{
+    <div class="card">
+        <div class="card-body p-0">
+            @if (_rows.Count == 0)
+            {
+                <p class="text-muted p-3 mb-0">Nenhuma conta pendente de aprovação.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center" style="width:40px;"></th>
+                                <th>Vencimento</th>
+                                <th>Fornecedor</th>
+                                <th class="text-center">Parc.</th>
+                                <th class="text-center">Pedido</th>
+                                <th class="text-end">R$</th>
+                                <th class="text-end">Saldo</th>
+                                <th>Obs</th>
+                                <th>Pagto.</th>
+                                <th>Usr.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _rows)
+                            {
+                                var key = Key(row.PkId, row.TermNo);
+                                <tr>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input" checked="@_selected.Contains(key)"
+                                               @onchange="e => Toggle(key, (bool)(e.Value ?? false))" />
+                                    </td>
+                                    <td class="text-center">@row.PkId<br /><span class="small text-muted">@row.DueDate</span></td>
+                                    <td>@row.SocialName</td>
+                                    <td class="text-center">@row.TermNo/@row.Terms</td>
+                                    <td class="text-center small">@row.OrderDate</td>
+                                    <td class="text-end">@row.ConvertedAmount.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@row.Balance.ToString("N2", _ptBr)</td>
+                                    <td class="small">@row.Memo</td>
+                                    <td class="small">@row.PymMethod</td>
+                                    <td class="small">@row.UserId</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private IReadOnlyList<BillsToPayReportRowDto> _rows = Array.Empty<BillsToPayReportRowDto>();
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private bool _loading;
+    private bool _saving;
+    private bool _loaded;
+    private string? _error;
+    private string? _success;
+
+    [Inject] private IBillsToPayApproveService ApproveService { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private static string Key(int billId, byte termNo) => $"{billId}_{termNo}";
+
+    private void Toggle(string key, bool on)
+    {
+        if (on) _selected.Add(key);
+        else _selected.Remove(key);
+    }
+
+    private void SelectAll()
+    {
+        _selected.Clear();
+        foreach (var r in _rows)
+            _selected.Add(Key(r.PkId, r.TermNo));
+    }
+
+    private void ClearSelection() => _selected.Clear();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = null;
+        _success = null;
+        try
+        {
+            _rows = await ApproveService.SearchPendingAsync();
+            _selected.Clear();
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _rows = Array.Empty<BillsToPayReportRowDto>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApproveSelected()
+    {
+        if (_selected.Count == 0) return;
+        try
+        {
+            var ok = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja mesmo aprovar todos os marcados?");
+            if (!ok) return;
+        }
+        catch
+        {
+            // proceed if confirm unavailable
+        }
+
+        _saving = true;
+        _error = null;
+        _success = null;
+        try
+        {
+            var items = new List<(int BillId, byte TermNo)>();
+            foreach (var key in _selected)
+            {
+                var parts = key.Split('_');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var billId) && byte.TryParse(parts[1], out var termNo))
+                    items.Add((billId, termNo));
+            }
+
+            await ApproveService.ApproveAsync(items);
+            _success = "Autorizações efetuadas com sucesso.";
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

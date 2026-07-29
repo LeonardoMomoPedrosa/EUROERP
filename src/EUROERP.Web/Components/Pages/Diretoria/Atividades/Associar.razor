@@ -1,0 +1,172 @@
+@page "/diretoria/atividades/associar"
+@using EUROERP.Application.Activities
+@using EUROERP.Application.RoleActivities
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Associar atividades</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Associar atividades às funções</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        @if (_loading)
+        {
+            <p class="text-muted mb-0">Carregando...</p>
+        }
+        else if (_activities.Count == 0)
+        {
+            <p class="text-muted mb-0">Nenhuma atividade cadastrada. Cadastre em <a href="/diretoria/atividades/gerenciar">Gerenciar</a>.</p>
+        }
+        else if (_roles.Count == 0)
+        {
+            <p class="text-muted mb-0">Nenhuma função cadastrada. Crie em <a href="/diretoria/usuarios/funcoes">Funções</a>.</p>
+        }
+        else
+        {
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Função</label>
+                    <select class="form-select form-select-sm" value="@_selectedRoleId" @onchange="OnRoleChanged">
+                        <option value="">Selecione a função</option>
+                        @foreach (var r in _roles)
+                        {
+                            <option value="@r.RoleId">@r.RoleName</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (string.IsNullOrEmpty(_selectedRoleId))
+            {
+                <p class="text-muted mb-0">Selecione uma função para definir as atividades permitidas.</p>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SelectAll">Selecionar tudo</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="DeselectAll">Desmarcar tudo</button>
+                    <button type="button" class="btn btn-sm btn-primary ms-auto" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                </div>
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-1 table-list">
+                    @foreach (var a in _activities)
+                    {
+                        var actvId = a.ActvId;
+                        var isChecked = _selectedActvIds.Contains(actvId);
+                        <div class="col">
+                            <label class="d-flex align-items-center gap-2 mb-0" title="@a.Code">
+                                <input type="checkbox" class="form-check-input mt-0" checked="@isChecked"
+                                       @onchange="e => ToggleActivity(actvId, (bool)e.Value!)" />
+                                <span>@a.Description <span class="text-muted small">(@a.Code)</span></span>
+                            </label>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private List<ActivityDto> _activities = new();
+    private List<RoleWithActivitiesDto> _roles = new();
+    private HashSet<int> _selectedActvIds = new();
+    private string _selectedRoleId = "";
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private IActivityService ActivityService { get; set; } = null!;
+    [Inject] private IRoleActivityService RoleActivityService { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _activities = (await ActivityService.ListActivitiesAsync()).ToList();
+            _roles = (await RoleActivityService.GetRolesWithActivitiesAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _message = "Erro ao carregar: " + (ex.InnerException?.Message ?? ex.Message);
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnRoleChanged(ChangeEventArgs e)
+    {
+        _selectedRoleId = e.Value?.ToString() ?? "";
+        _message = null;
+        var role = _roles.FirstOrDefault(r => r.RoleId.ToString() == _selectedRoleId);
+        _selectedActvIds = role?.ActvIds.ToHashSet() ?? new HashSet<int>();
+        StateHasChanged();
+    }
+
+    private void SelectAll()
+    {
+        _selectedActvIds = _activities.Select(a => a.ActvId).ToHashSet();
+        StateHasChanged();
+    }
+
+    private void DeselectAll()
+    {
+        _selectedActvIds.Clear();
+        StateHasChanged();
+    }
+
+    private void ToggleActivity(int actvId, bool isChecked)
+    {
+        if (isChecked) _selectedActvIds.Add(actvId);
+        else _selectedActvIds.Remove(actvId);
+        StateHasChanged();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Guid.TryParse(_selectedRoleId, out var roleId)) return;
+        _saving = true;
+        _message = null;
+        try
+        {
+            await RoleActivityService.SetRoleActivitiesAsync(roleId, _selectedActvIds.ToList());
+            var idx = _roles.FindIndex(r => r.RoleId == roleId);
+            if (idx >= 0)
+            {
+                _roles[idx] = new RoleWithActivitiesDto
+                {
+                    RoleId = _roles[idx].RoleId,
+                    RoleName = _roles[idx].RoleName,
+                    ActvIds = _selectedActvIds.ToList()
+                };
+            }
+            _message = "Atividades da função salvas.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}

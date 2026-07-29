@@ -1,7 +1,431 @@
 ﻿@page "/"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
+@using EUROERP.Application.NFe
+@using EUROERP.Application.RevenueReporting
+@using EUROERP.Application.Widgets
+@using EUROERP.Infrastructure.NFe
+@attribute [Authorize]
+@rendermode InteractiveServer
 
-<PageTitle>Início</PageTitle>
+<PageTitle>EUROERP</PageTitle>
 
-<h1>EUROERP</h1>
-<p class="text-muted">Painel principal — selecione um módulo no menu acima.</p>
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="mb-0">Bem-vindo</h1>
+    @if (_userId.HasValue)
+    {
+        <a href="/cadastro/widgets" class="btn btn-outline-secondary btn-sm">Configurar widgets</a>
+    }
+</div>
+
+@if (!_userId.HasValue)
+{
+    <p>Carregando...</p>
+}
+else
+{
+    <div class="row g-3">
+        @* Widget obrigatório: certificado digital NFe — sempre exibido *@
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card h-100 @_certCardCss">
+                <div class="card-header py-2 @_certHeaderCss">
+                    <h6 class="mb-0 small">Certificado digital NFe</h6>
+                </div>
+                <div class="card-body py-2">
+                    @if (_certLoading)
+                    {
+                        <p class="text-muted mb-0 small">Carregando...</p>
+                    }
+                    else if (!string.IsNullOrEmpty(_certError))
+                    {
+                        <p class="text-danger mb-0 small">@_certError</p>
+                    }
+                    else
+                    {
+                        <dl class="row mb-0 small g-1">
+                            <dt class="col-4 col-sm-3 text-muted">Emitente</dt>
+                            <dd class="col-8 col-sm-9 text-break mb-1">@_certSubject</dd>
+                            <dt class="col-4 col-sm-3 text-muted">Validade até</dt>
+                            <dd class="col-8 col-sm-9 mb-0">
+                                <span class="@(_certExpiringSoon || _certExpired ? "cert-validity-blink text-danger cert-validity-date" : "fw-bold cert-validity-date")">@_certExpirationText</span>
+                            </dd>
+                        </dl>
+                        @if (_certExpiringSoon)
+                        {
+                            <p class="text-danger fw-bold mb-0 small mt-2">Renovar o Certificado</p>
+                        }
+                        @if (_certExpired)
+                        {
+                            <p class="text-danger mb-0 small mt-2 fw-medium">Certificado vencido.</p>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (_enabledWidgets.Count == 0)
+        {
+            <div class="col-12">
+                <p class="text-muted mb-0">Nenhum widget selecionado para o dashboard.</p>
+                <p class="mt-2">
+                    <a href="/cadastro/widgets" class="btn btn-outline-primary">Configurar widgets</a>
+                </p>
+            </div>
+        }
+        else
+        {
+        @if (_enabledWidgets.Contains(WidgetCodes.DailySales))
+        {
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header py-2">
+                        <h6 class="mb-0 small">Faturamento por dia</h6>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (_widgetDataLoading)
+                        {
+                            <p class="text-muted mb-0 small">Carregando...</p>
+                        }
+                        else if (_monthlyResult?.Days != null && _monthlyResult.Days.Count > 0)
+                        {
+                            <div class="chart-container" style="position: relative; height: 200px;">
+                                <canvas id="@_dailySalesChartId"></canvas>
+                            </div>
+                            <p class="small text-muted mt-1 mb-0">@_monthlyResult.Month / @_monthlyResult.Year — cache 2h</p>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">Sem dados para o mês atual.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_enabledWidgets.Contains(WidgetCodes.DailySalesAccumulated))
+        {
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header py-2">
+                        <h6 class="mb-0 small">Faturamento por dia (acumulado)</h6>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (_widgetDataLoading)
+                        {
+                            <p class="text-muted mb-0 small">Carregando...</p>
+                        }
+                        else if (_monthlyResult?.Days != null && _monthlyResult.Days.Count > 0)
+                        {
+                            <div class="chart-container" style="position: relative; height: 200px;">
+                                <canvas id="@_dailySalesAccumulatedChartId"></canvas>
+                            </div>
+                            <p class="small text-muted mt-1 mb-0">@_monthlyResult.Month / @_monthlyResult.Year — cache 2h</p>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">Sem dados para o mês atual.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_enabledWidgets.Contains(WidgetCodes.LastNfesGenerated))
+        {
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 small">Últimas NFes geradas</h6>
+                        <a href="/vendas/nfe/imprimir" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Ver todas">Ver todas</a>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (_lastNfesLoading)
+                        {
+                            <p class="text-muted mb-0 small">Carregando...</p>
+                        }
+                        else if (_lastNfesList.Count == 0)
+                        {
+                            <p class="text-muted mb-0 small">Nenhuma NFe emitida.</p>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-borderless mb-0 small">
+                                    <thead>
+                                        <tr>
+                                            <th>Pedido</th>
+                                            <th># NF</th>
+                                            <th>Cliente</th>
+                                            <th class="text-end">PDF / XML</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in _lastNfesList)
+                                        {
+                                            var isCancelada = !string.IsNullOrEmpty(item.NfeCancelProtocol);
+                                            <tr class="@(isCancelada ? "nfe-widget-row-cancelada" : "")">
+                                                <td class="fw-medium">@item.OrderId</td>
+                                                <td>
+                                                    @(item.Receipt?.ToString() ?? "—")
+                                                    @if (isCancelada)
+                                                    {
+                                                        <span class="badge bg-secondary ms-1" title="Nota cancelada">Cancelada</span>
+                                                    }
+                                                </td>
+                                                <td class="text-truncate" style="max-width: 120px;" title="@item.SocialName">@item.SocialName</td>
+                                                <td class="text-end">
+                                                    @if (!string.IsNullOrEmpty(item.NfeKey))
+                                                    {
+                                                        var pdfPath = $"{item.OrderId}/DFE{item.NfeKey}.pdf";
+                                                        var xmlPath = $"{item.OrderId}/DFE{item.NfeKey}.xml";
+                                                        <a href="/NFE_FILES/@pdfPath" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-danger py-0 px-1">PDF</a>
+                                                        <a href="/NFE_FILES/@xmlPath" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary py-0 px-1">XML</a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">—</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="small text-muted mt-1 mb-0">Últimas 7 emitidas</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_enabledWidgets.Contains(WidgetCodes.Shortcuts))
+        {
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header py-2">
+                        <h6 class="mb-0 small">Atalhos</h6>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (_userShortcuts.Count == 0)
+                        {
+                            <p class="text-muted mb-0 small">Nenhum atalho selecionado.</p>
+                            <a href="/cadastro/widgets" class="btn btn-sm btn-outline-primary mt-2">Configurar widgets</a>
+                        }
+                        else
+                        {
+                            <ul class="list-unstyled mb-0 dashboard-shortcuts">
+                                @foreach (var shortcut in _userShortcuts)
+                                {
+                                    var label = _shortcutRouteToLabel.GetValueOrDefault(shortcut.Route) ?? shortcut.Route;
+                                    var sep = " » ";
+                                    var idx = label.LastIndexOf(sep, StringComparison.Ordinal);
+                                    var shortcutPrefix = idx >= 0 ? label[..(idx + sep.Length)] : "";
+                                    var shortcutLastPart = idx >= 0 ? label[(idx + sep.Length)..] : label;
+                                    <li>
+                                        <a href="@shortcut.Route" class="dashboard-shortcut-link">@shortcutPrefix<strong>@shortcutLastPart</strong></a>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        }
+    </div>
+}
+
+@code {
+    private const string _dailySalesChartId = "dailySalesWidgetChart";
+    private const string _dailySalesAccumulatedChartId = "dailySalesAccumulatedWidgetChart";
+
+    [Inject] private IWidgetPreferenceService WidgetPreferenceService { get; set; } = null!;
+    [Inject] private IUserShortcutService UserShortcutService { get; set; } = null!;
+    [Inject] private IMenuService MenuService { get; set; } = null!;
+    [Inject] private IWidgetDailySalesDataService WidgetDailySalesDataService { get; set; } = null!;
+    [Inject] private INfeIndividualService NfeService { get; set; } = null!;
+    [Inject] private INfeCertificateProvider CertProvider { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthState { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    private Guid? _userId;
+    private IReadOnlyList<string> _enabledWidgets = Array.Empty<string>();
+    private bool _certLoading = true;
+    private string? _certError;
+    private string _certSubject = "";
+    private string _certExpirationText = "";
+    private bool _certExpired;
+    private bool _certExpiringSoon;
+    private string _certCardCss = "";
+    private string _certHeaderCss = "";
+    private bool _widgetDataLoading = true;
+    private MonthlyRevenueResultDto? _monthlyResult;
+    private bool _lastNfesLoading;
+    private IReadOnlyList<LastEmittedNfeDto> _lastNfesList = Array.Empty<LastEmittedNfeDto>();
+    private IReadOnlyList<UserShortcutDto> _userShortcuts = Array.Empty<UserShortcutDto>();
+    private Dictionary<string, string> _shortcutRouteToLabel = new(StringComparer.OrdinalIgnoreCase);
+
+    private void LoadCertificateInfo()
+    {
+        _certLoading = true;
+        _certError = null;
+        _certSubject = "";
+        _certExpirationText = "";
+        _certExpired = false;
+        _certExpiringSoon = false;
+        _certCardCss = "";
+        _certHeaderCss = "";
+        try
+        {
+            var cert = CertProvider.GetCertificate();
+            _certSubject = cert.Subject;
+            var notAfter = cert.NotAfter;
+            _certExpirationText = notAfter.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
+            var now = DateTime.Now;
+            _certExpired = notAfter < now;
+            _certExpiringSoon = !_certExpired && (notAfter - now).TotalDays <= 45;
+            if (_certExpired || _certExpiringSoon)
+            {
+                _certCardCss = "border-danger";
+                _certHeaderCss = "bg-danger bg-opacity-10 text-danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            _certError = ex.Message;
+            _certCardCss = "border-danger";
+            _certHeaderCss = "bg-danger bg-opacity-10 text-danger";
+        }
+        finally
+        {
+            _certLoading = false;
+        }
+    }
+
+    private static double[] Cumulative(IEnumerable<double> values)
+    {
+        var list = new List<double>();
+        var acc = 0.0;
+        foreach (var v in values)
+        {
+            acc += v;
+            list.Add(acc);
+        }
+        return list.ToArray();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync().ConfigureAwait(false);
+        var idClaim = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(idClaim, out var userId))
+        {
+            _userId = userId;
+            _enabledWidgets = await WidgetPreferenceService.GetEnabledWidgetCodesAsync(userId).ConfigureAwait(false);
+
+            LoadCertificateInfo();
+
+            var needsMonthlyData = _enabledWidgets.Contains(WidgetCodes.DailySales) || _enabledWidgets.Contains(WidgetCodes.DailySalesAccumulated);
+            var needsLastNfes = _enabledWidgets.Contains(WidgetCodes.LastNfesGenerated);
+
+            if (needsMonthlyData)
+            {
+                try
+                {
+                    _monthlyResult = await WidgetDailySalesDataService.GetCurrentMonthRevenueAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    _monthlyResult = null;
+                }
+                finally
+                {
+                    _widgetDataLoading = false;
+                }
+            }
+            else
+            {
+                _widgetDataLoading = false;
+            }
+
+            if (needsLastNfes)
+            {
+                _lastNfesLoading = true;
+                try
+                {
+                    _lastNfesList = await NfeService.GetLastEmittedNfeListAsync(7).ConfigureAwait(false);
+                }
+                catch
+                {
+                    _lastNfesList = Array.Empty<LastEmittedNfeDto>();
+                }
+                finally
+                {
+                    _lastNfesLoading = false;
+                }
+            }
+
+            if (_enabledWidgets.Contains(WidgetCodes.Shortcuts))
+            {
+                _userShortcuts = await UserShortcutService.GetShortcutsAsync(userId).ConfigureAwait(false);
+                var linkable = MenuService.GetLinkableMenuItems();
+                _shortcutRouteToLabel = linkable.ToDictionary(x => x.Route, x => x.Label, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var hasData = _monthlyResult?.Days != null && _monthlyResult.Days.Count > 0;
+        var showBar = _enabledWidgets.Contains(WidgetCodes.DailySales) && hasData;
+        var showCumulative = _enabledWidgets.Contains(WidgetCodes.DailySalesAccumulated) && hasData;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("monthlyRevenueChart.destroy").ConfigureAwait(false);
+        }
+        catch (JSException) { }
+
+        if (showBar)
+        {
+            try
+            {
+                var labels = _monthlyResult!.Days.Select(d => d.Day.ToString()).ToArray();
+                var config = new
+                {
+                    labels,
+                    datasets = new[]
+                    {
+                        new { label = "Loja R$", data = _monthlyResult.Days.Select(d => (double)d.LojaAmount).ToArray(), borderColor = "#198754", backgroundColor = "rgba(25,135,84,0.7)" },
+                        new { label = "Site", data = _monthlyResult.Days.Select(d => (double)d.SiteAmount).ToArray(), borderColor = "#0d6efd", backgroundColor = "rgba(13,110,253,0.1)" },
+                        new { label = "ML", data = _monthlyResult.Days.Select(d => (double)d.MeliAmount).ToArray(), borderColor = "#fd7e14", backgroundColor = "rgba(253,126,20,0.1)" }
+                    }
+                };
+                await JSRuntime.InvokeVoidAsync("monthlyRevenueChart.render", _dailySalesChartId, config).ConfigureAwait(false);
+            }
+            catch (JSException) { }
+        }
+
+        if (showCumulative)
+        {
+            try
+            {
+                var labels = _monthlyResult!.Days.Select(d => d.Day.ToString()).ToArray();
+                var cumLoja = Cumulative(_monthlyResult.Days.Select(d => (double)d.LojaAmount));
+                var cumSite = Cumulative(_monthlyResult.Days.Select(d => (double)d.SiteAmount));
+                var cumMeli = Cumulative(_monthlyResult.Days.Select(d => (double)d.MeliAmount));
+                var totalPerDay = _monthlyResult.Days.Select(d => (double)(d.LojaAmount + d.SiteAmount + d.MeliAmount));
+                var cumTotal = Cumulative(totalPerDay);
+                var configCumulative = new
+                {
+                    labels,
+                    datasets = new[]
+                    {
+                        new { label = "Loja R$", data = cumLoja, borderColor = "#198754", backgroundColor = "rgba(25,135,84,0.1)" },
+                        new { label = "Site", data = cumSite, borderColor = "#0d6efd", backgroundColor = "rgba(13,110,253,0.1)" },
+                        new { label = "ML", data = cumMeli, borderColor = "#fd7e14", backgroundColor = "rgba(253,126,20,0.1)" },
+                        new { label = "Total", data = cumTotal, borderColor = "#212529", backgroundColor = "rgba(33,37,41,0.1)" }
+                    }
+                };
+                await JSRuntime.InvokeVoidAsync("monthlyRevenueChart.renderCumulative", _dailySalesAccumulatedChartId, configCumulative).ConfigureAwait(false);
+            }
+            catch (JSException) { }
+        }
+    }
+}

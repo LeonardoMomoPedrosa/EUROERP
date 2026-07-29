@@ -1,0 +1,357 @@
+@page "/diretoria/usuarios/funcoes"
+@using EUROERP.Application.Roles
+@using EUROERP.Application.UserRoles
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Funções</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Funções</h5>
+        <button type="button" class="btn btn-sm btn-primary" @onclick="ToggleNewForm" disabled="@_loading">
+            @(_showNewForm ? "Cancelar" : "Nova função")
+        </button>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        @if (_showNewForm)
+        {
+            <div class="border rounded p-3 mb-3 bg-light">
+                <h6 class="mb-3">Nova função</h6>
+                <div class="row g-2">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Nome *</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_newName" maxlength="256" />
+                        <span class="text-danger small">@_newNameError</span>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Descrição</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_newDescription" maxlength="256" />
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="CreateRoleAsync" disabled="@_creating">@(_creating ? "Criando..." : "Criar")</button>
+                </div>
+            </div>
+        }
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover table-bordered table-list">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nome</th>
+                        <th>Descrição</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_loading)
+                    {
+                        <tr><td colspan="3" class="text-center text-muted">Carregando...</td></tr>
+                    }
+                    else if (_roles.Count == 0)
+                    {
+                        <tr><td colspan="3" class="text-center text-muted">Nenhuma função.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var r in _roles)
+                        {
+                            <tr>
+                                @if (_editingRoleId == r.RoleId)
+                                {
+                                    <td><input type="text" class="form-control form-control-sm" @bind="_editName" maxlength="256" /></td>
+                                    <td><input type="text" class="form-control form-control-sm" @bind="_editDescription" maxlength="256" /></td>
+                                    <td class="align-middle">
+                                        <button type="button" class="btn btn-sm btn-primary" @onclick="SaveEditAsync" disabled="@_saving">Salvar</button>
+                                        <button type="button" class="btn btn-sm btn-secondary ms-1" @onclick="CancelEdit">Cancelar</button>
+                                    </td>
+                                }
+                                else
+                                {
+                                    <td class="align-middle">@r.RoleName</td>
+                                    <td class="align-middle">@(r.Description ?? "—")</td>
+                                    <td class="align-middle">
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-primary" @onclick="() => StartEdit(r)">Alterar</button>
+                                        @if (!IsProtectedRole(r.RoleName))
+                                        {
+                                            <span class="mx-1">|</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-danger" @onclick="() => DeleteRoleAsync(r.RoleId, r.RoleName)">Excluir</button>
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Atribuir funções aos usuários</h5>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <p class="text-muted mb-0">Carregando...</p>
+        }
+        else if (_roles.Count == 0)
+        {
+            <p class="text-muted mb-0">Crie uma função acima antes de atribuir.</p>
+        }
+        else if (_usersWithRoles.Count == 0)
+        {
+            <p class="text-muted mb-0">Nenhum usuário. Crie usuários em <a href="/diretoria/usuarios/novo">Novo usuário</a>.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-bordered table-list">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Usuário</th>
+                            @foreach (var r in _roles)
+                            {
+                                <th class="text-center">@r.RoleName</th>
+                            }
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _usersWithRoles)
+                        {
+                            var userId = u.UserId;
+                            <tr>
+                                <td class="align-middle">@u.UserName</td>
+                                @foreach (var r in _roles)
+                                {
+                                    var roleId = r.RoleId;
+                                    var isChecked = _selectedRoleIds.TryGetValue(userId, out var set) && set.Contains(roleId);
+                                    <td class="text-center align-middle">
+                                        <input type="checkbox" class="form-check-input" checked="@isChecked"
+                                               @onchange="e => ToggleRole(userId, roleId, (bool)e.Value!)" />
+                                    </td>
+                                }
+                                <td class="align-middle">
+                                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveUserRolesAsync(userId)" disabled="@(_savingUserId == userId)">
+                                        @(_savingUserId == userId ? "Salvando..." : "Salvar")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static bool IsProtectedRole(string roleName) =>
+        string.Equals(roleName, "Admin", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(roleName, "Master", StringComparison.OrdinalIgnoreCase);
+
+    private List<RoleDto> _roles = new();
+    private List<UserWithRolesDto> _usersWithRoles = new();
+    private Dictionary<Guid, HashSet<Guid>> _selectedRoleIds = new();
+    private bool _loading = true;
+
+    private bool _showNewForm;
+    private string _newName = "";
+    private string _newDescription = "";
+    private string? _newNameError;
+    private bool _creating;
+
+    private Guid? _editingRoleId;
+    private string _editName = "";
+    private string _editDescription = "";
+    private bool _saving;
+
+    private Guid? _savingUserId;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private IRoleService RoleService { get; set; } = null!;
+    [Inject] private IUserRolesService UserRolesService { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _roles = (await RoleService.ListRolesAsync()).ToList();
+            _usersWithRoles = (await UserRolesService.GetUsersWithRolesAsync()).ToList();
+            _selectedRoleIds = _usersWithRoles.ToDictionary(u => u.UserId, u => u.RoleIds.ToHashSet());
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleNewForm()
+    {
+        _showNewForm = !_showNewForm;
+        if (!_showNewForm)
+        {
+            _newName = _newDescription = "";
+            _newNameError = _message = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task CreateRoleAsync()
+    {
+        _newNameError = null;
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            _newNameError = "Nome é obrigatório.";
+            StateHasChanged();
+            return;
+        }
+        _creating = true;
+        _message = null;
+        try
+        {
+            var result = await RoleService.CreateRoleAsync(_newName.Trim(), string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription.Trim());
+            _message = result.Message;
+            _messageSuccess = result.Success;
+            if (result.Success)
+            {
+                _showNewForm = false;
+                _newName = _newDescription = "";
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _creating = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StartEdit(RoleDto r)
+    {
+        _editingRoleId = r.RoleId;
+        _editName = r.RoleName;
+        _editDescription = r.Description ?? "";
+        _message = null;
+        StateHasChanged();
+    }
+
+    private void CancelEdit()
+    {
+        _editingRoleId = null;
+        StateHasChanged();
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (!_editingRoleId.HasValue) return;
+        _saving = true;
+        _message = null;
+        try
+        {
+            var result = await RoleService.UpdateRoleAsync(
+                _editingRoleId.Value,
+                _editName,
+                string.IsNullOrWhiteSpace(_editDescription) ? null : _editDescription.Trim());
+            _message = result.Message;
+            _messageSuccess = result.Success;
+            if (result.Success)
+            {
+                _editingRoleId = null;
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteRoleAsync(Guid roleId, string roleName)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Excluir a função \"{roleName}\"? As atribuições e atividades desta função serão removidas."))
+            return;
+        _message = null;
+        try
+        {
+            var result = await RoleService.DeleteRoleAsync(roleId);
+            _message = result.Message;
+            _messageSuccess = result.Success;
+            if (result.Success) await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        StateHasChanged();
+    }
+
+    private void ToggleRole(Guid userId, Guid roleId, bool isChecked)
+    {
+        if (!_selectedRoleIds.TryGetValue(userId, out var set))
+        {
+            set = new HashSet<Guid>();
+            _selectedRoleIds[userId] = set;
+        }
+        if (isChecked) set.Add(roleId);
+        else set.Remove(roleId);
+        StateHasChanged();
+    }
+
+    private async Task SaveUserRolesAsync(Guid userId)
+    {
+        var roleIds = _selectedRoleIds.TryGetValue(userId, out var set) ? set.ToList() : new List<Guid>();
+        _savingUserId = userId;
+        _message = null;
+        StateHasChanged();
+        try
+        {
+            await UserRolesService.SetUserRolesAsync(userId, roleIds);
+            _message = "Atribuições salvas.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _savingUserId = null;
+            StateHasChanged();
+        }
+    }
+}

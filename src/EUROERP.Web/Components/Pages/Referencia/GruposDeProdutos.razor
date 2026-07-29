@@ -1,0 +1,217 @@
+@page "/referencia/grupos-produtos"
+@using EUROERP.Application.ReferenceData
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Grupos de Produtos</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Grupo de Produtos</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isSuccess ? "alert-success" : "alert-warning") py-2 mb-2">@_message</div>
+        }
+        <div class="row">
+            <div class="col-12 col-lg-8">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-bordered table-list">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Id</th>
+                                <th>Nome</th>
+                                <th class="text-center">Ignorar Desc.</th>
+                                <th>Classe</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _displayList)
+                            {
+                                <tr>
+                                    <td class="align-middle">@row.Id</td>
+                                    @if (_editingId == row.Id)
+                                    {
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm" @bind="_editName" maxlength="150" />
+                                        </td>
+                                        <td class="text-center align-middle">
+                                            <input type="checkbox" class="form-check-input" @bind="_editIgnoreOrderDisc" />
+                                        </td>
+                                        <td class="align-middle">@row.ClassName</td>
+                                        <td class="align-middle">
+                                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveEdit(row.Id)" disabled="@_saving">Altera</button>
+                                            <button type="button" class="btn btn-sm btn-secondary ms-1" @onclick="CancelEdit">Cancelar</button>
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td class="align-middle">@row.Name</td>
+                                        <td class="text-center align-middle">
+                                            <input type="checkbox" class="form-check-input" disabled checked="@row.IgnoreOrderDisc" />
+                                        </td>
+                                        <td class="align-middle">@row.ClassName</td>
+                                        <td class="align-middle">
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-primary" @onclick="() => StartEdit(row)">Alterar</button>
+                                            <span class="mx-1">|</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-danger" @onclick="() => DeleteAsync(row.Id)">Apagar</button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_allowPaging && _totalCount > _pageSize)
+                {
+                    <nav class="d-flex justify-content-between align-items-center mt-2">
+                        <span class="small text-muted">Página @_currentPage de @_totalPages</span>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_currentPage <= 1)" @onclick="() => SetPage(_currentPage - 1)">Anterior</button>
+                            <span class="mx-2">@((_currentPage - 1) * _pageSize + 1)-@(Math.Min(_currentPage * _pageSize, _totalCount)) de @_totalCount</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_currentPage >= _totalPages)" @onclick="() => SetPage(_currentPage + 1)">Próxima</button>
+                        </div>
+                    </nav>
+                }
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="TogglePaging">
+                        @(_allowPaging ? "Desativar Paginação" : "Ativar Paginação")
+                    </button>
+                </div>
+            </div>
+            <div class="col-12 col-lg-4 mt-3 mt-lg-0">
+                <label class="form-label">Novo Grupo</label>
+                <input type="text" class="form-control form-control-sm" placeholder="Nome do grupo" @bind="_newName" maxlength="150" />
+                <span class="text-danger small">@_newNameError</span>
+                <label class="form-label mt-2">Classe</label>
+                <select class="form-select form-select-sm" @bind="_newProductClassId">
+                    <option value="0">Selecione a classe</option>
+                    @foreach (var c in _productClasses)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+                <span class="text-danger small">@_newClassError</span>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="CreateAsync" disabled="@_creating">@(_creating ? "Criando..." : "Criar")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ProductGroupDto> _list = new();
+    private IReadOnlyList<IdNameDto> _productClasses = new List<IdNameDto>();
+    private bool _allowPaging = true;
+    private const int _pageSize = 15;
+    private int _currentPage = 1;
+    private int _totalCount => _list.Count;
+    private int _totalPages => _pageSize <= 0 ? 1 : Math.Max(1, (_totalCount + _pageSize - 1) / _pageSize);
+    private IEnumerable<ProductGroupDto> _displayList =>
+        !_allowPaging || _pageSize <= 0 ? _list : _list.Skip((_currentPage - 1) * _pageSize).Take(_pageSize);
+
+    private string _newName = "";
+    private int _newProductClassId;
+    private string? _newNameError;
+    private string? _newClassError;
+    private bool _creating;
+    private string? _message;
+    private bool _isSuccess;
+    private int? _editingId;
+    private string _editName = "";
+    private bool _editIgnoreOrderDisc;
+    private bool _saving;
+    private string? _applicationId;
+    private string? _userId;
+
+    [Inject] private IProductGroupService ProductGroupService { get; set; } = null!;
+    [Inject] private IProductReferenceService ProductReference { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+        _applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+        _productClasses = await ProductReference.GetProductClassesAsync();
+        if (_productClasses.Count > 0 && _newProductClassId == 0)
+            _newProductClassId = _productClasses[0].Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _list = (await ProductGroupService.GetAllAsync()).ToList();
+        if (_currentPage > _totalPages) _currentPage = Math.Max(1, _totalPages);
+        StateHasChanged();
+    }
+
+    private void TogglePaging() { _allowPaging = !_allowPaging; StateHasChanged(); }
+    private void SetPage(int page) { _currentPage = Math.Clamp(page, 1, _totalPages); StateHasChanged(); }
+
+    private void StartEdit(ProductGroupDto row)
+    {
+        _editingId = row.Id;
+        _editName = row.Name;
+        _editIgnoreOrderDisc = row.IgnoreOrderDisc;
+        _message = null;
+    }
+
+    private void CancelEdit() => _editingId = null;
+
+    private async Task SaveEdit(int id)
+    {
+        if (string.IsNullOrWhiteSpace(_editName))
+        { _message = "Digite o nome do grupo."; _isSuccess = false; return; }
+        _saving = true; _message = null;
+        try
+        {
+            await ProductGroupService.UpdateAsync(id, _editName.Trim(), _editIgnoreOrderDisc, _applicationId!, _userId!);
+            _editingId = null;
+            await LoadAsync();
+            _message = "Grupo atualizado.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+        finally { _saving = false; }
+    }
+
+    private async Task CreateAsync()
+    {
+        _newNameError = _newClassError = null;
+        if (string.IsNullOrWhiteSpace(_newName)) { _newNameError = "Digite o nome do grupo."; return; }
+        if (_newProductClassId <= 0) { _newClassError = "Selecione a classe."; return; }
+        _creating = true; _message = null;
+        try
+        {
+            await ProductGroupService.CreateAsync(_newName.Trim(), _newProductClassId, _applicationId!, _userId!);
+            _newName = "";
+            _newProductClassId = _productClasses.Count > 0 ? _productClasses[0].Id : 0;
+            await LoadAsync();
+            _message = "Grupo criado.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+        finally { _creating = false; }
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que quer apagar?")) return;
+        _message = null;
+        try
+        {
+            await ProductGroupService.DeleteAsync(id);
+            await LoadAsync();
+            _message = "Grupo excluído.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+    }
+}

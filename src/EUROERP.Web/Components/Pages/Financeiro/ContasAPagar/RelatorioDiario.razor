@@ -1,0 +1,251 @@
+﻿@page "/financeiro/contas-a-pagar/relatorios/semanal"
+@page "/financeiro/contas-a-pagar/relatorios/diario"
+@using EUROERP.Application.AccountsPayable
+@rendermode InteractiveServer
+
+<PageTitle>Relatório Semanal de Contas a Pagar</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">Relatório Semanal de Contas a Pagar</h5></div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-warning">@_error</div> }
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label mb-0">Data Inicial</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" style="width: 115px;" @bind="_firstDateText" placeholder="dd/MM/yyyy" maxlength="10" />
+            </div>
+            <div class="col-auto">
+                <label class="form-label mb-0">Data Final</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" style="width: 115px;" @bind="_lastDateText" placeholder="dd/MM/yyyy" maxlength="10" />
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Carregando..." : "Enviar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_dailyGroups != null)
+{
+    <div class="card">
+        <div class="card-header"><strong>Período: @_firstDateText até @_lastDateText</strong></div>
+        <div class="card-body p-0">
+            @if (_dailyGroups.Count == 0)
+            {
+                <p class="text-muted p-3 mb-0">Nenhum lançamento com saldo no período.</p>
+            }
+            else
+            {
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0 data-grid-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center">Data</th>
+                            <th></th>
+                            <th class="text-center">$ ext.</th>
+                            <th class="text-end">R$</th>
+                            <th class="text-end">Pago</th>
+                            <th class="text-end">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var weekGroup in _dailyGroups)
+                        {
+                            <tr class="table-secondary">
+                                <td colspan="6"><strong>Semana @weekGroup.Week</strong></td>
+                            </tr>
+                            @foreach (var day in weekGroup.Days)
+                            {
+                                <tr>
+                                    <td class="text-center">
+                                        <a href="@GetDayDetailUrl(day.DueDateOrder)" class="text-primary">@day.DueDate</a>
+                                    </td>
+                                    <td class="small">@day.WeekDayName</td>
+                                    <td class="text-center small">@(day.DolarAmount > 0 ? $"US$ {day.DolarAmount:N2}" : "")</td>
+                                    <td class="text-end">@day.RealAmount.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@day.RealPaid.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@day.RealSaldo.ToString("N2", _ptBr)</td>
+                                </tr>
+                            }
+                            <tr class="table-warning">
+                                <td></td>
+                                <td class="text-end"><strong>TOTAL</strong></td>
+                                <td class="text-center small">@(weekGroup.TotalDolar > 0 ? $"US$ {weekGroup.TotalDolar:N2}" : "")</td>
+                                <td class="text-end"><strong>@weekGroup.TotalReal.ToString("N2", _ptBr)</strong></td>
+                                <td class="text-end"><strong>@weekGroup.TotalPaid.ToString("N2", _ptBr)</strong></td>
+                                <td class="text-end"><strong>@weekGroup.TotalSaldo.ToString("N2", _ptBr)</strong></td>
+                            </tr>
+                        }
+                        @if (_grandTotal != null)
+                        {
+                            <tr class="border-top">
+                                <td></td>
+                                <td class="text-end"><strong>TOTAL</strong></td>
+                                <td class="text-center small">@(_grandTotal.TotalDolar > 0 ? $"US$ {_grandTotal.TotalDolar:N2}" : "")</td>
+                                <td class="text-end"><strong>@_grandTotal.TotalReal.ToString("N2", _ptBr)</strong></td>
+                                <td class="text-end"><strong>@_grandTotal.TotalPaid.ToString("N2", _ptBr)</strong></td>
+                                <td class="text-end"><strong>@_grandTotal.TotalSaldo.ToString("N2", _ptBr)</strong></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private bool _loading;
+    private string? _error;
+    private List<WeekGroup>? _dailyGroups;
+    private DayTotals? _grandTotal;
+
+    [Inject] private IBillsToPayReportDailyService ReportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private sealed class DayRow
+    {
+        public int Week { get; set; }
+        public string DueDate { get; set; } = "";
+        public string DueDateOrder { get; set; } = "";
+        public string WeekDayName { get; set; } = "";
+        public decimal DolarAmount { get; set; }
+        public decimal RealAmount { get; set; }
+        public decimal RealPaid { get; set; }
+        public decimal RealSaldo { get; set; }
+    }
+
+    private sealed class DayTotals
+    {
+        public decimal TotalDolar { get; set; }
+        public decimal TotalReal { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal TotalSaldo { get; set; }
+    }
+
+    private sealed class WeekGroup
+    {
+        public int Week { get; set; }
+        public List<DayRow> Days { get; set; } = new();
+        public decimal TotalDolar { get; set; }
+        public decimal TotalReal { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal TotalSaldo { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+        if (string.IsNullOrWhiteSpace(_firstDateText)) _firstDateText = today;
+        if (string.IsNullOrWhiteSpace(_lastDateText)) _lastDateText = today;
+        await Search();
+    }
+
+    private async Task Search()
+    {
+        var first = ParseDate(_firstDateText);
+        var last = ParseDate(_lastDateText);
+        if (!first.HasValue) { _error = "Data inicial inválida (dd/MM/yyyy)."; return; }
+        if (!last.HasValue) { _error = "Data final inválida (dd/MM/yyyy)."; return; }
+        if (first.Value > last.Value) { _error = "Data inicial não pode ser maior que a final."; return; }
+
+        _error = null;
+        _loading = true;
+        try
+        {
+            var rows = await ReportService.GetByWeekAsync(first.Value.Date, last.Value.Date);
+            BuildDailyGroups(rows);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _dailyGroups = null;
+            _grandTotal = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildDailyGroups(IReadOnlyList<BillsToPayByWeekRowDto> rows)
+    {
+        var withBalance = rows.Where(r => r.Balance > 0).ToList();
+        var byDay = withBalance
+            .GroupBy(r => new { r.Week, r.DueDateOrder })
+            .Select(g =>
+            {
+                var first = g.First();
+                var realAmount = g.Sum(x => x.ConvertedAmount);
+                var realPaid = g.Sum(x => x.ConvertedPaid);
+                var dolar = g.Where(x => x.CurrencyId == 2).Sum(x => x.Amount);
+                return new DayRow
+                {
+                    Week = first.Week,
+                    DueDate = first.DueDate,
+                    DueDateOrder = first.DueDateOrder,
+                    WeekDayName = WeekDayName(first.WeekDay),
+                    DolarAmount = dolar,
+                    RealAmount = realAmount,
+                    RealPaid = realPaid,
+                    RealSaldo = realAmount - realPaid
+                };
+            })
+            .OrderBy(x => x.DueDateOrder)
+            .ToList();
+
+        _dailyGroups = byDay
+            .GroupBy(d => d.Week)
+            .OrderBy(g => g.Min(x => x.DueDateOrder))
+            .Select(g =>
+            {
+                var days = g.OrderBy(x => x.DueDateOrder).ToList();
+                return new WeekGroup
+                {
+                    Week = g.Key,
+                    Days = days,
+                    TotalDolar = days.Sum(x => x.DolarAmount),
+                    TotalReal = days.Sum(x => x.RealAmount),
+                    TotalPaid = days.Sum(x => x.RealPaid),
+                    TotalSaldo = days.Sum(x => x.RealSaldo)
+                };
+            })
+            .ToList();
+
+        _grandTotal = new DayTotals();
+        foreach (var g in _dailyGroups)
+        {
+            _grandTotal.TotalDolar += g.TotalDolar;
+            _grandTotal.TotalReal += g.TotalReal;
+            _grandTotal.TotalPaid += g.TotalPaid;
+            _grandTotal.TotalSaldo += g.TotalSaldo;
+        }
+    }
+
+    private static string WeekDayName(int weekDay)
+    {
+        return weekDay switch { 1 => "Sáb", 2 => "Dom", 3 => "Seg", 4 => "Ter", 5 => "Qua", 6 => "Qui", 7 => "Sex", _ => "" };
+    }
+
+    private string GetDayDetailUrl(string dueDateOrder)
+    {
+        if (dueDateOrder.Length != 8) return "#";
+        var y = dueDateOrder.Substring(0, 4);
+        var m = dueDateOrder.Substring(4, 2);
+        var d = dueDateOrder.Substring(6, 2);
+        return $"{Navigation.BaseUri}financeiro/contas-a-pagar/consultar?date={y}-{m}-{d}";
+    }
+
+    private static DateTime? ParseDate(string? t)
+    {
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        if (DateTime.TryParseExact(t.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d)) return d;
+        return DateTime.TryParse(t, _ptBr, System.Globalization.DateTimeStyles.None, out d) ? d : null;
+    }
+}

@@ -5,6 +5,7 @@ using System.Xml;
 using Amazon.Runtime;
 using Amazon.Runtime.CredentialManagement;
 using Dapper;
+using EUROERP.Application.Config;
 using EUROERP.Application.NFe;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ public class NfeIndividualService : INfeIndividualService
     private const string HomologDestRazaoSocial = "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
     private readonly IDbConnection _connection;
     private readonly IConfiguration _configuration;
+    private readonly ISysControlService _sysControl;
     private readonly INfeXmlBuilder _xmlBuilder;
     private readonly INfeXmlSigner _xmlSigner;
     private readonly INfeSchemaValidator _schemaValidator;
@@ -28,6 +30,7 @@ public class NfeIndividualService : INfeIndividualService
     public NfeIndividualService(
         IDbConnection connection,
         IConfiguration configuration,
+        ISysControlService sysControl,
         INfeXmlBuilder xmlBuilder,
         INfeXmlSigner xmlSigner,
         INfeSchemaValidator schemaValidator,
@@ -38,6 +41,7 @@ public class NfeIndividualService : INfeIndividualService
     {
         _connection = connection;
         _configuration = configuration;
+        _sysControl = sysControl;
         _xmlBuilder = xmlBuilder;
         _xmlSigner = xmlSigner;
         _schemaValidator = schemaValidator;
@@ -506,7 +510,10 @@ public class NfeIndividualService : INfeIndividualService
             VolQty = request.PackageQuantity ?? "1",
             PesoB = request.WeightGross,
             PesoL = request.WeightNet,
-            IcmsAliqPercent = ParseTaxPercent(_configuration["NFe:ICMS_ALIQ"] ?? "18"),
+            IcmsAliqPercent = ParseTaxPercent(
+                await _sysControl.GetValueAsync("ICMS_ALIQ", cancellationToken).ConfigureAwait(false)
+                ?? _configuration["NFe:ICMS_ALIQ"]
+                ?? "18"),
             PisAliqPercent = ParseTaxPercent(_configuration["NFe:PisAliq"] ?? "1.65"),
             CofinsAliqPercent = ParseTaxPercent(_configuration["NFe:CofinsAliq"] ?? "3"),
             InfCpl = await BuildInfCplAsync(request.OrderId, request.InformacoesComplementares, cancellationToken).ConfigureAwait(false)
@@ -1257,6 +1264,165 @@ public class NfeIndividualService : INfeIndividualService
             var msg = ex.Message;
             if (ex.InnerException != null) msg += " " + ex.InnerException.Message;
             return new CancelNfeResult { Success = false, Message = "Erro: " + msg };
+        }
+    }
+
+    public async Task<InutilizarNfeResult> InutilizarNfeAsync(InutilizarNfeRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Justification) || request.Justification.Length < 15 || request.Justification.Length > 255)
+            return new InutilizarNfeResult { Success = false, Message = "O motivo deve ter entre 15 e 255 caracteres." };
+
+        if (request.ReceiptNo < 1)
+            return new InutilizarNfeResult { Success = false, Message = "Informe o número da nota." };
+
+        const string sqlExists = "SELECT 1 FROM [RECEIPT_CANCEL] WHERE RECEIPT_NO = @ReceiptNo";
+        var alreadyCanceled = await _connection.ExecuteScalarAsync<int?>(
+            new CommandDefinition(sqlExists, new { request.ReceiptNo }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (alreadyCanceled.HasValue && alreadyCanceled.Value == 1)
+            return new InutilizarNfeResult { Success = false, Message = $"Não é possível inutilizar. A Nota {request.ReceiptNo} já foi cancelada/inutilizada!" };
+
+        var userId = _configuration["NFe:CancelUserId"] ?? "SYS";
+        var appId = _configuration["NFe:ApplicationId"] ?? "EUROERP";
+        var emitCnpj = NfeChaveHelper.LeftZero(NfeChaveHelper.CleanDigits(_configuration["NFe:EmitCnpj"] ?? ""), 14);
+        if (emitCnpj.Length != 14)
+            return new InutilizarNfeResult { Success = false, Message = "NFe:EmitCnpj inválido (deve ter 14 dígitos)." };
+
+        var tpAmb = (_configuration["NFe:NfeEnvironment"] ?? "").Equals("test", StringComparison.OrdinalIgnoreCase) ? "2" : "1";
+        var ano = DateTime.Today.ToString("yy");
+        var nNf = request.ReceiptNo.ToString();
+        var nNf9 = NfeChaveHelper.LeftZero(nNf, 9);
+        var inutIdBody = "35" + ano + emitCnpj + "55" + "000" + nNf9 + nNf9;
+        var infInutId = "ID" + inutIdBody;
+        var xJust = EscapeXml(request.Justification.Trim());
+        if (xJust.Length > 255) xJust = xJust.Substring(0, 255);
+
+        // Element order matches leiauteInutNFe (tpAmb…xJust); Id is attribute on infInut.
+        var inutXml = $@"<inutNFe versao=""4.00"" xmlns=""http://www.portalfiscal.inf.br/nfe"">
+  <infInut Id=""{infInutId}"">
+    <tpAmb>{tpAmb}</tpAmb>
+    <xServ>INUTILIZAR</xServ>
+    <cUF>35</cUF>
+    <ano>{ano}</ano>
+    <CNPJ>{emitCnpj}</CNPJ>
+    <mod>55</mod>
+    <serie>0</serie>
+    <nNFIni>{nNf}</nNFIni>
+    <nNFFin>{nNf}</nNFFin>
+    <xJust>{xJust}</xJust>
+  </infInut>
+</inutNFe>";
+
+        XmlDocument inutDoc;
+        try
+        {
+            inutDoc = new XmlDocument();
+            inutDoc.LoadXml(inutXml);
+            inutDoc = _xmlSigner.SignNfeXml(inutDoc, infInutId);
+        }
+        catch (Exception ex)
+        {
+            return new InutilizarNfeResult { Success = false, Message = "Erro ao assinar inutilização: " + ex.Message };
+        }
+
+        var signedXml = inutDoc.OuterXml.Replace("utf-16", "utf-8");
+        const string orderIdName = "INUT";
+        await _fileStorage.SaveXmlToFolderAsync(orderIdName, infInutId + "-ped-inut.xml", signedXml, cancellationToken).ConfigureAwait(false);
+
+        if (_connection.State != ConnectionState.Open)
+            _connection.Open();
+
+        using var trx = _connection.BeginTransaction();
+        try
+        {
+            XmlDocument retDoc;
+            try
+            {
+                retDoc = await _sefazClient.NfeInutilizacaoAsync(signedXml, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                trx.Rollback();
+                return new InutilizarNfeResult
+                {
+                    Success = false,
+                    Message = "Erro SEFAZ: " + ex.Message,
+                    SefazXMotivo = ex.Message
+                };
+            }
+
+            var root = retDoc.DocumentElement ?? retDoc.FirstChild as XmlElement;
+            if (root == null)
+            {
+                trx.Rollback();
+                return new InutilizarNfeResult { Success = false, Message = "Resposta SEFAZ inválida." };
+            }
+
+            // retInutNFe/infInut or bare infInut
+            var infInut = root.LocalName == "infInut"
+                ? root
+                : root.SelectSingleNode("*[local-name()='infInut']") as XmlElement;
+            if (infInut == null)
+            {
+                trx.Rollback();
+                return new InutilizarNfeResult { Success = false, Message = "Resposta SEFAZ sem infInut." };
+            }
+
+            var cStat = GetChildText(infInut, "cStat");
+            var xMotivo = GetChildText(infInut, "xMotivo");
+            var nProt = GetChildText(infInut, "nProt");
+
+            // Official success is 102; legacy checked 101.
+            if (cStat != "102" && cStat != "101")
+            {
+                trx.Rollback();
+                return new InutilizarNfeResult
+                {
+                    Success = false,
+                    Message = $"Erro {cStat} - {xMotivo}",
+                    SefazCStat = cStat,
+                    SefazXMotivo = xMotivo
+                };
+            }
+
+            try
+            {
+                await _fileStorage.SaveXmlToFolderAsync(orderIdName, infInutId + "-ret-inut.xml", retDoc.OuterXml, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falha ao salvar ret-inut.xml para {Id}", infInutId);
+            }
+
+            var memo = request.Justification.Trim() + " - Prot.Inut:" + (nProt ?? "");
+            const string sqlInsert = @"
+                INSERT INTO [RECEIPT_CANCEL] (SYS_CREATION_DATE, USER_ID, APPLICATION_ID, CANCEL_DATE, RECEIPT_NO, MEMO, RECEIPT_FORM)
+                VALUES (GETDATE(), @UserId, @AppId, @CancelDate, @ReceiptNo, @Memo, @ReceiptForm)";
+            await _connection.ExecuteAsync(new CommandDefinition(sqlInsert, new
+            {
+                UserId = userId,
+                AppId = appId,
+                CancelDate = request.InutDate.Date,
+                ReceiptNo = request.ReceiptNo,
+                Memo = memo,
+                ReceiptForm = request.ReceiptNo
+            }, cancellationToken: cancellationToken, transaction: trx)).ConfigureAwait(false);
+
+            trx.Commit();
+            return new InutilizarNfeResult
+            {
+                Success = true,
+                Message = "Inutilização registrada na SEFAZ.",
+                InutProtocol = nProt,
+                SefazCStat = cStat,
+                SefazXMotivo = xMotivo
+            };
+        }
+        catch (Exception ex)
+        {
+            trx.Rollback();
+            var msg = ex.Message;
+            if (ex.InnerException != null) msg += " " + ex.InnerException.Message;
+            return new InutilizarNfeResult { Success = false, Message = "Erro: " + msg };
         }
     }
 

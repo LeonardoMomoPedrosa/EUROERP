@@ -1,0 +1,221 @@
+@page "/vendas/relatorios/abc/resultados"
+@page "/vendas/relatorios/abc/resultados/{View}"
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@rendermode InteractiveServer
+
+<PageTitle>Faturamento por Grupo - Resultados</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header d-flex flex-wrap align-items-center gap-2">
+        <h5 class="mb-0">Faturamento por Grupo de Produtos</h5>
+        <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+            <span class="small text-muted">@_periodLabel</span>
+            <div class="d-flex gap-1 small flex-wrap">
+                <a href="@ResultadosLink("")" class="@(_view == "geral" ? "text-muted text-decoration-none" : "")">Grupos</a>
+                <span>|</span>
+                <a href="@ResultadosLink("produtos")" class="@(_view == "produtos" ? "text-muted text-decoration-none" : "")">Produtos</a>
+                <span>|</span>
+                <a href="@ResultadosLink("clientes")" class="@(_view == "clientes" ? "text-muted text-decoration-none" : "")">Clientes</a>
+                <span>|</span>
+                <a href="@ResultadosLink("vendedores")" class="@(_view == "vendedores" ? "text-muted text-decoration-none" : "")">Vendedores</a>
+                <span>|</span>
+                <a href="@ResultadosLink("tecnicos")" class="@(_view == "tecnicos" ? "text-muted text-decoration-none" : "")">Técnicos</a>
+                <span>|</span>
+                <a href="@ResultadosLink("pym")" class="@(_view == "pym" ? "text-muted text-decoration-none" : "")">Cort/Garant.</a>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <div class="d-flex align-items-center gap-2 py-4 text-muted">
+                <div class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></div>
+                <span>Processando…</span>
+            </div>
+        }
+        else if (_reportHtml != null)
+        {
+            <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="text-danger">@_error</p>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly HashSet<string> ValidViews = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "geral", "produtos", "clientes", "vendedores", "tecnicos", "pym"
+    };
+
+    private string _view = "geral";
+    private string? _periodLabel;
+    private string? _reportHtml;
+    private string? _error;
+    private bool _loading = true;
+    private bool _dataReady;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportStateService State { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+
+    [Parameter] public string? View { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "first")] public string? QueryFirst { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "last")] public string? QueryLast { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _view = string.IsNullOrEmpty(View) ? "geral" : View.ToLowerInvariant();
+        if (!ValidViews.Contains(_view))
+            _view = "geral";
+
+        if (!_dataReady)
+            await EnsureDataAsync().ConfigureAwait(true);
+
+        if (State.DateRange == null)
+        {
+            _loading = false;
+            Nav.NavigateTo("/vendas/relatorios/abc");
+            return;
+        }
+
+        _periodLabel = $"Período: {State.DateRange.FirstDate:dd/MM/yyyy} até {State.DateRange.LastDate:dd/MM/yyyy}";
+        if (State.HasData)
+            RenderView();
+        _loading = false;
+    }
+
+    private async Task EnsureDataAsync()
+    {
+        var first = QueryFirst;
+        var last = QueryLast;
+        if (string.IsNullOrEmpty(first) || string.IsNullOrEmpty(last))
+        {
+            var q = GetQueryParams(Nav.Uri);
+            first ??= q.GetValueOrDefault("first");
+            last ??= q.GetValueOrDefault("last");
+        }
+
+        if (State.DateRange == null && !string.IsNullOrEmpty(first) && !string.IsNullOrEmpty(last)
+            && DateTime.TryParse(first, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var qFirst)
+            && DateTime.TryParse(last, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var qLast))
+        {
+            State.SetDateRange(qFirst, qLast);
+            State.SetCommissionMode(false);
+        }
+
+        if (State.DateRange == null)
+            return;
+
+        if (!State.HasData)
+        {
+            try
+            {
+                var data = await ReportService.GetAbcReportDataAsync(State.DateRange, State.SalesAgent, cancellationToken: default).ConfigureAwait(true);
+                State.SetReportData(data);
+            }
+            catch (Exception ex)
+            {
+                _error = ex.Message;
+            }
+        }
+
+        _dataReady = State.HasData || State.DateRange != null;
+    }
+
+    private void RenderView()
+    {
+        if (State.ReportData == null || State.DateRange == null) return;
+
+        var d = State.ReportData;
+        string xml;
+        string xslt;
+        var args = DateArgs();
+
+        switch (_view)
+        {
+            case "produtos":
+                xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicingByProductResults.xsl";
+                args["ordersListPage"] = "/vendas/relatorios/abc/grupo/pedidos?";
+                break;
+            case "clientes":
+                xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicingByGroupClientsResumed.xsl";
+                args["detailPage"] = "/vendas/relatorios/abc/clientes/detalhe";
+                break;
+            case "vendedores":
+                // Legacy: resumed from ABC session; drill opens mySalesResults (commission=1)
+                xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicingByGroupSalersResumed.xsl";
+                args["detailPage"] = "/vendas/relatorios/minhas-vendas/resultados?";
+                break;
+            case "tecnicos":
+                xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicingByGroupTechResumed.xsl";
+                args["detailPage"] = "/vendas/relatorios/abc/tecnicos/detalhe";
+                break;
+            case "pym":
+                xml = "<GROUP_REPORT>" + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicingByGroupPymResumed.xsl";
+                args["detailPage"] = "/vendas/relatorios/abc/pym/detalhe?";
+                break;
+            default:
+                xml = "<GROUP_REPORT>" + d.GroupRefReportXml + d.CreditsReportXml + d.GroupReportXml + "</GROUP_REPORT>";
+                xslt = "invoicing_by_group_report.xsl";
+                break;
+        }
+
+        try
+        {
+            _error = null;
+            _reportHtml = Transform.Transform(xml, xslt, args);
+        }
+        catch (Exception ex)
+        {
+            _error = "Erro ao gerar relatório: " + ex.Message;
+            _reportHtml = null;
+        }
+    }
+
+    private Dictionary<string, string> DateArgs()
+    {
+        var args = new Dictionary<string, string>();
+        if (State.DateRange != null)
+        {
+            args["first"] = State.DateRange.FirstDate.ToString("yyyy-MM-dd");
+            args["last"] = State.DateRange.LastDate.ToString("yyyy-MM-dd");
+        }
+        return args;
+    }
+
+    private string ResultadosLink(string viewSegment)
+    {
+        var path = string.IsNullOrEmpty(viewSegment)
+            ? "/vendas/relatorios/abc/resultados"
+            : $"/vendas/relatorios/abc/resultados/{viewSegment}";
+        if (State.DateRange == null) return path;
+        var first = State.DateRange.FirstDate.ToString("yyyy-MM-dd");
+        var last = State.DateRange.LastDate.ToString("yyyy-MM-dd");
+        return $"{path}?first={Uri.EscapeDataString(first)}&last={Uri.EscapeDataString(last)}";
+    }
+
+    private static Dictionary<string, string> GetQueryParams(string uri)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var idx = uri.IndexOf('?');
+        if (idx < 0) return d;
+        foreach (var pair in uri[(idx + 1)..].Split('&'))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq > 0)
+                d[Uri.UnescapeDataString(pair[..eq])] = Uri.UnescapeDataString(pair[(eq + 1)..]);
+        }
+        return d;
+    }
+}

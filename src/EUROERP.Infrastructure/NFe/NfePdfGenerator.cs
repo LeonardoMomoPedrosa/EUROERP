@@ -4,6 +4,7 @@ using System.Xml;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using EUROERP.Application.Config;
 using Microsoft.Extensions.Configuration;
 using ZXing.ImageSharp;
 using ZXing.Common;
@@ -21,19 +22,24 @@ public interface INfePdfGenerator
 public class NfePdfGenerator : INfePdfGenerator
 {
     private readonly IConfiguration _configuration;
+    private readonly ISysControlService _sysControl;
     private const string NsNfe = "http://www.portalfiscal.inf.br/nfe";
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     /// <summary>Quando true, desenha linhas e rótulos [ Seção N ] entre blocos para facilitar ajustes. Definir false na versão final.</summary>
     private const bool ShowSectionMarkers = true;
 
-    public NfePdfGenerator(IConfiguration configuration)
+    public NfePdfGenerator(IConfiguration configuration, ISysControlService sysControl)
     {
         _configuration = configuration;
+        _sysControl = sysControl;
     }
 
     public async Task GeneratePdfAsync(int orderId, string chave, string nfeProcXmlPath, string pdfOutputPath, CancellationToken cancellationToken = default)
     {
+        var icmsAliq = await _sysControl.GetValueAsync("ICMS_ALIQ", cancellationToken).ConfigureAwait(false)
+            ?? _configuration["NFe:ICMS_ALIQ"];
+
         await Task.Run(() =>
         {
             QuestPDF.Settings.License = LicenseType.Community;
@@ -485,7 +491,7 @@ public class NfePdfGenerator : INfePdfGenerator
                         });
 
                         // Seção 8: DADOS ADICIONAIS — título no canto; duas colunas separadas apenas por linha vertical
-                        var infCompleta = BuildInformacoesComplementares(data);
+                        var infCompleta = BuildInformacoesComplementares(data, icmsAliq);
                         content.Item().PaddingTop(6).Column(sec8 =>
                         {
                             sec8.Item().Text("DADOS ADICIONAIS").Bold().FontSize(6);
@@ -531,7 +537,7 @@ public class NfePdfGenerator : INfePdfGenerator
     }
 
     /// <summary>Monta o texto do subbloco Informações Complementares: mensagem F2 (InfAdic), linhas do appsettings e valor aproximado dos impostos (como no legado: vNF * ICMS_ALIQ / 100).</summary>
-    private string BuildInformacoesComplementares(DanfeData data)
+    private string BuildInformacoesComplementares(DanfeData data, string? icmsAliqFromSysControl)
     {
         var sb = new StringBuilder();
         // Mensagem na nota (F2) — vem do XML infCpl quando foi autorizada
@@ -544,7 +550,7 @@ public class NfePdfGenerator : INfePdfGenerator
             var docSimples = _configuration["NFe:DadosAdicionais:DocumentoSimplesNacional"] ?? "Documento emitido por ME ou EPP optante pelo Simples Nacional.";
             sb.AppendLine(docSimples);
 
-            var icmsAliqStr = _configuration["NFe:ICMS_ALIQ"]?.Trim().Replace(',', '.');
+            var icmsAliqStr = (icmsAliqFromSysControl ?? _configuration["NFe:ICMS_ALIQ"])?.Trim().Replace(',', '.');
             if (!string.IsNullOrEmpty(icmsAliqStr) && decimal.TryParse(icmsAliqStr, System.Globalization.NumberStyles.Number, Inv, out var aliq))
             {
                 var vNfStr = (data.VNf ?? "").Trim().Replace(',', '.');

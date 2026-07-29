@@ -101,9 +101,21 @@
     private string? _nfesChaveAcesso;
     private bool _isReprint => _rpsNumber.TrimStart().StartsWith("R", StringComparison.OrdinalIgnoreCase);
 
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "orderId")]
+    public int? OrderIdFromQuery { get; set; }
+
     [Inject] private INfesEmissionService NfesService { get; set; } = null!;
 
-    protected override async Task OnInitializedAsync() => await RefreshRpsNumberAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshRpsNumberAsync();
+        if (OrderIdFromQuery is > 0)
+        {
+            _orderIdText = OrderIdFromQuery.Value.ToString();
+            await CarregarPreview();
+        }
+    }
 
     private async Task RefreshRpsNumberAsync()
     {

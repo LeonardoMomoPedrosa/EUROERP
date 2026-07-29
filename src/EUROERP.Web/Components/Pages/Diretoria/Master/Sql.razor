@@ -1,0 +1,156 @@
+@page "/diretoria/master/sql"
+@using EUROERP.Application.Master
+@using EUROERP.Application.UserActivities
+@using EUROERP.Web.Infrastructure
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Master SQL</PageTitle>
+
+@if (_authorized)
+{
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">Master SQL</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning py-2">
+                Comandos são executados diretamente no banco de produção e ficam registrados no log com o seu usuário.
+            </div>
+
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+            }
+
+            <label class="form-label">Comando</label>
+            <textarea class="form-control form-control-sm font-monospace" rows="8" @bind="_sql" @bind:event="oninput" spellcheck="false"></textarea>
+            <div class="mt-2 d-flex gap-2 align-items-center">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="RunAsync" disabled="@_running">@(_running ? "Executando..." : "Executar")</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Clear" disabled="@_running">Limpar</button>
+                @if (!string.IsNullOrWhiteSpace(_sql) && !MasterSql.IsSelect(_sql))
+                {
+                    <span class="badge text-bg-danger">Comando de alteração</span>
+                }
+            </div>
+
+            @if (_result != null && _result.Success)
+            {
+                <hr />
+                <p class="small text-muted">@_result.Message Tempo: @_result.ElapsedMs ms.</p>
+
+                @if (_result.IsQuery && _result.Rows.Count > 0)
+                {
+                    <div class="table-responsive" style="max-height: 32rem; overflow: auto;">
+                        <table class="table table-sm table-hover table-bordered table-list">
+                            <thead class="table-light">
+                                <tr>
+                                    @foreach (var c in _result.Columns)
+                                    {
+                                        <th>@c</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in _result.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var c in _result.Columns)
+                                        {
+                                            <td>@Format(row.TryGetValue(c, out var v) ? v : null)</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else if (_result.IsQuery)
+                {
+                    <p class="text-muted mb-0">Nenhuma linha retornada.</p>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string _sql = "";
+    private bool _running;
+    private bool _authorized;
+    private MasterSqlResult? _result;
+    private string? _message;
+    private bool _messageSuccess;
+    private string _userName = "";
+
+    [Inject] private IMasterSqlService MasterSql { get; set; } = null!;
+    [Inject] private IUserActivityService UserActivityService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await RequireActivity.RequireAsync(AuthStateProvider, UserActivityService, Navigation, "SQL")) return;
+        _authorized = true;
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userName = state.User.Identity?.Name ?? "desconhecido";
+    }
+
+    private void Clear()
+    {
+        _sql = "";
+        _result = null;
+        _message = null;
+        StateHasChanged();
+    }
+
+    private async Task RunAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_sql))
+        {
+            _message = "Digite um comando SQL.";
+            _messageSuccess = false;
+            return;
+        }
+
+        if (!MasterSql.IsSelect(_sql) &&
+            !await JSRuntime.InvokeAsync<bool>("confirm", "Este comando pode alterar dados. Deseja continuar?"))
+        {
+            return;
+        }
+
+        _running = true;
+        _message = null;
+        _result = null;
+        StateHasChanged();
+        try
+        {
+            _result = await MasterSql.ExecuteAsync(_sql, _userName);
+            if (!_result.Success)
+            {
+                _message = _result.Message;
+                _messageSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _running = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string Format(object? value) => value switch
+    {
+        null => "",
+        DateTime dt => dt.ToString("dd/MM/yyyy HH:mm:ss"),
+        byte[] bytes => $"0x{Convert.ToHexString(bytes)}",
+        IFormattable f => f.ToString(null, System.Globalization.CultureInfo.CurrentCulture),
+        _ => value.ToString() ?? ""
+    };
+}

@@ -1,0 +1,106 @@
+@page "/financeiro/contas-a-receber/alterar-vencimento"
+@using EUROERP.Application.AccountsReceivable
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Alterar data de vencimento</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Alterar data de vencimento</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail == null && _error == null && _btrId > 0)
+        { <p class="text-muted">Carregando...</p> }
+        @if (_detail != null)
+        {
+            <p class="small">Conta @_btrId — Parcela @_detail.TermNo/@_detail.Terms — @_detail.ClientName</p>
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Nova data de vencimento</label>
+                    <input id="dueDate" type="text" class="form-control form-control-sm date-mask-ddmmyyyy" value="@_dueDateText" @onblur="SyncDueDate" placeholder="dd/MM/yyyy" maxlength="10" />
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                <a href="/financeiro/contas-a-receber/consultar" class="btn btn-secondary btn-sm ms-2">Voltar</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _btrId;
+    private byte _termNo;
+    private BillsToReceiveDetailDto? _detail;
+    private string _dueDateText = "";
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToReceiveService UpdateService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("BTR_ID"), out _btrId) || !byte.TryParse(q.GetValueOrDefault("TERM_NO"), out _termNo) || _btrId <= 0)
+        {
+            _error = "Parâmetros BTR_ID e TERM_NO são obrigatórios.";
+            return;
+        }
+        _detail = await UpdateService.GetDetailAsync(_btrId, _termNo);
+        if (_detail == null) { _error = "Conta não encontrada."; return; }
+        _dueDateText = _detail.DueDate.ToString("dd/MM/yyyy", _ptBr);
+    }
+
+    private async Task SyncDueDate()
+    {
+        try
+        {
+            var v = await JSRuntime.InvokeAsync<string>("euroerpGetDateInputValue", "dueDate");
+            if (v != null) _dueDateText = v;
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private static DateTime? ParseDate(string? t)
+    {
+        if (string.IsNullOrWhiteSpace(t)) return null;
+        if (DateTime.TryParseExact(t.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d)) return d;
+        return DateTime.TryParse(t, _ptBr, System.Globalization.DateTimeStyles.None, out d) ? d : null;
+    }
+
+    private async Task Save()
+    {
+        await SyncDueDate();
+        var d = ParseDate(_dueDateText);
+        if (!d.HasValue) { _error = "Data inválida (dd/MM/yyyy)."; return; }
+        _saving = true; _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+            await UpdateService.UpdateDueDateAsync(_btrId, _termNo, d.Value, applicationId, userId);
+            Navigation.NavigateTo("/financeiro/contas-a-receber/consultar", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+}

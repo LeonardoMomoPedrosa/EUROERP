@@ -1,0 +1,170 @@
+@page "/vendas/nfe/inutilizar"
+@using EUROERP.Application.NFe
+@rendermode InteractiveServer
+@inject INfeIndividualService NfeService
+
+<PageTitle>Inutilizar NFe</PageTitle>
+
+<div class="d-flex flex-column gap-3">
+    <div class="card">
+        <div class="card-body py-3">
+            <h6 class="card-title mb-1">Inutilizar número da NF</h6>
+            <p class="text-muted small mb-3">
+                Inutiliza numeração de NFe na SEFAZ (modelo 55, série 0). Informe o número da NF,
+                a data e o motivo (15 a 255 caracteres). Não exige NFe autorizada; bloqueia se o número
+                já estiver em cancelamento/inutilização.
+            </p>
+            <div class="row align-items-end g-3">
+                <div class="col-auto">
+                    <label class="form-label small text-muted mb-0" for="inutDateNfe">Data</label>
+                    <input id="inutDateNfe" type="date" class="form-control form-control-sm" @bind="_inutDate" style="width: 11rem;" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small text-muted mb-0">Número da NF</label>
+                    <input type="text" inputmode="numeric" class="form-control form-control-sm text-end" @bind="_receiptNoText" placeholder="Nº" style="width: 7rem;" />
+                </div>
+                <div class="col">
+                    <label class="form-label small text-muted mb-0">Motivo (mín. 15 caracteres)</label>
+                    <textarea class="form-control form-control-sm" @bind="_memo" rows="1" maxlength="255" placeholder="Justificativa da inutilização" style="min-width: 16rem;"></textarea>
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-warning btn-sm" @onclick="OnInutilizar" disabled="@_submitting">
+                        @(_submitting ? "Aguarde..." : "Inutilizar NFe")
+                    </button>
+                </div>
+            </div>
+            @if (_result != null)
+            {
+                <div class="mt-3 pt-3 border-top small @(_result.Success ? "text-success" : "text-danger")">
+                    @_result.Message
+                    @if (_result.Success && !string.IsNullOrEmpty(_result.InutProtocol))
+                    {
+                        <span class="d-block mt-1"><strong>Protocolo:</strong> @_result.InutProtocol</span>
+                    }
+                    @if (!_result.Success && (!string.IsNullOrEmpty(_result.SefazCStat) || !string.IsNullOrEmpty(_result.SefazXMotivo)))
+                    {
+                        <span class="d-block mt-1">@_result.SefazCStat — @_result.SefazXMotivo</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card grid-card">
+        <div class="card-header py-2">
+            <h6 class="mb-0">Cancelamentos / inutilizações de hoje</h6>
+        </div>
+        @if (_listLoading)
+        {
+            <div class="card-body py-4 text-center text-muted">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Carregando...
+            </div>
+        }
+        else if (_todayCanceled.Count == 0)
+        {
+            <div class="card-body py-4">
+                <p class="text-muted mb-0 small">Nenhum cancelamento/inutilização registrado hoje.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 7rem;">Data</th>
+                                <th style="width: 6rem;">Nota #</th>
+                                <th>Motivo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _todayCanceled)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@item.CancelDate.ToString("dd/MM/yyyy")</td>
+                                    <td>@item.ReceiptNo</td>
+                                    <td title="@item.Memo">@item.Memo</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private DateTime _inutDate = DateTime.Today;
+    private string _receiptNoText = "";
+    private string _memo = "";
+    private bool _submitting;
+    private InutilizarNfeResult? _result;
+    private IReadOnlyList<CanceledReceiptDto> _todayCanceled = Array.Empty<CanceledReceiptDto>();
+    private bool _listLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTodayCanceledAsync();
+    }
+
+    private async Task LoadTodayCanceledAsync()
+    {
+        _listLoading = true;
+        try
+        {
+            _todayCanceled = await NfeService.GetTodayCanceledReceiptsAsync();
+        }
+        finally
+        {
+            _listLoading = false;
+        }
+    }
+
+    private async Task OnInutilizar()
+    {
+        _result = null;
+
+        if (!int.TryParse((_receiptNoText ?? "").Trim(), out var receiptNo) || receiptNo < 1)
+        {
+            _result = new InutilizarNfeResult { Success = false, Message = "Informe o número da nota." };
+            return;
+        }
+
+        var memo = (_memo ?? "").Trim();
+        if (memo.Length < 15)
+        {
+            _result = new InutilizarNfeResult { Success = false, Message = "O motivo deve ter no mínimo 15 caracteres." };
+            return;
+        }
+        if (memo.Length > 255)
+        {
+            _result = new InutilizarNfeResult { Success = false, Message = "O motivo deve ter no máximo 255 caracteres." };
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            _result = await NfeService.InutilizarNfeAsync(new InutilizarNfeRequest
+            {
+                ReceiptNo = receiptNo,
+                InutDate = _inutDate.Date,
+                Justification = memo
+            });
+            if (_result.Success)
+            {
+                await LoadTodayCanceledAsync();
+                _receiptNoText = "";
+                _memo = "";
+                _inutDate = DateTime.Today;
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

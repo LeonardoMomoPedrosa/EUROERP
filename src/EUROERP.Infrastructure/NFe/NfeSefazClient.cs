@@ -23,6 +23,11 @@ public interface INfeSefazClient
     /// Consulta status do serviço NFe na SEFAZ. Retorna XML retConsStatServ para parsing.
     /// </summary>
     Task<XmlDocument> NfeStatusServicoAsync(string consStatServXml, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Envia pedido de inutilização de numeração NFe. Retorna XML retInutNFe para parsing.
+    /// </summary>
+    Task<XmlDocument> NfeInutilizacaoAsync(string inutNfeXml, CancellationToken cancellationToken = default);
 }
 
 public class NfeSefazClient : INfeSefazClient
@@ -231,6 +236,65 @@ public class NfeSefazClient : INfeSefazClient
         return resultDoc;
     }
 
+    public async Task<XmlDocument> NfeInutilizacaoAsync(string inutNfeXml, CancellationToken cancellationToken = default)
+    {
+        var url = _configuration["NFe:NfeInutilizacao"];
+        if (string.IsNullOrWhiteSpace(url))
+            throw new InvalidOperationException("NFe:NfeInutilizacao não configurado.");
+
+        var cert = _certProvider.GetCertificate();
+        var handler = new HttpClientHandler();
+        handler.ClientCertificates.Add(cert);
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+
+        var soapEnvelope = BuildInutilizacaoSoapEnvelope(inutNfeXml);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Content = new StringContent(soapEnvelope, Encoding.UTF8, "application/soap+xml");
+        request.Headers.Add("SOAPAction", "http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4/nfeInutilizacaoNF");
+        SetSefazRequestHeaders(request);
+
+        var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        XmlDocument doc;
+        try
+        {
+            doc = new XmlDocument();
+            doc.LoadXml(responseBody);
+        }
+        catch (XmlException)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"SEFAZ retornou HTTP {(int)response.StatusCode}. Resposta: {TruncateForMessage(responseBody, 500)}");
+            throw;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var faultOrRetMsg = TryGetFaultOrRetInutNFeMessage(doc);
+            throw new InvalidOperationException(string.IsNullOrEmpty(faultOrRetMsg)
+                ? $"SEFAZ retornou HTTP {(int)response.StatusCode}. Resposta: {TruncateForMessage(responseBody, 300)}"
+                : $"SEFAZ HTTP {(int)response.StatusCode}: {faultOrRetMsg}");
+        }
+
+        var nsMgr = new XmlNamespaceManager(doc.NameTable);
+        nsMgr.AddNamespace("nfe", "http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4");
+        var resultNode = doc.SelectSingleNode("//nfe:nfeResultMsg", nsMgr) ?? doc.SelectSingleNode("//*[local-name()='nfeResultMsg']");
+        if (resultNode == null)
+            throw new InvalidOperationException("Resposta SEFAZ não contém nfeResultMsg.");
+
+        var firstChild = resultNode.FirstChild;
+        while (firstChild != null && firstChild.NodeType != XmlNodeType.Element)
+            firstChild = firstChild.NextSibling;
+        if (firstChild == null)
+            throw new InvalidOperationException("Resposta SEFAZ: nfeResultMsg vazio.");
+
+        var resultDoc = new XmlDocument();
+        resultDoc.LoadXml(firstChild.OuterXml);
+        return resultDoc;
+    }
+
     private static string? TryGetFaultOrRetConsStatServMessage(XmlDocument doc)
     {
         var reason = doc.SelectSingleNode("//*[local-name()='Reason']") ?? doc.SelectSingleNode("//*[local-name()='Fault']/*[local-name()='Reason']");
@@ -269,6 +333,49 @@ public class NfeSefazClient : INfeSefazClient
     <nfe:nfeDadosMsg>" + inner + @"</nfe:nfeDadosMsg>
   </soap:Body>
 </soap:Envelope>";
+    }
+
+    private static string BuildInutilizacaoSoapEnvelope(string inutNfeXml)
+    {
+        var inner = inutNfeXml.Trim();
+        if (inner.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase))
+        {
+            var end = inner.IndexOf("?>", StringComparison.Ordinal);
+            if (end >= 0) inner = inner.Substring(end + 2).Trim();
+        }
+        return @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<soap:Envelope xmlns:soap=""http://www.w3.org/2003/05/soap-envelope"" xmlns:nfe=""http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4"">
+  <soap:Header/>
+  <soap:Body>
+    <nfe:nfeDadosMsg>" + inner + @"</nfe:nfeDadosMsg>
+  </soap:Body>
+</soap:Envelope>";
+    }
+
+    private static string? TryGetFaultOrRetInutNFeMessage(XmlDocument doc)
+    {
+        var reason = doc.SelectSingleNode("//*[local-name()='Reason']") ?? doc.SelectSingleNode("//*[local-name()='Fault']/*[local-name()='Reason']");
+        if (reason != null)
+        {
+            var text = reason.SelectSingleNode(".//*[local-name()='Text']");
+            var msg = text?.InnerText?.Trim();
+            if (!string.IsNullOrEmpty(msg)) return msg;
+        }
+        var faultString = doc.SelectSingleNode("//*[local-name()='faultstring']");
+        if (faultString != null && !string.IsNullOrWhiteSpace(faultString.InnerText))
+            return faultString.InnerText.Trim();
+        var ret = doc.SelectSingleNode("//*[local-name()='retInutNFe']")
+            ?? doc.SelectSingleNode("//*[local-name()='infInut']");
+        if (ret != null)
+        {
+            var inf = ret.LocalName == "infInut" ? ret : ret.SelectSingleNode("*[local-name()='infInut']");
+            var target = inf ?? ret;
+            var cStat = target.SelectSingleNode("*[local-name()='cStat']")?.InnerText?.Trim();
+            var xMotivo = target.SelectSingleNode("*[local-name()='xMotivo']")?.InnerText?.Trim();
+            if (!string.IsNullOrEmpty(cStat) || !string.IsNullOrEmpty(xMotivo))
+                return $"Erro {cStat ?? "?"} - {xMotivo ?? ""}".Trim();
+        }
+        return null;
     }
 
     private static string BuildRecepcaoEventoSoapEnvelope(string envEventoXml)

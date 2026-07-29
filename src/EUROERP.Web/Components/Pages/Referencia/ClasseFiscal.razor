@@ -1,0 +1,213 @@
+@page "/referencia/classe-fiscal"
+@using EUROERP.Application.ReferenceData
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Classe Fiscal</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Classificação Fiscal</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isSuccess ? "alert-success" : "alert-warning") py-2 mb-2">@_message</div>
+        }
+        <div class="row">
+            <div class="col-12 col-lg-8">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-bordered table-list">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Id</th>
+                                <th>Valor</th>
+                                <th>IPI %</th>
+                                <th class="text-center">ICMS ST</th>
+                                <th>Descrição</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _list)
+                            {
+                                <tr>
+                                    <td class="align-middle">@row.Id</td>
+                                    @if (_editingId == row.Id)
+                                    {
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm" @bind="_editValue" maxlength="20" />
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm" style="width:5rem" @bind="_editIpi" step="0.01" min="0" max="99" />
+                                        </td>
+                                        <td class="text-center align-middle">
+                                            <input type="checkbox" class="form-check-input" @bind="_editIcmsst" />
+                                        </td>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm" @bind="_editName" maxlength="50" />
+                                        </td>
+                                        <td class="align-middle">
+                                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveEdit(row.Id)" disabled="@_saving">Altera</button>
+                                            <button type="button" class="btn btn-sm btn-secondary ms-1" @onclick="CancelEdit">Cancelar</button>
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td class="align-middle">@row.Value</td>
+                                        <td class="align-middle">@(row.Ipi?.ToString("N2") ?? "-")</td>
+                                        <td class="text-center align-middle">
+                                            <input type="checkbox" class="form-check-input" disabled checked="@row.Icmsst" />
+                                        </td>
+                                        <td class="align-middle">@row.Name</td>
+                                        <td class="align-middle">
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-primary" @onclick="() => StartEdit(row)">Alterar</button>
+                                            <span class="mx-1">|</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0 text-danger" @onclick="() => DeleteAsync(row.Id)">Apagar</button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-12 col-lg-4 mt-3 mt-lg-0">
+                <label class="form-label">Nova Classificação</label>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Id</label>
+                    <input type="number" class="form-control form-control-sm" style="width:5rem" @bind="_newId" min="1" />
+                    <span class="text-danger small">@_newIdError</span>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Valor</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_newValue" maxlength="20" />
+                    <span class="text-danger small">@_newValueError</span>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">IPI %</label>
+                    <input type="number" class="form-control form-control-sm" style="width:5rem" @bind="_newIpi" step="0.01" min="0" max="99" />
+                    <span class="text-danger small">@_newIpiError</span>
+                </div>
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="newIcmsst" @bind="_newIcmsst" />
+                    <label class="form-check-label" for="newIcmsst">ICMS ST</label>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Descrição</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_newName" maxlength="50" />
+                    <span class="text-danger small">@_newNameError</span>
+                </div>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="CreateAsync" disabled="@_creating">@(_creating ? "Criando..." : "Criar")</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<FiscalClassDto> _list = new();
+    private int _newId = 1;
+    private string _newValue = "";
+    private decimal? _newIpi = 0;
+    private bool _newIcmsst;
+    private string _newName = "";
+    private string? _newIdError;
+    private string? _newValueError;
+    private string? _newIpiError;
+    private string? _newNameError;
+    private bool _creating;
+    private string? _message;
+    private bool _isSuccess;
+    private int? _editingId;
+    private string _editValue = "";
+    private decimal? _editIpi;
+    private bool _editIcmsst;
+    private string _editName = "";
+    private bool _saving;
+    private string? _applicationId;
+    private string? _userId;
+
+    [Inject] private IFiscalClassService FiscalClassService { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = state.User.Identity?.Name ?? "SYS";
+        _applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _list = (await FiscalClassService.GetAllAsync()).ToList();
+    }
+
+    private void StartEdit(FiscalClassDto row)
+    {
+        _editingId = row.Id;
+        _editValue = row.Value ?? "";
+        _editIpi = row.Ipi;
+        _editIcmsst = row.Icmsst;
+        _editName = row.Name ?? "";
+        _message = null;
+    }
+
+    private void CancelEdit() => _editingId = null;
+
+    private async Task SaveEdit(int id)
+    {
+        if (string.IsNullOrWhiteSpace(_editValue)) { _message = "Digite o valor."; _isSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(_editName)) { _message = "Digite a descrição."; _isSuccess = false; return; }
+        if (_editIpi is < 0 or > 99) { _message = "IPI deve estar entre 0 e 99."; _isSuccess = false; return; }
+        _saving = true; _message = null;
+        try
+        {
+            await FiscalClassService.UpdateAsync(id, _editValue.Trim(), _editIpi, _editIcmsst, _editName.Trim(), _applicationId!, _userId!);
+            _editingId = null;
+            await LoadAsync();
+            _message = "Classe fiscal atualizada.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+        finally { _saving = false; }
+    }
+
+    private async Task CreateAsync()
+    {
+        _newIdError = _newValueError = _newIpiError = _newNameError = null;
+        if (_newId < 1) { _newIdError = "Id deve ser maior que zero."; return; }
+        if (string.IsNullOrWhiteSpace(_newValue)) { _newValueError = "Digite o valor."; return; }
+        if (_newIpi is null || _newIpi < 0 || _newIpi > 99) { _newIpiError = "Digite o IPI (0 a 99)."; return; }
+        if (string.IsNullOrWhiteSpace(_newName)) { _newNameError = "Digite a descrição."; return; }
+        _creating = true; _message = null;
+        try
+        {
+            await FiscalClassService.CreateAsync(_newId, _newValue.Trim(), _newIpi, _newIcmsst, _newName.Trim(), _applicationId!, _userId!);
+            _newId = 1; _newValue = ""; _newIpi = 0; _newIcmsst = false; _newName = "";
+            await LoadAsync();
+            _message = "Classe fiscal criada.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+        finally { _creating = false; }
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que quer apagar?")) return;
+        _message = null;
+        try
+        {
+            await FiscalClassService.DeleteAsync(id);
+            await LoadAsync();
+            _message = "Classe fiscal excluída.";
+            _isSuccess = true;
+        }
+        catch (Exception ex) { _message = ex.Message; _isSuccess = false; }
+    }
+}

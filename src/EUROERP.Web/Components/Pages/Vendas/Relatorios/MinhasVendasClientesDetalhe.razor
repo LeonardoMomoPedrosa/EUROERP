@@ -1,0 +1,69 @@
+@page "/vendas/relatorios/minhas-vendas/clientes/detalhe"
+@layout EUROERP.Web.Components.Layout.PopupLayout
+@using EUROERP.Application.SalesReports
+@using EUROERP.Web.Services
+@rendermode InteractiveServer
+
+<PageTitle>Minhas Vendas - Cliente</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Cliente — @(ClientName ?? ClientId?.ToString())</h5>
+    </div>
+    <div class="card-body">
+        @if (_loading)
+        {
+            <p class="text-muted">Carregando...</p>
+        }
+        else if (_reportHtml != null)
+        {
+            <div class="abc-report-html">@((MarkupString)_reportHtml)</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public int? ClientId { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? ClientName { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "first")] public string? QueryFirst { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "last")] public string? QueryLast { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? UserName { get; set; }
+
+    private string? _reportHtml;
+    private bool _loading = true;
+
+    [Inject] private ISalesGroupReportService ReportService { get; set; } = null!;
+    [Inject] private SalesReportStateService State { get; set; } = null!;
+    [Inject] private SalesReportTransformService Transform { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.SetCommissionMode(true);
+        if (!string.IsNullOrWhiteSpace(UserName))
+            State.SetSalesAgent(UserName);
+
+        await SalesReportPageHelper.EnsureAbcDataAsync(ReportService, State, QueryFirst, QueryLast).ConfigureAwait(true);
+
+        if (State.DateRange != null && ClientId.HasValue)
+        {
+            try
+            {
+                var data = await ReportService.GetMySalesReportDataAsync(State.DateRange, State.SalesAgent, ClientId.Value).ConfigureAwait(true);
+                var xml = "<GROUP_REPORT>" + data.GroupRefReportXml + data.GroupReportXml + "</GROUP_REPORT>";
+                var args = new Dictionary<string, string>
+                {
+                    ["detailPage"] = "/vendas/relatorios/abc/clientes/grupo",
+                    ["clientId"] = ClientId.Value.ToString(),
+                    ["first"] = State.DateRange.FirstDate.ToString("yyyy-MM-dd"),
+                    ["last"] = State.DateRange.LastDate.ToString("yyyy-MM-dd")
+                };
+                _reportHtml = Transform.Transform(xml, "invoicingByGroupClientsReport.xsl", args);
+            }
+            catch (Exception ex)
+            {
+                _reportHtml = $"<p class='text-danger'>{ex.Message}</p>";
+            }
+        }
+        _loading = false;
+    }
+}

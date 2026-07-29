@@ -1,0 +1,342 @@
+﻿@page "/financeiro/contas-a-pagar/criar"
+@using EUROERP.Application.AccountsPayable
+@using EUROERP.Application.Suppliers
+@using EUROERP.Application.Products
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Contas a Pagar - Criar</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Nova Conta a Pagar</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        @if (_successMessage != null)
+        {
+            <div class="alert alert-success py-2 mb-2">
+                @_successMessage
+                <a href="/financeiro/contas-a-pagar/consultar" class="alert-link">Ir para Consultar</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12 col-md-6 col-lg-4">
+                    <label class="form-label">Fornecedor <span class="text-danger">*</span></label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" placeholder="Nome ou parte do nome" @bind="_supplierFilter" @bind:event="oninput" />
+                        <button type="button" class="btn btn-outline-secondary" @onclick="FilterSuppliers" disabled="@_loadingSuppliers">Filtrar</button>
+                    </div>
+                    @if (_supplierSuggestions.Count > 0)
+                    {
+                        <div class="border rounded mt-1 overflow-auto" style="max-height: 140px;">
+                            <table class="table table-sm table-hover mb-0">
+                                <tbody>
+                                    @foreach (var s in _supplierSuggestions)
+                                    {
+                                        <tr role="button" class="@(_selectedSupplierId == s.Id ? "table-primary" : "")" @onclick="() => SelectSupplier(s)">
+                                            <td class="small">@s.Id</td>
+                                            <td class="small">@s.SocialName</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    @if (_selectedSupplierId.HasValue)
+                    {
+                        <p class="small text-success mb-0 mt-1">Selecionado: @_selectedSupplierName</p>
+                    }
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label">Grupo</label>
+                    <select class="form-select form-select-sm" @bind="_supplierGroupId">
+                        @foreach (var g in _supplierGroups)
+                        {
+                            <option value="@g.Id">@g.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label">Moeda <span class="text-danger">*</span></label>
+                    <select class="form-select form-select-sm" @bind="_currencyId">
+                        <option value="1">1 - REAL (R$)</option>
+                        <option value="2">2 - DÓLAR (US$)</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label">Modo de pagamento <span class="text-danger">*</span></label>
+                    <select class="form-select form-select-sm" @bind="_paymentMethodId">
+                        @foreach (var pm in _paymentMethods)
+                        {
+                            if (pm.Id == 0) continue;
+                            <option value="@pm.Id">@pm.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label">Data do pedido</label>
+                    <input id="orderDate" type="text" class="form-control form-control-sm date-mask-ddmmyyyy" value="@_orderDateText" @onblur="SyncOrderDateFromInput" placeholder="dd/MM/yyyy" maxlength="10" autocomplete="off" />
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label">Valor total <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm text-end" placeholder="0,00" @bind="_totalAmountText" />
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label">Nº parcelas <span class="text-danger">*</span></label>
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control" min="1" max="70" @bind="_terms" />
+                        <button type="button" class="btn btn-outline-primary" @onclick="GenerateTermsAsync" disabled="@_loading">Ok</button>
+                    </div>
+                </div>
+            </div>
+
+            @if (_termRows.Count > 0)
+            {
+                <hr class="my-3" />
+                <p class="small text-muted">Ajuste vencimentos e valores se necessário. A soma das parcelas deve ser igual ao valor total.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Parcela</th>
+                                <th>Prazo (dias)</th>
+                                <th>Vencimento</th>
+                                <th class="text-end">Valor</th>
+                                <th>Dados extras</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _termRows)
+                            {
+                                <tr>
+                                    <td class="align-middle">@row.TermNo</td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm" style="width:70px" @bind="row.Days" @bind:after="() => UpdateDueDateFromDays(row)" />
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" style="width:100px" placeholder="dd/MM/yyyy" @bind="row.DueDateText" />
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm text-end" style="width:100px" @bind="row.AmountText" />
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" placeholder="Memo" @bind="row.Memo" maxlength="200" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small">Soma das parcelas: <strong>@_termRowsSum.ToString("N2", _ptBr)</strong> @(_totalAmount.HasValue && Math.Abs(_termRowsSum - _totalAmount.Value) > 0.01m ? " — Ajuste para igualar ao valor total." : "")</p>
+                <button type="button" class="btn btn-primary" @onclick="CreateBill" disabled="@_saving">@(_saving ? "Salvando..." : "Criar Conta")</button>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private string _supplierFilter = "";
+    private int _supplierGroupId;
+    private int? _selectedSupplierId;
+    private string? _selectedSupplierName;
+    private byte _currencyId = 1;
+    private byte _paymentMethodId = 1;
+    private string _orderDateText = ""; // dd/MM/yyyy, default hoje
+    private string _totalAmountText = "";
+    private byte _terms = 1;
+    private decimal? _totalAmountParsed;
+    private decimal? _totalAmount => _totalAmountParsed;
+    private List<TermRow> _termRows = new();
+    private decimal _termRowsSum => _termRows.Sum(r => r.AmountValue);
+    private DateTime _orderDateBase => ParseDate(_orderDateText) ?? DateTime.Today;
+    private bool _loading;
+    private bool _saving;
+    private string? _validationError;
+    private string? _successMessage;
+
+    private IReadOnlyList<IdNameDto> _supplierGroups = new List<IdNameDto>();
+    private IReadOnlyList<IdNameDto> _paymentMethods = new List<IdNameDto>();
+    private IReadOnlyList<SupplierSummaryDto> _supplierSuggestions = new List<SupplierSummaryDto>();
+    private bool _loadingSuppliers;
+    private int _supplierPayterm = 30;
+
+    private class TermRow
+    {
+        public byte TermNo { get; set; }
+        public int Days { get; set; }
+        public string DueDateText { get; set; } = "";
+        public DateTime DueDate => DateTime.TryParseExact(DueDateText, "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d) ? d : DateTime.Today;
+        public string AmountText { get; set; } = "";
+        public decimal AmountValue => decimal.TryParse(AmountText, System.Globalization.NumberStyles.Any, _ptBr, out var v) ? v : 0;
+        public string Memo { get; set; } = "";
+    }
+
+    [Inject] private ICreateBillsToPayService CreateService { get; set; } = null!;
+    [Inject] private ISupplierReferenceService SupplierReference { get; set; } = null!;
+    [Inject] private ISupplierService SupplierService { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _orderDateText = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+        _supplierGroups = await SupplierReference.GetSupplierGroupsAsync();
+        _paymentMethods = await SupplierReference.GetPaymentMethodsAsync();
+        if (_paymentMethodId == 0 && _paymentMethods.Count > 1)
+            _paymentMethodId = (byte)_paymentMethods.First(p => p.Id != 0).Id;
+    }
+
+    private async Task SyncOrderDateFromInput()
+    {
+        try
+        {
+            var value = await JSRuntime.InvokeAsync<string>("euroerpGetDateInputValue", "orderDate").ConfigureAwait(true);
+            if (value != null)
+                _orderDateText = value;
+        }
+        catch { /* JS pode não estar carregado */ }
+        StateHasChanged();
+    }
+
+    private async Task FilterSuppliers()
+    {
+        _loadingSuppliers = true;
+        try
+        {
+            var groupId = _supplierGroupId > 0 ? _supplierGroupId : 0;
+            _supplierSuggestions = await SupplierService.GetSuggestionsAsync(_supplierFilter.Trim(), groupId, 15);
+        }
+        finally
+        {
+            _loadingSuppliers = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectSupplier(SupplierSummaryDto s)
+    {
+        _selectedSupplierId = s.Id;
+        _selectedSupplierName = s.SocialName;
+        _supplierSuggestions = new List<SupplierSummaryDto>();
+        var info = await CreateService.GetSupplierPaytermAndPaymentMethodAsync(s.Id);
+        if (info != null)
+        {
+            if (info.Payterm.HasValue && info.Payterm.Value > 0)
+                _supplierPayterm = info.Payterm.Value;
+            if (info.PaymentMethodId.HasValue && info.PaymentMethodId.Value > 0)
+                _paymentMethodId = info.PaymentMethodId.Value;
+        }
+        StateHasChanged();
+    }
+
+    private async Task GenerateTermsAsync()
+    {
+        await SyncOrderDateFromInput();
+        _validationError = null;
+        if (!_selectedSupplierId.HasValue) { _validationError = "Selecione o fornecedor."; return; }
+        if (!decimal.TryParse(_totalAmountText, System.Globalization.NumberStyles.Any, _ptBr, out var total) || total <= 0)
+        { _validationError = "Informe o valor total."; return; }
+        if (_terms < 1 || _terms > 70) { _validationError = "Número de parcelas entre 1 e 70."; return; }
+
+        _loading = true;
+        _totalAmountParsed = total;
+        var orderDate = _orderDateBase;
+        var termVal = Math.Round(total / _terms, 2);
+        var firstAmount = termVal - (termVal * _terms - total);
+        var daysPerTerm = _supplierPayterm <= 0 ? 30 : Math.Max(1, _supplierPayterm / _terms);
+
+        _termRows = new List<TermRow>();
+        for (byte i = 1; i <= _terms; i++)
+        {
+            var due = orderDate.AddDays((i - 1) * daysPerTerm);
+            _termRows.Add(new TermRow
+            {
+                TermNo = i,
+                Days = (i - 1) * daysPerTerm,
+                DueDateText = due.ToString("dd/MM/yyyy", _ptBr),
+                AmountText = (i == 1 ? firstAmount : termVal).ToString("N2", _ptBr),
+                Memo = ""
+            });
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void UpdateDueDateFromDays(TermRow row)
+    {
+        var orderDate = _orderDateBase;
+        var due = orderDate.AddDays(row.Days);
+        row.DueDateText = due.ToString("dd/MM/yyyy", _ptBr);
+        StateHasChanged();
+    }
+
+    private static DateTime? ParseDate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (DateTime.TryParseExact(text.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d))
+            return d;
+        if (DateTime.TryParse(text.Trim(), _ptBr, System.Globalization.DateTimeStyles.None, out d))
+            return d;
+        return null;
+    }
+
+    private async Task CreateBill()
+    {
+        await SyncOrderDateFromInput();
+        _validationError = null;
+        if (!_selectedSupplierId.HasValue) { _validationError = "Selecione o fornecedor."; StateHasChanged(); return; }
+        if (_paymentMethodId == 0) { _validationError = "Selecione o modo de pagamento."; StateHasChanged(); return; }
+        if (!_totalAmount.HasValue || _totalAmount <= 0) { _validationError = "Informe o valor total."; StateHasChanged(); return; }
+        if (_termRows.Count == 0) { _validationError = "Gere as parcelas antes de criar."; StateHasChanged(); return; }
+        if (Math.Abs(_termRowsSum - _totalAmount.Value) > 0.01m) { _validationError = "A soma das parcelas deve ser igual ao valor total."; StateHasChanged(); return; }
+
+        var details = _termRows.Select(r => new BillsToPayTermDto
+        {
+            TermNo = r.TermNo,
+            DueDate = r.DueDate,
+            Amount = r.AmountValue,
+            Memo = r.Memo ?? ""
+        }).ToList();
+
+        var dto = new CreateBillsToPayDto
+        {
+            SupplierId = _selectedSupplierId.Value,
+            CurrencyId = _currencyId,
+            PaymentMethodId = _paymentMethodId,
+            OrderDate = ParseDate(_orderDateText),
+            TotalAmount = _totalAmount.Value,
+            Terms = (byte)_termRows.Count,
+            Details = details
+        };
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = state.User.Identity?.Name ?? "SYS";
+        var applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+
+        _saving = true;
+        try
+        {
+            var newId = await CreateService.CreateAsync(dto, applicationId, userId);
+            _successMessage = $"Operação efetuada com sucesso. Nova Conta a Pagar — Lançamento #{newId}.";
+        }
+        catch (Exception ex)
+        {
+            _validationError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -1,0 +1,81 @@
+﻿@page "/financeiro/contas-a-pagar/alterar-valor"
+@using EUROERP.Application.AccountsPayable
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>Alterar valor</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Alterar valor da parcela</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail == null && _error == null && _billId > 0)
+        { <p class="text-muted">Carregando...</p> }
+        @if (_detail != null)
+        {
+            <p class="small">Lançamento @_billId — Parcela @_detail.TermNo/@_detail.Terms — @_detail.SupplierName. Saldo: @_detail.Left.ToString("N2", _ptBr) @_detail.Symbol</p>
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Novo valor</label>
+                    <input type="text" class="form-control form-control-sm text-end" @bind="_amountText" placeholder="0,00" />
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                <a href="/financeiro/contas-a-pagar/consultar" class="btn btn-secondary btn-sm ms-2">Voltar</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _billId;
+    private byte _termNo;
+    private BillToPayDetailDto? _detail;
+    private string _amountText = "";
+    private bool _saving;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToPayService UpdateService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
+    [Inject] private IConfiguration Configuration { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("IDL"), out _billId) || !byte.TryParse(q.GetValueOrDefault("TERM_NO"), out _termNo) || _billId <= 0)
+        { _error = "Parâmetros IDL e TERM_NO são obrigatórios."; return; }
+        _detail = await UpdateService.GetDetailAsync(_billId, _termNo);
+        if (_detail == null) { _error = "Lançamento não encontrado."; return; }
+        _amountText = _detail.Amount.ToString("N2", _ptBr);
+    }
+
+    private async Task Save()
+    {
+        if (_detail == null) return;
+        if (!decimal.TryParse(_amountText, System.Globalization.NumberStyles.Any, _ptBr, out var amount) || amount <= 0)
+        { _error = "Informe um valor válido."; return; }
+        _saving = true; _error = null;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = state.User.Identity?.Name ?? "SYS";
+            var applicationId = Configuration["Authentication:ApplicationName"] ?? "EUROERP";
+            await UpdateService.UpdateAmountAsync(_billId, _termNo, amount, applicationId, userId);
+            Navigation.NavigateTo("/financeiro/contas-a-pagar/consultar", forceLoad: true);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

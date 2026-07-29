@@ -620,6 +620,7 @@ public class OrderService : IOrderService
         const string sql = @"
             SELECT o.PKId AS OrderId, o.CLIENT_ID AS ClientId, ISNULL(o.CREDIT, 0) AS Credit, ISNULL(o.DISCOUNT, 0) AS Discount,
                 ISNULL(o.OTHER_EXPENSES, 0) AS OtherExpenses, ISNULL(o.SHIPMENT_COST, 0) AS ShipmentCost,
+                ISNULL(o.CHARGE_SHIPMENT, 1) AS ChargeShipment,
                 o.STATUS AS Status, o.BTR_ID AS BtrId, o.SALES_AGENT AS SalesAgent,
                 c.FANTASY_NAME AS ClientName, ISNULL(c.AVG_PAYTERM, 0) AS AvgPayterm,
                 mkt.CURRENCY_ID AS CurrencyId, cur.SYMBOL AS CurrencySymbol
@@ -631,6 +632,30 @@ public class OrderService : IOrderService
         var row = await _connection.QueryFirstOrDefaultAsync<OrderPaymentSummaryDto>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (row == null)
             return null;
+
+        const string classTotalsSql = @"
+            SELECT
+                ISNULL(SUM(CASE WHEN pg.PRODUCT_CLASS_ID = 1 THEN line.LineTotal ELSE 0 END), 0) AS ProductTotal,
+                ISNULL(SUM(CASE WHEN pg.PRODUCT_CLASS_ID = 2 THEN line.LineTotal ELSE 0 END), 0) AS ServiceTotal,
+                ISNULL(SUM(CASE WHEN ISNULL(od.IGNORE_ORDER_DISC, 0) = 0 THEN line.LineTotal ELSE 0 END), 0) AS DiscountableTotal
+            FROM [ORDER_DETAILS] od
+            JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+            CROSS APPLY (
+                SELECT CAST(ROUND(ROUND(ROUND(od.PRICE * od.CONVERSION, 2) * (1 - ISNULL(od.DISCOUNT, 0) / 100.0), 2) * od.QUANTITY, 2) AS DECIMAL(14,2)) AS LineTotal
+            ) line
+            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0";
+        var classTotals = await _connection.QueryFirstAsync<(decimal ProductTotal, decimal ServiceTotal, decimal DiscountableTotal)>(
+            new CommandDefinition(classTotalsSql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        row.ProductTotal = classTotals.ProductTotal;
+        row.ServiceTotal = classTotals.ServiceTotal;
+
+        var afterDiscount = Math.Round(
+            row.ItemsSubtotal - classTotals.DiscountableTotal * row.Discount / 100m - row.Credit,
+            2, MidpointRounding.AwayFromZero);
+        if (afterDiscount < 0) afterDiscount = 0;
+        row.PartialTotal = afterDiscount;
+
         row.TotalToPay = precomputedTotalToPay ?? await GetOrderTotalAmountAsync(orderId, cancellationToken).ConfigureAwait(false);
         return row;
     }

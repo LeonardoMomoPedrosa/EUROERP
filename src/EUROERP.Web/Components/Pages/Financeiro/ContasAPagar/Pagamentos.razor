@@ -1,0 +1,105 @@
+﻿@page "/financeiro/contas-a-pagar/pagamentos"
+@using EUROERP.Application.AccountsPayable
+@rendermode InteractiveServer
+
+<PageTitle>Pagamentos da parcela</PageTitle>
+
+<div class="card">
+    <div class="card-header"><h5 class="mb-0">Pagamentos — Lançamento @_billId — Parcela @_termNo</h5></div>
+    <div class="card-body">
+        @if (_error != null) { <div class="alert alert-danger">@_error</div> }
+        @if (_detail != null)
+        {
+            <p class="small">@_detail.SupplierName — Total parcela: @_detail.Amount.ToString("N2", _ptBr) — Pago: @_detail.Paid.ToString("N2", _ptBr) — Saldo: @_detail.Left.ToString("N2", _ptBr)</p>
+        }
+        @if (_payments.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Data pagamento</th>
+                            <th class="text-end">Valor</th>
+                            <th>Memo</th>
+                            <th>Usuário</th>
+                            <th>Criado em</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _payments)
+                        {
+                            <tr>
+                                <td>@p.PaymentDate</td>
+                                <td class="text-end">@p.Amount.ToString("N2", _ptBr)</td>
+                                <td class="small">@p.Memo</td>
+                                <td class="small">@p.UserId</td>
+                                <td class="small">@p.SysCreationDate</td>
+                                <td>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => DeletePayment(p.PkId)" disabled="@_deleting">Excluir</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (_billId > 0 && !_loading)
+        {
+            <p class="text-muted">Nenhum pagamento registrado para esta parcela.</p>
+        }
+        @if (_billId > 0)
+        {
+            <div class="mt-2">
+                <a href="/financeiro/contas-a-pagar/consultar" class="btn btn-secondary btn-sm">Voltar ao relatório</a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _billId;
+    private byte _termNo;
+    private BillToPayDetailDto? _detail;
+    private IReadOnlyList<PaymentRowDto> _payments = new List<PaymentRowDto>();
+    private bool _loading = true;
+    private bool _deleting;
+    private string? _error;
+
+    [Inject] private IUpdateBillsToPayService UpdateService { get; set; } = null!;
+    [Inject] private IBillsToPayPaymentService PaymentService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var q = ParseQuery(uri.Query);
+        if (!int.TryParse(q.GetValueOrDefault("IDL"), out _billId) || !byte.TryParse(q.GetValueOrDefault("TERM_NO"), out _termNo) || _billId <= 0)
+        { _error = "Parâmetros IDL e TERM_NO são obrigatórios."; _loading = false; return; }
+        _detail = await UpdateService.GetDetailAsync(_billId, _termNo);
+        _payments = await PaymentService.GetPaymentsAsync(_billId, _termNo);
+        _loading = false;
+    }
+
+    private async Task DeletePayment(int pkId)
+    {
+        _deleting = true; _error = null;
+        try
+        {
+            await PaymentService.DeletePaymentAsync(pkId);
+            _payments = await PaymentService.GetPaymentsAsync(_billId, _termNo);
+            _detail = await UpdateService.GetDetailAsync(_billId, _termNo);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _deleting = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in (query ?? "").TrimStart('?').Split('&'))
+        { var kv = part.Split('=', 2, StringSplitOptions.None); if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0])) d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim()); }
+        return d;
+    }
+}

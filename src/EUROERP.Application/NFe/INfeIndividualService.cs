@@ -42,6 +42,9 @@ public interface INfeIndividualService
     /// <summary>Cancel NFe at SEFAZ and update local data. Transaction: RECEIPT_CANCEL + SEFAZ; rollback on SEFAZ failure.</summary>
     Task<CancelNfeResult> CancelNfeAsync(CancelNfeRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Inutilizar número de NFe at SEFAZ (NFeInutilizacao4). Does not require authorized NFe; blocks if already in RECEIPT_CANCEL.</summary>
+    Task<InutilizarNfeResult> InutilizarNfeAsync(InutilizarNfeRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>Today's canceled receipts (by SYS_CREATION_DATE).</summary>
     Task<IReadOnlyList<CanceledReceiptDto>> GetTodayCanceledReceiptsAsync(CancellationToken cancellationToken = default);
 

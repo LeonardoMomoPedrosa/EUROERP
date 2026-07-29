@@ -1,0 +1,461 @@
+@page "/financeiro/contas-a-receber/consultar"
+@using EUROERP.Application.AccountsReceivable
+@using EUROERP.Application.Clients
+@using EUROERP.Application.Products
+@rendermode InteractiveServer
+
+<PageTitle>Contas a Receber - Consultar</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Consulta Contas a Receber</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label">Cliente (opcional)</label>
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" placeholder="Nome ou parte do nome" @bind="_clientFilter" @bind:event="oninput" />
+                    <button type="button" class="btn btn-outline-secondary" @onclick="FilterClients" disabled="@_loadingClients">Busca</button>
+                </div>
+                @if (_clientSuggestions.Count > 0)
+                {
+                    <div class="border rounded mt-1 overflow-auto" style="max-height: 140px;">
+                        <table class="table table-sm table-hover mb-0">
+                            <tbody>
+                                @foreach (var c in _clientSuggestions)
+                                {
+                                    <tr role="button" class="@(_selectedClientId == c.Id ? "table-primary" : "")" @onclick="() => SelectClient(c)">
+                                        <td class="small">@c.Id</td>
+                                        <td class="small">@c.SocialName @(string.IsNullOrEmpty(c.FantasyName) ? "" : "/ " + c.FantasyName)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (_selectedClientId.HasValue)
+                {
+                    <p class="small text-success mb-0 mt-1">Selecionado: @_selectedClientName</p>
+                }
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data inicial</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_firstDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Data final</label>
+                <input type="text" class="form-control form-control-sm date-mask-ddmmyyyy" placeholder="dd/MM/yyyy" @bind="_lastDateText" maxlength="10" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Método pagto.</label>
+                <select class="form-select form-select-sm" @bind="_criteria.PaymentMethodId">
+                    @foreach (var pm in _paymentMethods)
+                    {
+                        <option value="@pm.Id">@pm.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Status</label>
+                <select class="form-select form-select-sm" @bind="_criteria.Status">
+                    <option value="0">Selecione</option>
+                    <option value="P">PAGOS</option>
+                    <option value="U">NÃO PAGOS</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Usuário</label>
+                <select class="form-select form-select-sm" @bind="_salesAgentName">
+                    @foreach (var u in _salesAgents)
+                    {
+                        <option value="@u.Name">@u.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Vendedor</label>
+                <select class="form-select form-select-sm" @bind="_ofSalerName">
+                    @foreach (var u in _salesAgents)
+                    {
+                        <option value="@u.Name">@u.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Pedido</label>
+                <input type="text" class="form-control form-control-sm" placeholder="ID do pedido" @bind="_orderIdText" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label d-block">Exibição</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="abc" @bind="_criteria.Abc" />
+                    <label class="form-check-label small" for="abc">ABC Geral</label>
+                </div>
+            </div>
+            <div class="col-12 col-lg-2 d-flex align-items-end">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Consulta")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card">
+        <div class="card-header">
+            <strong>Período: @_result.FirstDate.ToString("dd/MM/yyyy") até @_result.LastDate.ToString("dd/MM/yyyy")</strong>
+        </div>
+        <div class="card-body p-0">
+            @if (_criteria.Abc)
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Cliente</th>
+                                <th class="text-end">Total R$</th>
+                                <th class="text-end">%</th>
+                                <th class="text-end">Pago R$</th>
+                                <th class="text-end">Saldo R$</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var validRows = _result.Rows.Where(r => string.Equals(r.Ledge, "Y", StringComparison.OrdinalIgnoreCase)).ToList();
+                                var totalAmount = validRows.Sum(r => r.Amount);
+                                var abcGroups = validRows.GroupBy(r => new { r.ClientId, r.SocialName }).OrderByDescending(g => g.Sum(x => x.Amount));
+                            }
+                            @foreach (var grp in abcGroups)
+                            {
+                                var amount = grp.Sum(r => r.Amount);
+                                var paid = grp.Sum(r => r.Paid);
+                                var pct = totalAmount > 0 ? (amount / totalAmount * 100) : 0m;
+                                <tr>
+                                    <td>
+                                        <a href="@GetConsultarUrl(grp.Key.ClientId)" class="text-primary">@grp.Key.SocialName</a>
+                                    </td>
+                                    <td class="text-end">@amount.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@pct.ToString("N2", _ptBr)%</td>
+                                    <td class="text-end">@paid.ToString("N2", _ptBr)</td>
+                                    <td class="text-end">@((amount - paid).ToString("N2", _ptBr))</td>
+                                </tr>
+                            }
+                            <tr class="table-secondary">
+                                <td class="text-end"><strong>Total</strong></td>
+                                <td class="text-end"><strong>R$ @validRows.Sum(r => r.Amount).ToString("N2", _ptBr)</strong></td>
+                                <td></td>
+                                <td class="text-end"><strong>R$ @validRows.Sum(r => r.Paid).ToString("N2", _ptBr)</strong></td>
+                                <td class="text-end"><strong>@((validRows.Sum(r => r.Amount) - validRows.Sum(r => r.Paid)).ToString("N2", _ptBr))</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0 data-grid-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center">Pedido</th>
+                                <th class="text-center">NFE</th>
+                                <th class="text-center">NFES</th>
+                                <th class="text-center">Parc.</th>
+                                <th class="text-center">Venc.</th>
+                                <th class="text-center">Dt. Pedido</th>
+                                <th>Cliente</th>
+                                <th class="text-end">Valor</th>
+                                <th class="text-end">Pago</th>
+                                <th></th>
+                                <th class="text-end">Saldo</th>
+                                <th>Usuário</th>
+                                <th>Mét. Pagto.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _result.Rows.OrderBy(r => r.DueDate).ThenBy(r => r.SocialName).ThenBy(r => r.OrderId).ThenBy(r => r.TermNo))
+                            {
+                                var clientDisplay = string.IsNullOrEmpty(row.FantasyName) ? row.SocialName : $"{row.SocialName} / {row.FantasyName}";
+                                <tr>
+                                    <td class="text-center">
+                                        <a href="@GetOsUrl(row.OrderId)" target="_blank" rel="noopener noreferrer" class="text-primary" title="Abrir OS">@row.OrderId</a>
+                                    </td>
+                                    <td class="text-center">@(row.Receipt == 0 ? "—" : row.Receipt.ToString())</td>
+                                    <td class="text-center">@(row.NfesNo == 0 ? "—" : row.NfesNo.ToString())</td>
+                                    <td class="text-center">@row.TermNo/@row.Terms</td>
+                                    <td class="text-center">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("alterar-vencimento", row)" class="text-primary" title="Alterar vencimento">@row.DueDate</a>
+                                        }
+                                        else
+                                        {
+                                            @row.DueDate
+                                        }
+                                    </td>
+                                    <td class="text-center small">@row.OrderDate</td>
+                                    <td>
+                                        <a href="@GetEditClientUrl(row.ClientId)" target="_blank" rel="noopener noreferrer" class="text-primary" title="Editar cliente">@(clientDisplay.Length > 50 ? clientDisplay[..47] + "..." : clientDisplay)</a>
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("alterar-valor", row)" class="text-primary" title="Alterar valor">@row.Amount.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            @row.Amount.ToString("N2", _ptBr)
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("receber", row)" class="text-primary" title="Receber (dar baixa)">@row.Paid.ToString("N2", _ptBr)</a>
+                                        }
+                                        else
+                                        {
+                                            @row.Paid.ToString("N2", _ptBr)
+                                        }
+                                        @if (row.Paid > 0 || row.ComId > 0)
+                                        {
+                                            <a href="@GetActionUrl("recebimentos", row)" class="text-primary ms-1" title="Listar recebimentos">📋</a>
+                                        }
+                                    </td>
+                                    <td></td>
+                                    <td class="text-end">@row.Balance.ToString("N2", _ptBr)</td>
+                                    <td class="small">@row.SalesAgent</td>
+                                    <td class="small">
+                                        @if (row.Balance > 0)
+                                        {
+                                            <a href="@GetActionUrl("alterar-metodo-pagamento", row)" class="text-primary" title="Alterar método de pagamento">@row.PaymentMethodDisplay</a>
+                                        }
+                                        else
+                                        {
+                                            @row.PaymentMethodDisplay
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (_result.Rows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="13" class="text-center text-muted py-3">Nenhum lançamento encontrado.</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_result.Rows.Count > 0)
+                {
+                    var validRows = _result.Rows.Where(r => string.Equals(r.Ledge, "Y", StringComparison.OrdinalIgnoreCase)).ToList();
+                    var totalAmount = validRows.Sum(r => r.Amount);
+                    var totalPaid = validRows.Sum(r => r.Paid);
+                    var byMethod = validRows.GroupBy(r => r.PaymentMethodDisplay).OrderBy(g => g.Key);
+                    <div class="p-2 bg-light border-top small">
+                        @foreach (var g in byMethod)
+                        {
+                            var amt = g.Sum(r => r.Amount);
+                            var paid = g.Sum(r => r.Paid);
+                            <div><strong>TOTAL @g.Key:</strong> @amt.ToString("N2", _ptBr) — Pago: @paid.ToString("N2", _ptBr) — Saldo: @((amt - paid).ToString("N2", _ptBr))</div>
+                        }
+                        <div class="mt-1"><strong>TOTAL:</strong> @totalAmount.ToString("N2", _ptBr) — <strong>Pago:</strong> @totalPaid.ToString("N2", _ptBr) — <strong>Saldo:</strong> @((totalAmount - totalPaid).ToString("N2", _ptBr))</div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+
+    private readonly BillsToReceiveSearchCriteriaDto _criteria = new();
+    private string _firstDateText = "";
+    private string _lastDateText = "";
+    private string _clientFilter = "";
+    private int? _selectedClientId;
+    private string? _selectedClientName;
+    private string _salesAgentName = "Selecione";
+    private string _ofSalerName = "Selecione";
+    private string _orderIdText = "";
+    private IReadOnlyList<PaymentMethodRefDto> _paymentMethods = new List<PaymentMethodRefDto>();
+    private IReadOnlyList<UserIdNameDto> _salesAgents = new List<UserIdNameDto>();
+    private IReadOnlyList<ClientSummaryDto> _clientSuggestions = new List<ClientSummaryDto>();
+    private bool _loadingClients;
+    private bool _loading;
+    private string? _validationError;
+    private BillsToReceiveSearchResultDto? _result;
+
+    [Inject] private IBillsToReceiveSearchService SearchService { get; set; } = null!;
+    [Inject] private IClientReferenceService ClientReference { get; set; } = null!;
+    [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private string GetConsultarUrl(int clientId) => $"/financeiro/contas-a-receber/consultar?cid={clientId}";
+    private string GetOsUrl(int orderId) => $"/vendas/os/{orderId}";
+    private string GetEditClientUrl(int clientId) => $"/principal/clientes/cadastro/{clientId}";
+
+    private string GetActionUrl(string action, BillsToReceiveReportRowDto row)
+        => $"/financeiro/contas-a-receber/{action}?BTR_ID={row.BtrId}&ORDER_ID={row.OrderId}&TERM_NO={row.TermNo}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _paymentMethods = await ClientReference.GetPaymentMethodsAsync();
+        var agents = await ClientReference.GetSalesAgentsAsync();
+        _salesAgents = new List<UserIdNameDto> { new UserIdNameDto { Id = "", Name = "Selecione" } }.Concat(agents).ToList();
+        _salesAgentName = "Selecione";
+        _ofSalerName = "Selecione";
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = ParseQueryString(uri.Query);
+        var cidStr = query.GetValueOrDefault("cid");
+        var nonpaid = query.GetValueOrDefault("nonpaid");
+        var oidStr = query.GetValueOrDefault("oid");
+
+        if (!string.IsNullOrEmpty(cidStr) && int.TryParse(cidStr, out var cid))
+        {
+            _selectedClientId = cid;
+            _criteria.ClientId = cid;
+            if (!string.IsNullOrEmpty(nonpaid))
+            {
+                _criteria.Status = "U";
+                _firstDateText = "01/01/2005";
+                _lastDateText = DateTime.Today.ToString("dd/MM/yyyy", _ptBr);
+                _salesAgentName = "Selecione";
+                _ofSalerName = "Selecione";
+                _criteria.Abc = false;
+            }
+            ApplyDatesFromQueryOrDefault();
+            await DoSearch();
+        }
+        else if (!string.IsNullOrEmpty(oidStr) && int.TryParse(oidStr, out var oid) && oid > 0)
+        {
+            _orderIdText = oidStr;
+            _criteria.OrderId = oid;
+            var today = DateTime.Today;
+            _firstDateText = today.AddMonths(-1).ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = today.ToString("dd/MM/yyyy", _ptBr);
+            await DoSearch();
+        }
+        else
+        {
+            var today = DateTime.Today;
+            _firstDateText = today.AddMonths(-1).ToString("dd/MM/yyyy", _ptBr);
+            _lastDateText = today.ToString("dd/MM/yyyy", _ptBr);
+        }
+    }
+
+    private void ApplyDatesFromQueryOrDefault()
+    {
+        if (!string.IsNullOrEmpty(_firstDateText) && ParseDate(_firstDateText).HasValue)
+        {
+            _criteria.FirstDate = ParseDate(_firstDateText);
+            _criteria.LastDate = ParseDate(_lastDateText) ?? _criteria.FirstDate;
+        }
+    }
+
+    private static Dictionary<string, string> ParseQueryString(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query)) return d;
+        var q = query.TrimStart('?');
+        foreach (var part in q.Split('&'))
+        {
+            var kv = part.Split('=', 2, StringSplitOptions.None);
+            if (kv.Length == 2 && !string.IsNullOrEmpty(kv[0]))
+                d[kv[0].Trim()] = Uri.UnescapeDataString(kv[1].Trim());
+        }
+        return d;
+    }
+
+    private async Task FilterClients()
+    {
+        _loadingClients = true;
+        try
+        {
+            _clientSuggestions = await ClientService.GetSuggestionsAsync(_clientFilter.Trim(), 15);
+        }
+        finally
+        {
+            _loadingClients = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectClient(ClientSummaryDto c)
+    {
+        _selectedClientId = c.Id;
+        _selectedClientName = string.IsNullOrEmpty(c.FantasyName) ? c.SocialName : $"{c.SocialName} / {c.FantasyName}";
+        _clientSuggestions = new List<ClientSummaryDto>();
+        StateHasChanged();
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _criteria.ClientId = _selectedClientId ?? 0;
+        _criteria.SalesAgentName = _salesAgentName;
+        _criteria.OfSalerName = _ofSalerName;
+
+        if (!string.IsNullOrWhiteSpace(_orderIdText) && int.TryParse(_orderIdText.Trim(), out var orderId) && orderId > 0)
+        {
+            _criteria.OrderId = orderId;
+            _criteria.FirstDate = null;
+            _criteria.LastDate = null;
+        }
+        else
+        {
+            _criteria.OrderId = 0;
+            var first = ParseDate(_firstDateText);
+            if (!first.HasValue)
+            {
+                _validationError = "Data Inicial é obrigatória (ou informe o Pedido).";
+                return;
+            }
+            _criteria.FirstDate = first;
+            var last = ParseDate(_lastDateText);
+            if (last.HasValue && last.Value < first.Value)
+            {
+                _validationError = "A Data Final deve ser maior que a inicial!";
+                return;
+            }
+            _criteria.LastDate = last ?? first;
+        }
+
+        await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        _loading = true;
+        try
+        {
+            _result = await SearchService.SearchAsync(_criteria);
+        }
+        catch (Exception ex)
+        {
+            _validationError = ex.Message;
+            _result = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static DateTime? ParseDate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (DateTime.TryParseExact(text.Trim(), "dd/MM/yyyy", _ptBr, System.Globalization.DateTimeStyles.None, out var d))
+            return d;
+        if (DateTime.TryParse(text.Trim(), _ptBr, System.Globalization.DateTimeStyles.None, out d))
+            return d;
+        return null;
+    }
+}

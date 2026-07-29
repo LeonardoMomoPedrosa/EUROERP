@@ -1,0 +1,182 @@
+@page "/financeiro/faturamento/anual"
+@using EUROERP.Application.RevenueReporting
+@rendermode InteractiveServer
+
+<PageTitle>Faturamento - Anual</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">Faturamento Anual</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <div class="alert alert-warning py-2 mb-2">@_validationError</div>
+        }
+        <p class="mb-2">Digite o intervalo:</p>
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Mês inicial <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_firstMonth" min="1" max="12" placeholder="1-12" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Ano inicial <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_firstYear" min="2006" max="2030" placeholder="Ex: 2024" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Mês final <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_lastMonth" min="1" max="12" placeholder="1-12" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <label class="form-label">Ano final <span class="text-danger">*</span></label>
+                <input type="number" class="form-control form-control-sm" @bind="_lastYear" min="2006" max="2030" placeholder="Ex: 2025" />
+            </div>
+            <div class="col-12 col-md-6 col-lg-2">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="Search" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_result != null)
+{
+    <div class="card small">
+        <div class="card-header">
+            <h6 class="mb-0">Faturamento Anual — @_firstMonth/@_firstYear até @_lastMonth/@_lastYear</h6>
+        </div>
+        <div class="card-body p-0 overflow-auto">
+            <table class="table table-sm table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Mês</th>
+                        <th class="text-center">Env</th>
+                        <th class="text-end text-nowrap">Total R$</th>
+                        <th class="text-end text-nowrap">Dev. R$</th>
+                        <th class="text-end text-nowrap">Créd</th>
+                        <th class="text-end text-nowrap">Intern</th>
+                        <th class="text-end text-nowrap">Loja</th>
+                        <th class="text-end text-nowrap">Baixa</th>
+                        <th class="text-end text-nowrap">Uso</th>
+                        <th class="text-end text-nowrap">F/P</th>
+                        <th class="text-end text-nowrap">Mort. M.</th>
+                        <th class="text-end text-nowrap">Mort. D.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _result.Months)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@GetMonthlyUrl(row.Month, row.Year)">@row.MonthLabel</a>
+                            </td>
+                            <td class="text-center">@row.EnvCount</td>
+                            <td class="text-end text-nowrap">@row.TotalAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.DevAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.CreditAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.InternAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.LojaAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.BaixaAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.UsoAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.FpAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.MortMAmount.ToString("N2", _ptBr)</td>
+                            <td class="text-end text-nowrap">@row.MortDAmount.ToString("N2", _ptBr)</td>
+                        </tr>
+                    }
+                    @if (_result.Months.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="12" class="text-center text-muted py-3">Nenhum lançamento encontrado.</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <td></td>
+                        <td class="text-center"><strong>@_result.TotalEnv</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalAmount.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalDev.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalCredit.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalIntern.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalLoja.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalBaixa.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalUso.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalFp.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalMortM.ToString("N2", _ptBr)</strong></td>
+                        <td class="text-end text-nowrap"><strong>@_result.TotalMortD.ToString("N2", _ptBr)</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-end">Dev.</td>
+                        <td></td>
+                        <td class="text-end text-nowrap">@_result.TotalDev.ToString("N2", _ptBr)</td>
+                        <td colspan="9"></td>
+                    </tr>
+                    <tr>
+                        <td class="text-end"><strong>Total</strong></td>
+                        <td></td>
+                        <td class="text-end text-nowrap"><strong>@((_result.TotalAmount - _result.TotalDev).ToString("N2", _ptBr))</strong></td>
+                        <td colspan="9"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo _ptBr = System.Globalization.CultureInfo.GetCultureInfo("pt-BR");
+    private int _firstMonth = DateTime.Today.AddMonths(-12).Month;
+    private int _firstYear = DateTime.Today.AddMonths(-12).Year;
+    private int _lastMonth = DateTime.Today.Month;
+    private int _lastYear = DateTime.Today.Year;
+    private bool _loading;
+    private string? _validationError;
+    private YearlyRevenueResultDto? _result;
+
+    [Inject] private IRevenueReportYearlyService ReportService { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private string GetMonthlyUrl(int month, int year)
+    {
+        return $"/financeiro/faturamento/mensal/geral?month={month}&year={year}";
+    }
+
+    private async Task Search()
+    {
+        _validationError = null;
+        _result = null;
+        if (_firstMonth < 1 || _firstMonth > 12 || _lastMonth < 1 || _lastMonth > 12)
+        {
+            _validationError = "Mês inválido. Informe um valor entre 1 e 12.";
+            return;
+        }
+        if (_firstYear < 2006 || _firstYear > 2030 || _lastYear < 2006 || _lastYear > 2030)
+        {
+            _validationError = "Ano inválido. Informe um valor entre 2006 e 2030.";
+            return;
+        }
+        var start = new DateTime(_firstYear, _firstMonth, 1);
+        var end = new DateTime(_lastYear, _lastMonth, 1);
+        if (start > end)
+        {
+            _validationError = "O intervalo inicial não pode ser maior que o final.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var criteria = new YearlyRevenueCriteriaDto
+            {
+                FirstMonth = (byte)_firstMonth,
+                FirstYear = _firstYear,
+                LastMonth = (byte)_lastMonth,
+                LastYear = _lastYear
+            };
+            _result = await ReportService.GetYearlyRevenueReportAsync(criteria);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
