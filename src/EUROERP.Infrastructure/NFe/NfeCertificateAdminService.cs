@@ -110,7 +110,7 @@ public class NfeCertificateAdminService : INfeCertificateAdminService
         return new NfeCertificateUploadResultDto
         {
             Success = true,
-            Message = "Certificado ativado com sucesso.",
+            Message = "Certificado ativado com sucesso (NFe e NFES).",
             StoredPath = storedPath,
             Subject = cert.Subject,
             Issuer = cert.Issuer,

@@ -107,6 +107,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<INfeCertificateActiveConfigStore, NfeCertificateActiveConfigStore>();
         services.AddSingleton<INfeCertificateProvider, NfeCertificateProvider>();
+        services.AddScoped<INfeCertificateAdminService, NfeCertificateAdminService>();
         services.AddScoped<INfeXmlBuilder, NfeXmlBuilder>();
         services.AddScoped<INfeXmlSigner, NfeXmlSigner>();
         services.AddScoped<INfeSchemaValidator, NfeSchemaValidator>();
