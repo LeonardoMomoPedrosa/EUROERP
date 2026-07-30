@@ -146,7 +146,7 @@
             _certificate = CertificateProvider.GetCertificate();
             var now = DateTime.Now;
             _isExpired = _certificate.NotAfter < now;
-            _isExpiringSoon = !_isExpired && (_certificate.NotAfter - now).TotalDays <= 45;
+            _isExpiringSoon = !_isExpired && (_certificate.NotAfter - now).TotalDays <= 35;
 
             var remaining = _certificate.NotAfter - now;
             _remainingDaysText = _isExpired

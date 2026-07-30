@@ -279,7 +279,7 @@ else
             _certExpirationText = notAfter.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
             var now = DateTime.Now;
             _certExpired = notAfter < now;
-            _certExpiringSoon = !_certExpired && (notAfter - now).TotalDays <= 45;
+            _certExpiringSoon = !_certExpired && (notAfter - now).TotalDays <= 35;
             if (_certExpired || _certExpiringSoon)
             {
                 _certCardCss = "border-danger";

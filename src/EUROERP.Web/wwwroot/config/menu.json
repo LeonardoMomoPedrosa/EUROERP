@@ -102,8 +102,8 @@
         {
           "label": "NFe",
           "children": [
-            { "label": "Enviar NFES", "route": "/vendas/nfe/nfes" },
-            { "label": "Enviar NFe", "route": "/vendas/nfe/enviar" },
+            { "label": "Emitir NF Serv.", "route": "/vendas/nfe/nfes" },
+            { "label": "Emitir NF Prod.", "route": "/vendas/nfe/enviar" },
             { "label": "Outras", "route": "/vendas/nfe/outras" },
             { "label": "Outras (novo)", "route": "/vendas/nfe/outras-novo" },
             { "label": "Imprimir", "route": "/vendas/nfe/imprimir" },

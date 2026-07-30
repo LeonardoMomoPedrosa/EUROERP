@@ -204,7 +204,7 @@ input[type="number"] {
     padding: 0.15rem 0.35rem;
 }
 
-/* Widget Certificado NFe: validade em vermelho piscante (45 dias ou menos) */
+/* Widget Certificado NFe: validade em vermelho piscante (35 dias ou menos) */
 @keyframes cert-validity-blink {
     0%, 100% { opacity: 1; color: var(--bs-danger); }
     50% { opacity: 0.4; color: var(--bs-danger); }
@@ -1800,7 +1800,7 @@ h1:focus {
     padding: 0.15rem 0.35rem;
 }
 
-/* Widget Certificado NFe: validade em vermelho piscante (45 dias ou menos) */
+/* Widget Certificado NFe: validade em vermelho piscante (35 dias ou menos) */
 @keyframes cert-validity-blink {
     0%, 100% { opacity: 1; color: var(--bs-danger); }
     50% { opacity: 0.4; color: var(--bs-danger); }
