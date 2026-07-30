@@ -5,6 +5,8 @@ using System.Globalization;
 using Dapper;
 
 using EUROERP.Application.Nfes;
+using EUROERP.Infrastructure.NFe;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 
@@ -26,6 +28,7 @@ public class NfesEmissionService : INfesEmissionService
     private readonly PrefeituraSpNfesBackend _prefeituraSpBackend;
     private readonly SimplissNfesBackend _simplissBackend;
     private readonly INfesSimplissClient _simplissClient;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<NfesEmissionService> _logger;
 
     public NfesEmissionService(
@@ -34,6 +37,7 @@ public class NfesEmissionService : INfesEmissionService
         PrefeituraSpNfesBackend prefeituraSpBackend,
         SimplissNfesBackend simplissBackend,
         INfesSimplissClient simplissClient,
+        IConfiguration configuration,
         ILogger<NfesEmissionService> logger)
     {
         _connection = connection;
@@ -41,6 +45,7 @@ public class NfesEmissionService : INfesEmissionService
         _prefeituraSpBackend = prefeituraSpBackend;
         _simplissBackend = simplissBackend;
         _simplissClient = simplissClient;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -756,7 +761,8 @@ public class NfesEmissionService : INfesEmissionService
 
         try
         {
-            var pdf = NfesDanfsePdfGenerator.Generate(xml, nfesConfig);
+            var logoPath = DanfeLogoPathResolver.Resolve(_configuration);
+            var pdf = NfesDanfsePdfGenerator.Generate(xml, nfesConfig, logoPath);
             var fileName = $"danfse_{orderId}_{preview.NfesNo ?? "nfse"}.pdf";
             return new NfesPrintPdfResult { Success = true, PdfBytes = pdf, FileName = fileName };
         }

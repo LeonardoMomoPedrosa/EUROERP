@@ -738,14 +738,15 @@ public class NfeIndividualService : INfeIndividualService
 
     public async Task<IReadOnlyList<CanceledReceiptDto>> GetTodayCanceledReceiptsAsync(CancellationToken cancellationToken = default)
     {
-        var today = DateTime.Today;
+        // Use SQL GETDATE() (same clock as SYS_CREATION_DATE on INSERT), not app DateTime.Today —
+        // app server timezone can diverge from the database (legacy binds by SQL creation date).
         const string sql = @"
-            SELECT RECEIPT_NO AS ReceiptNo, CANCEL_DATE AS CancelDate, MEMO AS Memo
+            SELECT RECEIPT_NO AS ReceiptNo, CANCEL_DATE AS CancelDate, ISNULL(MEMO, '') AS Memo
             FROM [RECEIPT_CANCEL]
-            WHERE CAST(SYS_CREATION_DATE AS DATE) = @Today
+            WHERE CAST(SYS_CREATION_DATE AS date) = CAST(GETDATE() AS date)
             ORDER BY SYS_CREATION_DATE DESC";
         var rows = await _connection.QueryAsync<CanceledReceiptRow>(
-            new CommandDefinition(sql, new { Today = today }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.Select(r => new CanceledReceiptDto
         {
             ReceiptNo = r.ReceiptNo,

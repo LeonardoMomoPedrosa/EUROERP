@@ -8,11 +8,12 @@ namespace EUROERP.Infrastructure.Nfes;
 
 internal static class NfesDanfsePdfGenerator
 {
-    public static byte[] Generate(string nfseXml, NfesConfigSnapshot? emitConfig = null)
+    public static byte[] Generate(string nfseXml, NfesConfigSnapshot? emitConfig = null, string? logoPath = null)
     {
         QuestPDF.Settings.License = LicenseType.Community;
         var model = NfesDanfseModel.Parse(nfseXml);
         model = model.ApplyEmitConfig(emitConfig);
+        var resolvedLogo = !string.IsNullOrWhiteSpace(logoPath) && File.Exists(logoPath) ? logoPath : null;
 
         var document = Document.Create(container =>
         {
@@ -22,7 +23,7 @@ internal static class NfesDanfsePdfGenerator
                 page.Margin(24);
                 page.DefaultTextStyle(x => x.FontSize(9));
 
-                page.Header().Element(c => ComposeHeader(c, model));
+                page.Header().Element(c => ComposeHeader(c, model, resolvedLogo));
                 page.Content().Element(c => ComposeContent(c, model));
                 page.Footer().AlignCenter().Text(text =>
                 {
@@ -35,12 +36,25 @@ internal static class NfesDanfsePdfGenerator
         return document.GeneratePdf();
     }
 
-    private static void ComposeHeader(IContainer container, NfesDanfseModel model)
+    private static void ComposeHeader(IContainer container, NfesDanfseModel model, string? logoPath)
     {
         container.Column(column =>
         {
-            column.Item().AlignCenter().Text("DANFSe").FontSize(16).Bold();
-            column.Item().AlignCenter().Text("Documento Auxiliar da Nota Fiscal de Serviço eletrônica").FontSize(10);
+            column.Item().Row(row =>
+            {
+                if (!string.IsNullOrEmpty(logoPath))
+                {
+                    row.ConstantItem(130).AlignMiddle().AlignLeft()
+                        .Width(117).Height(26).Image(logoPath);
+                    row.ConstantItem(12);
+                }
+
+                row.RelativeItem().AlignMiddle().Column(titles =>
+                {
+                    titles.Item().AlignCenter().Text("DANFSe").FontSize(16).Bold();
+                    titles.Item().AlignCenter().Text("Documento Auxiliar da Nota Fiscal de Serviço eletrônica").FontSize(10);
+                });
+            });
             column.Item().PaddingTop(8).Border(1).Padding(8).Column(box =>
             {
                 box.Item().Row(row =>

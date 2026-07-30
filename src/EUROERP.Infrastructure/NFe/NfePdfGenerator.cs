@@ -35,27 +35,6 @@ public class NfePdfGenerator : INfePdfGenerator
         _sysControl = sysControl;
     }
 
-    /// <summary>
-    /// Prefer configured path when the file exists; otherwise use logo published under wwwroot/images (same idea as Schemas).
-    /// PNG preferred over GIF for QuestPDF.
-    /// </summary>
-    private string? ResolveDanfeLogoPath()
-    {
-        var configured = _configuration["NFe:DanfeLogoPath"]?.Trim();
-        if (!string.IsNullOrEmpty(configured) && File.Exists(configured))
-            return configured;
-
-        var baseDir = AppContext.BaseDirectory;
-        string[] candidates =
-        [
-            Path.Combine(baseDir, "wwwroot", "images", "lionbw_nfe.png"),
-            Path.Combine(baseDir, "wwwroot", "images", "lionbw_nfe.gif"),
-            Path.Combine(baseDir, "images", "lionbw_nfe.png"),
-            Path.Combine(baseDir, "images", "lionbw_nfe.gif"),
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
     public async Task GeneratePdfAsync(int orderId, string chave, string nfeProcXmlPath, string pdfOutputPath, CancellationToken cancellationToken = default)
     {
         var icmsAliq = await _sysControl.GetValueAsync("ICMS_ALIQ", cancellationToken).ConfigureAwait(false)
@@ -72,7 +51,7 @@ public class NfePdfGenerator : INfePdfGenerator
                 return;
             }
 
-            var logoPath = ResolveDanfeLogoPath();
+            var logoPath = DanfeLogoPathResolver.Resolve(_configuration);
             var doc = Document.Create(container =>
             {
                 container.Page(page =>

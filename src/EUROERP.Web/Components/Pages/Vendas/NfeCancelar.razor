@@ -16,23 +16,40 @@
             <div class="row align-items-end g-3">
                 <div class="col-auto">
                     <label class="form-label small text-muted mb-0" for="cancelDateNfe">Data</label>
-                    <input id="cancelDateNfe" type="date" class="form-control form-control-sm" @bind="_cancelDate" style="width: 11rem;" />
+                    <input id="cancelDateNfe" type="date" class="form-control form-control-sm" @bind="_cancelDate" style="width: 11rem;" disabled="@_submitting" />
                 </div>
                 <div class="col-auto">
                     <label class="form-label small text-muted mb-0">Número da NF</label>
-                    <input type="text" inputmode="numeric" class="form-control form-control-sm text-end" @bind="_receiptNoText" placeholder="Nº" style="width: 7rem;" />
+                    <input type="text" inputmode="numeric" class="form-control form-control-sm text-end" @bind="_receiptNoText" placeholder="Nº" style="width: 7rem;" disabled="@_submitting" />
                 </div>
                 <div class="col">
                     <label class="form-label small text-muted mb-0">Motivo (mín. 15 caracteres)</label>
-                    <textarea class="form-control form-control-sm" @bind="_memo" rows="1" maxlength="255" placeholder="Justificativa do cancelamento" style="min-width: 16rem;"></textarea>
+                    <textarea class="form-control form-control-sm" @bind="_memo" rows="1" maxlength="255" placeholder="Justificativa do cancelamento" style="min-width: 16rem;" disabled="@_submitting"></textarea>
                 </div>
                 <div class="col-auto">
                     <button type="button" class="btn btn-danger btn-sm" @onclick="OnCancelar" disabled="@_submitting">
-                        @(_submitting ? "Aguarde..." : "Cancelar NFe")
+                        @if (_submitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Aguarde...</span>
+                        }
+                        else
+                        {
+                            <span>Cancelar NFe</span>
+                        }
                     </button>
                 </div>
             </div>
-            @if (_result != null)
+
+            @if (_submitting)
+            {
+                <div class="mt-3 alert alert-info py-2 px-3 mb-0 d-flex align-items-center gap-2" role="status">
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    <span class="small mb-0">Cancelamento em processamento na SEFAZ. Aguarde...</span>
+                </div>
+            }
+
+            @if (_result != null && !_submitting)
             {
                 <div class="mt-3 pt-3 border-top small @(_result.Success ? "text-success" : "text-danger")">
                     @_result.Message
@@ -54,14 +71,23 @@
     </div>
 
     <div class="card grid-card">
-        <div class="card-header py-2">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between">
             <h6 class="mb-0">Cancelamentos de hoje</h6>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LoadTodayCanceledAsync" disabled="@(_listLoading || _submitting)">
+                Atualizar
+            </button>
         </div>
         @if (_listLoading)
         {
             <div class="card-body py-4 text-center text-muted">
                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
                 Carregando...
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_listError))
+        {
+            <div class="card-body py-3">
+                <p class="text-danger mb-0 small">@_listError</p>
             </div>
         }
         else if (_todayCanceled.Count == 0)
@@ -107,6 +133,7 @@
     private CancelNfeResult? _result;
     private IReadOnlyList<CanceledReceiptDto> _todayCanceled = Array.Empty<CanceledReceiptDto>();
     private bool _listLoading = true;
+    private string? _listError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,9 +143,15 @@
     private async Task LoadTodayCanceledAsync()
     {
         _listLoading = true;
+        _listError = null;
         try
         {
             _todayCanceled = await NfeService.GetTodayCanceledReceiptsAsync();
+        }
+        catch (Exception ex)
+        {
+            _todayCanceled = Array.Empty<CanceledReceiptDto>();
+            _listError = "Não foi possível carregar os cancelamentos de hoje: " + ex.Message;
         }
         finally
         {
@@ -149,6 +182,8 @@
         }
 
         _submitting = true;
+        await InvokeAsync(StateHasChanged);
+
         try
         {
             _result = await NfeService.CancelNfeAsync(new CancelNfeRequest
@@ -159,15 +194,21 @@
             });
             if (_result.Success)
             {
-                await LoadTodayCanceledAsync();
                 _receiptNoText = "";
                 _memo = "";
                 _cancelDate = DateTime.Today;
             }
         }
+        catch (Exception ex)
+        {
+            _result = new CancelNfeResult { Success = false, Message = "Erro: " + ex.Message };
+        }
         finally
         {
             _submitting = false;
+            // Same as legacy: always refresh today's cancellations after the attempt.
+            await LoadTodayCanceledAsync();
+            await InvokeAsync(StateHasChanged);
         }
     }
 }
