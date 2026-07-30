@@ -5,6 +5,11 @@
     <ProjectReference Include="..\EUROERP.Infrastructure\EUROERP.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- NFe XSD schemas: copied to output and publish (same as ERPCOM3) so validation works without a separate schemas volume -->
+  <ItemGroup>
+    <Content Include="Schemas\**\*.xsd" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="Schemas\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>

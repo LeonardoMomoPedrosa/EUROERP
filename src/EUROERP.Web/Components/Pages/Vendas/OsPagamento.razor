@@ -154,7 +154,7 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>Parcela</th>
-                                    <th>Valor</th>
+                                    <th class="text-center">Valor</th>
                                     <th>Vencimento</th>
                                     <th>Obs</th>
                                 </tr>
@@ -166,7 +166,7 @@
                                     var t = _terms[i];
                                     <tr>
                                         <td>@(idx + 1)</td>
-                                        <td><input type="text" class="form-control form-control-sm text-end" inputmode="decimal" value="@FormatTermAmount(t.Amount)" @onchange="e => OnTermAmountChanged(idx, e)" /></td>
+                                        <td><input type="text" class="form-control form-control-sm text-center" inputmode="decimal" value="@FormatTermAmount(t.Amount)" @onchange="e => OnTermAmountChanged(idx, e)" /></td>
                                         <td><input type="date" class="form-control form-control-sm" @bind="t.DueDate" /></td>
                                         <td><input type="text" class="form-control form-control-sm" maxlength="200" @bind="t.Memo" /></td>
                                     </tr>
@@ -175,7 +175,7 @@
                             <tfoot class="table-light">
                                 <tr>
                                     <td class="text-end"><strong>Total</strong></td>
-                                    <td><strong>@FormatTermAmount(_terms.Sum(x => x.Amount))</strong></td>
+                                    <td class="text-center"><strong>@FormatTermAmount(_terms.Sum(x => x.Amount))</strong></td>
                                     <td colspan="2"></td>
                                 </tr>
                             </tfoot>
