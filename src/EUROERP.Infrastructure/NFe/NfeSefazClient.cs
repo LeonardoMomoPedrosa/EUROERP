@@ -54,15 +54,26 @@ public class NfeSefazClient : INfeSefazClient
         request.Headers.AcceptLanguage.Add(new StringWithQualityHeaderValue("pt-BR"));
     }
 
+    /// <summary>
+    /// SEFAZ SP often fails with UntrustedRoot on servers missing ICP-Brasil intermediates.
+    /// Same approach as NFES clients: present A1 client cert and accept the SEFAZ server chain.
+    /// </summary>
+    private HttpClientHandler CreateSefazHandler()
+    {
+        var cert = _certProvider.GetCertificate();
+        var handler = new HttpClientHandler();
+        handler.ClientCertificates.Add(cert);
+        handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        return handler;
+    }
+
     public async Task<XmlDocument> NfeAutorizacaoLoteAsync(string enviNfeXml, CancellationToken cancellationToken = default)
     {
         var url = _configuration["NFe:NfeAutorizacao"];
         if (string.IsNullOrWhiteSpace(url))
             throw new InvalidOperationException("NFe:NfeAutorizacao não configurado.");
 
-        var cert = _certProvider.GetCertificate();
-        var handler = new HttpClientHandler();
-        handler.ClientCertificates.Add(cert);
+        using var handler = CreateSefazHandler();
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
 
         // SOAP 1.2 envelope: nfeDadosMsg contém o XML do enviNFe (NFe + idLote + versao + indSinc)
@@ -124,9 +135,7 @@ public class NfeSefazClient : INfeSefazClient
         if (string.IsNullOrWhiteSpace(url))
             throw new InvalidOperationException("NFe:NfeRecepcaoEvento não configurado.");
 
-        var cert = _certProvider.GetCertificate();
-        var handler = new HttpClientHandler();
-        handler.ClientCertificates.Add(cert);
+        using var handler = CreateSefazHandler();
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
 
         var soapEnvelope = BuildRecepcaoEventoSoapEnvelope(envEventoXml);
@@ -183,9 +192,7 @@ public class NfeSefazClient : INfeSefazClient
         if (string.IsNullOrWhiteSpace(url))
             throw new InvalidOperationException("NFe:NfeStatusServico não configurado.");
 
-        var cert = _certProvider.GetCertificate();
-        var handler = new HttpClientHandler();
-        handler.ClientCertificates.Add(cert);
+        using var handler = CreateSefazHandler();
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
 
         var soapEnvelope = BuildStatusServicoSoapEnvelope(consStatServXml);
@@ -242,9 +249,7 @@ public class NfeSefazClient : INfeSefazClient
         if (string.IsNullOrWhiteSpace(url))
             throw new InvalidOperationException("NFe:NfeInutilizacao não configurado.");
 
-        var cert = _certProvider.GetCertificate();
-        var handler = new HttpClientHandler();
-        handler.ClientCertificates.Add(cert);
+        using var handler = CreateSefazHandler();
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
 
         var soapEnvelope = BuildInutilizacaoSoapEnvelope(inutNfeXml);
