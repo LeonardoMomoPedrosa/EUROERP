@@ -8,7 +8,6 @@ public class ProductCreateDto
     public int GroupId { get; set; }
     [Required(ErrorMessage = "Nome é obrigatório.")]
     public string Name { get; set; } = string.Empty;
-    public string? SciName { get; set; }
     public string? ExternalPkId { get; set; }
     [Required(ErrorMessage = "Custo bruto é obrigatório.")]
     public decimal? CostGross { get; set; }
@@ -22,7 +21,6 @@ public class ProductCreateDto
     public byte CstId { get; set; }
     [Required(ErrorMessage = "CSTB é obrigatório.")]
     public string? CstbId { get; set; }
-    public decimal? Ph { get; set; }
     public string? BarCode { get; set; }
     public short StockMin { get; set; }
     public int Pack { get; set; } = 1;

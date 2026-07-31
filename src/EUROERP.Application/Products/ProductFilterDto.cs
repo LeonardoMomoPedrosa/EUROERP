@@ -7,7 +7,6 @@ public class ProductFilterDto
     public int ClassId { get; set; }
     public int GroupId { get; set; }
     public string? Name { get; set; }
-    public string? SciName { get; set; }
     public int Code { get; set; }
     public int SupplierId { get; set; }
     public bool IncludeInactive { get; set; }

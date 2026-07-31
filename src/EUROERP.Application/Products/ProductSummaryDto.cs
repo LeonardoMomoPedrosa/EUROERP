@@ -6,7 +6,6 @@ public class ProductSummaryDto
     public int PKId { get; set; }
     public string? ExternalPkId { get; set; }
     public string? Name { get; set; }
-    public string? SciName { get; set; }
     public string? Size { get; set; }
     public decimal Price { get; set; }
     public string? CurrencySymbol { get; set; }

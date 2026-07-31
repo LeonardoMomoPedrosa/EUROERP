@@ -18,7 +18,6 @@ public class ProductService : IProductService
         var marketId = filter.MarketId == 0 ? (byte)1 : filter.MarketId;
         var hasParam = filter.ClassId > 0 || filter.GroupId > 0 ||
                        (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2) ||
-                       (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2) ||
                        filter.Code > 0 || filter.SupplierId > 0;
         if (!hasParam)
             return new List<ProductSummaryDto>();
@@ -28,7 +27,6 @@ public class ProductService : IProductService
                 p.PKId,
                 p.EXTERNAL_PKID AS ExternalPkId,
                 p.NAME AS Name,
-                p.SCI_NAME AS SciName,
                 az.NAME AS Size,
                 ROUND(mp.PRICE * ISNULL(cv.CONVERSION, 1), 2) AS Price,
                 curMkt.SYMBOL AS CurrencySymbol,
@@ -57,8 +55,6 @@ public class ProductService : IProductService
             sql += " AND p.GROUP_ID = @GroupId";
         if (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2)
             sql += " AND p.NAME LIKE @NameLike";
-        if (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2)
-            sql += " AND p.SCI_NAME LIKE @SciNameLike";
         if (filter.Code > 0)
             sql += " AND p.PKId = @Code";
         if (filter.SupplierId > 0)
@@ -67,7 +63,6 @@ public class ProductService : IProductService
         sql += " ORDER BY p.NAME";
 
         var nameLike = string.IsNullOrWhiteSpace(filter.Name) || filter.Name.Length < 2 ? null : $"%{filter.Name.Trim()}%";
-        var sciNameLike = string.IsNullOrWhiteSpace(filter.SciName) || filter.SciName.Length < 2 ? null : $"%{filter.SciName.Trim()}%";
 
         var list = await _connection.QueryAsync<ProductSummaryDto>(
             new CommandDefinition(sql, new
@@ -76,7 +71,6 @@ public class ProductService : IProductService
                 filter.ClassId,
                 filter.GroupId,
                 NameLike = nameLike,
-                SciNameLike = sciNameLike,
                 filter.Code,
                 filter.SupplierId
             }, cancellationToken: cancellationToken));
@@ -86,11 +80,11 @@ public class ProductService : IProductService
     public async Task<ProductEditDto?> GetByIdAsync(int productId, CancellationToken cancellationToken = default)
     {
         const string sqlProduct = @"
-            SELECT p.PKId, pg.PRODUCT_CLASS_ID AS ClassId, p.GROUP_ID AS GroupId, p.NAME, p.SCI_NAME AS SciName, p.EXTERNAL_PKID AS ExternalPkId,
+            SELECT p.PKId, pg.PRODUCT_CLASS_ID AS ClassId, p.GROUP_ID AS GroupId, p.NAME, p.EXTERNAL_PKID AS ExternalPkId,
                 p.COST_GROSS AS CostGross, p.COST_TRANSPORT AS CostTransport, p.DISCOUNT AS Discount,
                 p.COST_NET AS CostNet, p.COST_FINAL AS CostFinal, p.WEIGHT AS Weight,
                 p.FISCAL_CLASS_ID AS FiscalClassId, p.CURRENCY_ID AS CurrencyId, p.CST_ID AS CstId, p.CSTB_ID AS CstbId,
-                p.pH AS Ph, p.BAR_CODE AS BarCode, p.STOCK_MIN AS StockMin, p.PACK AS Pack,
+                p.BAR_CODE AS BarCode, p.STOCK_MIN AS StockMin, p.PACK AS Pack,
                 p.SIZE_ID AS SizeId, p.STOCK AS Stock, p.STOCK_LAST_IN_DATE AS StockLastInDate,
                 CASE WHEN p.ACTIVE = 'Y' THEN 1 ELSE 0 END AS Active, ISNULL(p.QUARANTINE, 0) AS Quarantine
             FROM PRODUCT p
@@ -131,17 +125,16 @@ public class ProductService : IProductService
         var appId = (applicationId ?? "").Length > 8 ? (applicationId ?? "").Substring(0, 8) : (applicationId ?? "");
         var usrId = (userId ?? "").Length > 20 ? (userId ?? "").Substring(0, 20) : (userId ?? "SYS");
         var name = (dto.Name ?? "").Length > 200 ? dto.Name.Substring(0, 200) : (dto.Name ?? "");
-        var sciName = dto.SciName != null && dto.SciName.Length > 150 ? dto.SciName.Substring(0, 150) : dto.SciName;
         var externalPkId = dto.ExternalPkId != null && dto.ExternalPkId.Length > 20 ? dto.ExternalPkId.Substring(0, 20) : dto.ExternalPkId;
         var barCode = dto.BarCode != null && dto.BarCode.Length > 15 ? dto.BarCode.Substring(0, 15) : dto.BarCode;
         var cstbId = string.IsNullOrEmpty(dto.CstbId) ? "" : dto.CstbId;
 
         const string sqlInsert = @"
-            INSERT INTO PRODUCT (GROUP_ID, NAME, SCI_NAME, COST_GROSS, COST_TRANSPORT, COST_FINAL, WEIGHT,
-                FISCAL_CLASS_ID, CURRENCY_ID, CST_ID, CSTB_ID, pH, BAR_CODE, STOCK, STOCK_MIN, PACK,
+            INSERT INTO PRODUCT (GROUP_ID, NAME, COST_GROSS, COST_TRANSPORT, COST_FINAL, WEIGHT,
+                FISCAL_CLASS_ID, CURRENCY_ID, CST_ID, CSTB_ID, BAR_CODE, STOCK, STOCK_MIN, PACK,
                 SYS_CREATION_DATE, APPLICATION_ID, USER_ID, SIZE_ID, DISCOUNT, EXTERNAL_PKID, COST_NET, ACTIVE)
-            VALUES (@GroupId, @Name, @SciName, @CostGross, @CostTransport, @CostFinal, @Weight,
-                @FiscalClassId, @CurrencyId, @CstId, @CstbId, @Ph, @BarCode, 0, @StockMin, @Pack,
+            VALUES (@GroupId, @Name, @CostGross, @CostTransport, @CostFinal, @Weight,
+                @FiscalClassId, @CurrencyId, @CstId, @CstbId, @BarCode, 0, @StockMin, @Pack,
                 GETDATE(), @ApplicationId, @UserId, @SizeId, @Discount, @ExternalPkId, @CostNet, 'Y');
             SELECT CAST(SCOPE_IDENTITY() AS int);";
 
@@ -150,7 +143,6 @@ public class ProductService : IProductService
             {
                 dto.GroupId,
                 Name = name,
-                SciName = sciName ?? (object)DBNull.Value,
                 CostGross = costGross,
                 CostTransport = costTransport,
                 CostFinal = costFinal,
@@ -159,7 +151,6 @@ public class ProductService : IProductService
                 dto.CurrencyId,
                 dto.CstId,
                 CstbId = cstbId,
-                Ph = dto.Ph ?? (object)DBNull.Value,
                 BarCode = barCode ?? (object)DBNull.Value,
                 dto.StockMin,
                 dto.Pack,
@@ -195,11 +186,11 @@ public class ProductService : IProductService
 
         const string sqlUpdate = @"
             UPDATE PRODUCT SET
-                GROUP_ID = @GroupId, NAME = @Name, SCI_NAME = @SciName, EXTERNAL_PKID = @ExternalPkId,
+                GROUP_ID = @GroupId, NAME = @Name, EXTERNAL_PKID = @ExternalPkId,
                 COST_GROSS = @CostGross, COST_TRANSPORT = @CostTransport, DISCOUNT = @Discount,
                 COST_NET = @CostNet, COST_FINAL = @CostFinal, WEIGHT = @Weight,
                 FISCAL_CLASS_ID = @FiscalClassId, CURRENCY_ID = @CurrencyId, CST_ID = @CstId, CSTB_ID = @CstbId,
-                pH = @Ph, BAR_CODE = @BarCode, STOCK_MIN = @StockMin, PACK = @Pack, SIZE_ID = @SizeId,
+                BAR_CODE = @BarCode, STOCK_MIN = @StockMin, PACK = @Pack, SIZE_ID = @SizeId,
                 SYS_UPDATE_DATE = GETDATE(), ACTIVE = @Active, QUARANTINE = @Quarantine
             WHERE PKId = @PKId";
 
@@ -209,7 +200,6 @@ public class ProductService : IProductService
                 dto.PKId,
                 dto.GroupId,
                 dto.Name,
-                SciName = dto.SciName ?? (object)DBNull.Value,
                 ExternalPkId = dto.ExternalPkId ?? (object)DBNull.Value,
                 CostGross = costGross,
                 CostTransport = costTransport,
@@ -221,7 +211,6 @@ public class ProductService : IProductService
                 dto.CurrencyId,
                 dto.CstId,
                 CstbId = string.IsNullOrEmpty(dto.CstbId) ? "" : dto.CstbId,
-                Ph = dto.Ph ?? (object)DBNull.Value,
                 BarCode = dto.BarCode ?? (object)DBNull.Value,
                 dto.StockMin,
                 dto.Pack,

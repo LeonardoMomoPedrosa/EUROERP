@@ -18,7 +18,6 @@ public class ProductMassCostService : IProductMassCostService
         var marketId = filter.MarketId == 0 ? (byte)1 : filter.MarketId;
         var hasParam = filter.ClassId > 0 || filter.GroupId > 0 ||
                        (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2) ||
-                       (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2) ||
                        filter.Code > 0 || filter.SupplierId > 0;
         if (!hasParam)
             return new List<ProductMassCostItemDto>();
@@ -27,7 +26,6 @@ public class ProductMassCostService : IProductMassCostService
             SELECT DISTINCT
                 p.PKId,
                 p.NAME AS Name,
-                p.SCI_NAME AS SciName,
                 az.NAME AS Size,
                 cur.SYMBOL AS Symbol,
                 p.COST_GROSS AS CostGross,
@@ -62,8 +60,6 @@ public class ProductMassCostService : IProductMassCostService
             sql += " AND p.GROUP_ID = @GroupId";
         if (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2)
             sql += " AND p.NAME LIKE @NameLike";
-        if (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2)
-            sql += " AND p.SCI_NAME LIKE @SciNameLike";
         if (filter.Code > 0)
             sql += " AND p.PKId = @Code";
         if (filter.SupplierId > 0)
@@ -72,7 +68,6 @@ public class ProductMassCostService : IProductMassCostService
         sql += " ORDER BY p.NAME";
 
         var nameLike = string.IsNullOrWhiteSpace(filter.Name) || filter.Name.Length < 2 ? null : $"%{filter.Name.Trim()}%";
-        var sciNameLike = string.IsNullOrWhiteSpace(filter.SciName) || filter.SciName.Length < 2 ? null : $"%{filter.SciName.Trim()}%";
 
         var list = await _connection.QueryAsync<ProductMassCostItemDto>(
             new CommandDefinition(sql, new
@@ -81,7 +76,6 @@ public class ProductMassCostService : IProductMassCostService
                 filter.ClassId,
                 filter.GroupId,
                 NameLike = nameLike,
-                SciNameLike = sciNameLike,
                 filter.Code,
                 filter.SupplierId
             }, cancellationToken: cancellationToken));

@@ -18,7 +18,6 @@ public class ProductMassInfoService : IProductMassInfoService
         var marketId = filter.MarketId == 0 ? (byte)1 : filter.MarketId;
         var hasParam = filter.ClassId > 0 || filter.GroupId > 0 ||
                        (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2) ||
-                       (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2) ||
                        filter.Code > 0 || filter.SupplierId > 0;
         if (!hasParam)
             return new List<ProductMassInfoItemDto>();
@@ -32,11 +31,8 @@ public class ProductMassInfoService : IProductMassInfoService
                 ISNULL((SELECT TOP 1 SUPPLIER_ID FROM PRODUCT_SUPPLIER_LINK WHERE PRODUCT_ID = p.PKId), 0) AS SupplierId,
                 ISNULL(p.CFAT, 0) AS CFat,
                 p.NAME AS Name,
-                p.SCI_NAME AS SciName,
                 mp.NAME AS MktName,
-                mp.SCI_NAME AS MktSciName,
                 p.SIZE_ID AS SizeId,
-                p.pH AS Ph,
                 p.CST_ID AS CstId,
                 p.CSTB_ID AS CstbId,
                 p.STOCK_MIN AS StockMin,
@@ -59,8 +55,6 @@ public class ProductMassInfoService : IProductMassInfoService
             sql += " AND p.GROUP_ID = @GroupId";
         if (!string.IsNullOrWhiteSpace(filter.Name) && filter.Name.Length >= 2)
             sql += " AND p.NAME LIKE @NameLike";
-        if (!string.IsNullOrWhiteSpace(filter.SciName) && filter.SciName.Length >= 2)
-            sql += " AND p.SCI_NAME LIKE @SciNameLike";
         if (filter.Code > 0)
             sql += " AND p.PKId = @Code";
         if (filter.SupplierId > 0)
@@ -69,7 +63,6 @@ public class ProductMassInfoService : IProductMassInfoService
         sql += " ORDER BY p.NAME";
 
         var nameLike = string.IsNullOrWhiteSpace(filter.Name) || filter.Name.Length < 2 ? null : $"%{filter.Name.Trim()}%";
-        var sciNameLike = string.IsNullOrWhiteSpace(filter.SciName) || filter.SciName.Length < 2 ? null : $"%{filter.SciName.Trim()}%";
 
         var list = await _connection.QueryAsync<ProductMassInfoItemDto>(
             new CommandDefinition(sql, new
@@ -78,7 +71,6 @@ public class ProductMassInfoService : IProductMassInfoService
                 filter.ClassId,
                 filter.GroupId,
                 NameLike = nameLike,
-                SciNameLike = sciNameLike,
                 filter.Code,
                 filter.SupplierId
             }, cancellationToken: cancellationToken));

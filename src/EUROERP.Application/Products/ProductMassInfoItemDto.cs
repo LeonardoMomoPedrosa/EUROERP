@@ -10,11 +10,8 @@ public class ProductMassInfoItemDto
     public int SupplierId { get; set; }
     public bool CFat { get; set; }
     public string? Name { get; set; }
-    public string? SciName { get; set; }
     public string? MktName { get; set; }
-    public string? MktSciName { get; set; }
     public byte? SizeId { get; set; }
-    public decimal? Ph { get; set; }
     public byte CstId { get; set; }
     public string? CstbId { get; set; }
     public short StockMin { get; set; }

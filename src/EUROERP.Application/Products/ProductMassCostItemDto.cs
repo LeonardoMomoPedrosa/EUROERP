@@ -5,7 +5,6 @@ public class ProductMassCostItemDto
 {
     public int PKId { get; set; }
     public string? Name { get; set; }
-    public string? SciName { get; set; }
     public string? Size { get; set; }
     public string? Symbol { get; set; }
     public decimal CostGross { get; set; }
