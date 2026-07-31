@@ -20,6 +20,8 @@ public class ProductEditDto
     public decimal CostFinal { get; set; }
     public int? Weight { get; set; }
     public byte FiscalClassId { get; set; }
+    /// <summary>UNITS.PKId — Eurobus default is 1 when not chosen.</summary>
+    public int UnitId { get; set; } = 1;
     public byte CurrencyId { get; set; }
     public byte CstId { get; set; }
     [Required(ErrorMessage = "CSTB é obrigatório.")]

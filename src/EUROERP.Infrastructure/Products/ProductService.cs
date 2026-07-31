@@ -83,7 +83,7 @@ public class ProductService : IProductService
             SELECT p.PKId, pg.PRODUCT_CLASS_ID AS ClassId, p.GROUP_ID AS GroupId, p.NAME, p.EXTERNAL_PKID AS ExternalPkId,
                 p.COST_GROSS AS CostGross, p.COST_TRANSPORT AS CostTransport, p.DISCOUNT AS Discount,
                 p.COST_NET AS CostNet, p.COST_FINAL AS CostFinal, p.WEIGHT AS Weight,
-                p.FISCAL_CLASS_ID AS FiscalClassId, p.CURRENCY_ID AS CurrencyId, p.CST_ID AS CstId, p.CSTB_ID AS CstbId,
+                p.FISCAL_CLASS_ID AS FiscalClassId, p.UNIT_ID AS UnitId, p.CURRENCY_ID AS CurrencyId, p.CST_ID AS CstId, p.CSTB_ID AS CstbId,
                 p.BAR_CODE AS BarCode, p.STOCK_MIN AS StockMin, p.PACK AS Pack,
                 p.SIZE_ID AS SizeId, p.STOCK AS Stock, p.STOCK_LAST_IN_DATE AS StockLastInDate,
                 CASE WHEN p.ACTIVE = 'Y' THEN 1 ELSE 0 END AS Active, ISNULL(p.QUARANTINE, 0) AS Quarantine
@@ -129,13 +129,15 @@ public class ProductService : IProductService
         var barCode = dto.BarCode != null && dto.BarCode.Length > 15 ? dto.BarCode.Substring(0, 15) : dto.BarCode;
         var cstbId = string.IsNullOrEmpty(dto.CstbId) ? "" : dto.CstbId;
 
+        // Eurobus insertNewProduct always sends HAS_COST_IND, UNIT_ID, IPI (HAS_COST_IND has no DB default).
+        // Create form always collects cost fields → HAS_COST_IND = 1. UNIT_ID defaults to 1 (UN) like Eurobus schema default.
         const string sqlInsert = @"
-            INSERT INTO PRODUCT (GROUP_ID, NAME, COST_GROSS, COST_TRANSPORT, COST_FINAL, WEIGHT,
-                FISCAL_CLASS_ID, CURRENCY_ID, CST_ID, CSTB_ID, BAR_CODE, STOCK, STOCK_MIN, PACK,
-                SYS_CREATION_DATE, APPLICATION_ID, USER_ID, SIZE_ID, DISCOUNT, EXTERNAL_PKID, COST_NET, ACTIVE)
-            VALUES (@GroupId, @Name, @CostGross, @CostTransport, @CostFinal, @Weight,
-                @FiscalClassId, @CurrencyId, @CstId, @CstbId, @BarCode, 0, @StockMin, @Pack,
-                GETDATE(), @ApplicationId, @UserId, @SizeId, @Discount, @ExternalPkId, @CostNet, 'Y');
+            INSERT INTO PRODUCT (GROUP_ID, NAME, COST_GROSS, COST_TRANSPORT, COST_FINAL, HAS_COST_IND, WEIGHT,
+                FISCAL_CLASS_ID, UNIT_ID, CURRENCY_ID, CST_ID, CSTB_ID, BAR_CODE, STOCK, STOCK_MIN, PACK,
+                SYS_CREATION_DATE, APPLICATION_ID, USER_ID, SIZE_ID, IPI, DISCOUNT, EXTERNAL_PKID, COST_NET, ACTIVE)
+            VALUES (@GroupId, @Name, @CostGross, @CostTransport, @CostFinal, @HasCostInd, @Weight,
+                @FiscalClassId, @UnitId, @CurrencyId, @CstId, @CstbId, @BarCode, 0, @StockMin, @Pack,
+                GETDATE(), @ApplicationId, @UserId, @SizeId, @Ipi, @Discount, @ExternalPkId, @CostNet, 'Y');
             SELECT CAST(SCOPE_IDENTITY() AS int);";
 
         var newId = await _connection.ExecuteScalarAsync<int>(
@@ -146,8 +148,10 @@ public class ProductService : IProductService
                 CostGross = costGross,
                 CostTransport = costTransport,
                 CostFinal = costFinal,
+                HasCostInd = true,
                 dto.Weight,
                 dto.FiscalClassId,
+                UnitId = dto.UnitId > 0 ? dto.UnitId : 1,
                 dto.CurrencyId,
                 dto.CstId,
                 CstbId = cstbId,
@@ -157,6 +161,7 @@ public class ProductService : IProductService
                 ApplicationId = appId,
                 UserId = usrId,
                 SizeId = dto.SizeId ?? (object)DBNull.Value,
+                Ipi = 0m,
                 Discount = discount,
                 ExternalPkId = externalPkId ?? (object)DBNull.Value,
                 CostNet = costNet
@@ -188,8 +193,8 @@ public class ProductService : IProductService
             UPDATE PRODUCT SET
                 GROUP_ID = @GroupId, NAME = @Name, EXTERNAL_PKID = @ExternalPkId,
                 COST_GROSS = @CostGross, COST_TRANSPORT = @CostTransport, DISCOUNT = @Discount,
-                COST_NET = @CostNet, COST_FINAL = @CostFinal, WEIGHT = @Weight,
-                FISCAL_CLASS_ID = @FiscalClassId, CURRENCY_ID = @CurrencyId, CST_ID = @CstId, CSTB_ID = @CstbId,
+                COST_NET = @CostNet, COST_FINAL = @CostFinal, HAS_COST_IND = @HasCostInd, WEIGHT = @Weight,
+                FISCAL_CLASS_ID = @FiscalClassId, UNIT_ID = @UnitId, CURRENCY_ID = @CurrencyId, CST_ID = @CstId, CSTB_ID = @CstbId,
                 BAR_CODE = @BarCode, STOCK_MIN = @StockMin, PACK = @Pack, SIZE_ID = @SizeId,
                 SYS_UPDATE_DATE = GETDATE(), ACTIVE = @Active, QUARANTINE = @Quarantine
             WHERE PKId = @PKId";
@@ -206,8 +211,10 @@ public class ProductService : IProductService
                 Discount = discount,
                 CostNet = costNet,
                 CostFinal = costFinal,
+                HasCostInd = true,
                 dto.Weight,
                 dto.FiscalClassId,
+                UnitId = dto.UnitId > 0 ? dto.UnitId : 1,
                 dto.CurrencyId,
                 dto.CstId,
                 CstbId = string.IsNullOrEmpty(dto.CstbId) ? "" : dto.CstbId,
