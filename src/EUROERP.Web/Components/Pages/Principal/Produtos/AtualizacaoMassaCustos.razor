@@ -41,13 +41,9 @@
                     }
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-4">
                 <label class="form-label">Nome</label>
                 <input type="text" class="form-control form-control-sm" @bind="_filter.Name" placeholder="Nome do produto" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Nome científico</label>
-                <input type="text" class="form-control form-control-sm" @bind="_filter.SciName" placeholder="Nome científico" />
             </div>
             <div class="col-md-1">
                 <label class="form-label">Cód. Prod.</label>
@@ -108,7 +104,7 @@
                             <tr>
                                 <td class="text-center cell-cod-interno">@item.PKId</td>
                                 <td>
-                                    <span class="text-truncate d-inline-block mass-cost-desc" title="@item.Name @item.SciName @item.Size">@item.Name @(string.IsNullOrEmpty(item.SciName) ? "" : " ") <em class="text-primary">@item.SciName</em> @item.Size</span>
+                                    <span class="text-truncate d-inline-block mass-cost-desc" title="@item.Name @item.Size">@item.Name @item.Size</span>
                                 </td>
                                 <td class="mass-cost-cell-custo"><input type="number" class="form-control form-control-sm mass-cost-custo" step="0.01" @bind="item.CostGross" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
                                 <td class="text-end"><input type="number" class="form-control form-control-sm text-end mass-cost-disc" step="0.01" @bind="item.Discount" @bind:after="() => SyncPriceMarketFromProfit(item)" /></td>
@@ -226,11 +222,10 @@
         _errorMessage = null;
         var hasParam = _filter.GroupId > 0 ||
                        (!string.IsNullOrWhiteSpace(_filter.Name) && _filter.Name.Length >= 2) ||
-                       (!string.IsNullOrWhiteSpace(_filter.SciName) && _filter.SciName.Length >= 2) ||
                        _filter.Code > 0 || _filter.SupplierId > 0;
         if (!hasParam)
         {
-            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Nome científico, Cód. Produto ou Cód. Fornecedor.";
+            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Cód. Produto ou Cód. Fornecedor.";
             return;
         }
         _loading = true;

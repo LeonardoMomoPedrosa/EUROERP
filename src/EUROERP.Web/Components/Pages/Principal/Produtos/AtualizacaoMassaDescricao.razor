@@ -41,13 +41,9 @@
                     }
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-4">
                 <label class="form-label">Nome</label>
                 <input type="text" class="form-control form-control-sm" @bind="_filter.Name" placeholder="Nome do produto" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Nome científico</label>
-                <input type="text" class="form-control form-control-sm" @bind="_filter.SciName" placeholder="Nome científico" />
             </div>
             <div class="col-md-1">
                 <label class="form-label">Cód. Prod.</label>
@@ -88,14 +84,11 @@
                         }
                         <th>Forn.</th>
                         <th>Nome</th>
-                        <th>Nome Cient.</th>
                         @if (_filter.MarketId > 1)
                         {
                             <th>Nome Export</th>
-                            <th>Nome Cient. Export</th>
                         }
                         <th>Tamanho</th>
-                        <th>pH</th>
                         <th>Saldo Min.</th>
                         <th>Emb/Cx.</th>
                         <th>Saldo</th>
@@ -105,11 +98,11 @@
                 <tbody>
                     @if (_loading && _items.Count == 0)
                     {
-                        <tr><td colspan="17" class="text-center text-muted py-4">Carregando...</td></tr>
+                        <tr><td colspan="14" class="text-center text-muted py-4">Carregando...</td></tr>
                     }
                     else if (_items.Count == 0)
                     {
-                        <tr><td colspan="17" class="text-center text-muted py-4">Preencha os filtros e clique em Buscar.</td></tr>
+                        <tr><td colspan="14" class="text-center text-muted py-4">Preencha os filtros e clique em Buscar.</td></tr>
                     }
                     else
                     {
@@ -132,11 +125,9 @@
                                 }
                                 <td><input type="number" class="form-control form-control-sm" style="width:55px" @bind="item.SupplierId" /></td>
                                 <td><input type="text" class="form-control form-control-sm mass-info-nome" @bind="item.Name" /></td>
-                                <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.SciName" /></td>
                                 @if (_filter.MarketId > 1)
                                 {
                                     <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.MktName" /></td>
-                                    <td><input type="text" class="form-control form-control-sm" style="min-width:120px" @bind="item.MktSciName" /></td>
                                 }
                                 <td>
                                     <select class="form-select form-select-sm" style="width:90px" @bind="item.SizeId">
@@ -146,7 +137,6 @@
                                         }
                                     </select>
                                 </td>
-                                <td><input type="number" class="form-control form-control-sm text-end" style="width:50px" step="0.1" @bind="item.Ph" /></td>
                                 <td><input type="number" class="form-control form-control-sm text-end mass-info-stock-min" @bind="item.StockMin" /></td>
                                 <td><input type="number" class="form-control form-control-sm text-end" style="width:55px" @bind="item.Pack" /></td>
                                 <td class="text-center">@item.Stock</td>
@@ -244,11 +234,10 @@
         _errorMessage = null;
         var hasParam = _filter.GroupId > 0 ||
                        (!string.IsNullOrWhiteSpace(_filter.Name) && _filter.Name.Length >= 2) ||
-                       (!string.IsNullOrWhiteSpace(_filter.SciName) && _filter.SciName.Length >= 2) ||
                        _filter.Code > 0 || _filter.SupplierId > 0;
         if (!hasParam)
         {
-            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Nome científico, Cód. Produto ou Cód. Fornecedor.";
+            _errorMessage = "Informe ao menos um critério: Grupo, Nome, Cód. Produto ou Cód. Fornecedor.";
             return;
         }
         _loading = true;
@@ -285,11 +274,8 @@
             SupplierId = item.SupplierId,
             CFat = item.CFat,
             Name = item.Name,
-            SciName = item.SciName,
             MktName = item.MktName,
-            MktSciName = item.MktSciName,
             SizeId = item.SizeId,
-            Ph = item.Ph,
             CstId = item.CstId,
             CstbId = item.CstbId,
             StockMin = item.StockMin,

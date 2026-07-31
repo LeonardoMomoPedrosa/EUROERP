@@ -94,22 +94,17 @@ public class ProductMassInfoService : IProductMassInfoService
             return (false, "Saldo mínimo deve estar entre 0 e 32767.");
         if (dto.Pack < 1 || dto.Pack > 100000)
             return (false, "Emb/Cx deve estar entre 1 e 100000.");
-        if (dto.Ph.HasValue && (dto.Ph < 0 || dto.Ph > 15))
-            return (false, "pH deve estar entre 0 e 15.");
 
         try
         {
             var name = (dto.Name ?? "").Length > 200 ? dto.Name!.Substring(0, 200) : (dto.Name ?? "");
-            var sciName = dto.SciName != null && dto.SciName.Length > 150 ? dto.SciName.Substring(0, 150) : dto.SciName;
             var mktName = dto.MktName != null && dto.MktName.Length > 200 ? dto.MktName.Substring(0, 200) : dto.MktName;
-            var mktSciName = dto.MktSciName != null && dto.MktSciName.Length > 150 ? dto.MktSciName.Substring(0, 150) : dto.MktSciName;
             var externalPkId = dto.ExternalPkId != null && dto.ExternalPkId.Length > 20 ? dto.ExternalPkId.Substring(0, 20) : dto.ExternalPkId;
             var cstbId = string.IsNullOrEmpty(dto.CstbId) ? "" : dto.CstbId;
 
             var sqlProduct = @"
                 UPDATE PRODUCT SET
                     NAME = @Name,
-                    SCI_NAME = @SciName,
                     EXTERNAL_PKID = @ExternalPkId,
                     ACTIVE = @Active,
                     QUARANTINE = @Quarantine,
@@ -117,7 +112,6 @@ public class ProductMassInfoService : IProductMassInfoService
                     SIZE_ID = @SizeId,
                     STOCK_MIN = @StockMin,
                     PACK = @Pack,
-                    pH = @Ph,
                     CST_ID = @CstId,
                     CSTB_ID = @CstbId,
                     SYS_UPDATE_DATE = GETDATE()
@@ -128,7 +122,6 @@ public class ProductMassInfoService : IProductMassInfoService
                 {
                     dto.PKId,
                     Name = name,
-                    SciName = sciName ?? (object)DBNull.Value,
                     ExternalPkId = externalPkId ?? (object)DBNull.Value,
                     dto.Active,
                     dto.Quarantine,
@@ -136,7 +129,6 @@ public class ProductMassInfoService : IProductMassInfoService
                     SizeId = (dto.SizeId == 0 || dto.SizeId == null) ? (object)DBNull.Value : dto.SizeId,
                     dto.StockMin,
                     dto.Pack,
-                    Ph = dto.Ph ?? (object)DBNull.Value,
                     dto.CstId,
                     CstbId = cstbId
                 }, cancellationToken: cancellationToken));
@@ -144,15 +136,14 @@ public class ProductMassInfoService : IProductMassInfoService
             if (dto.MarketId > 1)
             {
                 var sqlMarket = @"
-                    UPDATE MARKET_PRODUCT SET NAME = @MktName, SCI_NAME = @MktSciName
+                    UPDATE MARKET_PRODUCT SET NAME = @MktName
                     WHERE PRODUCT_ID = @PKId AND MARKET_ID = @MarketId";
                 await _connection.ExecuteAsync(
                     new CommandDefinition(sqlMarket, new
                     {
                         dto.PKId,
                         dto.MarketId,
-                        MktName = mktName ?? (object)DBNull.Value,
-                        MktSciName = mktSciName ?? (object)DBNull.Value
+                        MktName = mktName ?? (object)DBNull.Value
                     }, cancellationToken: cancellationToken));
             }
 
