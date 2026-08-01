@@ -45,6 +45,24 @@ public class StockInService : IStockInService
         if (string.IsNullOrEmpty(extPkid))
             return (null, "Número da fatura é obrigatório.");
 
+        // Eurobus StockController.insertStockIn: treatDecimalDBNull(..., true) → empty becomes 0.
+        // STOCK_IN.II / ICMS / PIS / COFINS / NFE_AMOUNT are NOT NULL; explicit NULL bypasses DB defaults.
+        if (!header.IiCost.HasValue || !header.IcmsCost.HasValue || !header.PisCost.HasValue || !header.CofinsCost.HasValue)
+            return (null, "Preencha II, ICMS, PIS e COFINS (informe 0 se não houver valor).");
+        if (header.NfeInd && !header.NfeAmount.HasValue)
+            return (null, "Informe o valor da NFE (ou 0).");
+
+        var shipCost = header.ShipCost ?? 0m;
+        var iiCost = header.IiCost!.Value;
+        var icmsCost = header.IcmsCost!.Value;
+        var pisCost = header.PisCost!.Value;
+        var cofinsCost = header.CofinsCost!.Value;
+        var creditAmount = header.CreditAmount ?? 0m;
+        var nfeAmount = header.NfeInd ? (header.NfeAmount ?? 0m) : 0m;
+
+        if (shipCost < 0 || iiCost < 0 || icmsCost < 0 || pisCost < 0 || cofinsCost < 0 || creditAmount < 0 || nfeAmount < 0)
+            return (null, "Valores de impostos/frete/crédito/NFE não podem ser negativos.");
+
         const string sqlFind = @"
             SELECT PKId, STATUS
             FROM STOCK_IN
@@ -59,14 +77,14 @@ public class StockInService : IStockInService
         {
             UserId = Truncate(userId, 20),
             ApplicationId = Truncate(applicationId, 8),
-            header.ShipCost,
-            header.IiCost,
-            header.IcmsCost,
-            header.PisCost,
-            header.CofinsCost,
-            header.CreditAmount,
+            ShipCost = shipCost,
+            IiCost = iiCost,
+            IcmsCost = icmsCost,
+            PisCost = pisCost,
+            CofinsCost = cofinsCost,
+            CreditAmount = creditAmount,
             NfeInd = header.NfeInd,
-            header.NfeAmount
+            NfeAmount = nfeAmount
         };
 
         if (existing.PkId != 0)

@@ -107,39 +107,40 @@
                     </div>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Valor da NFE (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_nfeAmount" step="0.01" disabled="@(!_nfeInd)" />
+                    <label class="form-label">Valor da NFE (R$) @if (_nfeInd) { <span class="text-danger">*</span> }</label>
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_nfeAmount" step="0.01" min="0" disabled="@(!_nfeInd)" required="@_nfeInd" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Frete (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_shipCost" step="0.01" />
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_shipCost" step="0.01" min="0" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Crédito (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_creditAmount" step="0.01" />
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_creditAmount" step="0.01" min="0" />
                 </div>
             </div>
             <div class="row g-2 mb-2">
                 <div class="col-md-2">
-                    <label class="form-label">II (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_iiCost" step="0.01" />
+                    <label class="form-label">II (R$) <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_iiCost" step="0.01" min="0" required />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">ICMS (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_icmsCost" step="0.01" />
+                    <label class="form-label">ICMS (R$) <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_icmsCost" step="0.01" min="0" required />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">PIS (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_pisCost" step="0.01" />
+                    <label class="form-label">PIS (R$) <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_pisCost" step="0.01" min="0" required />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">COFINS (R$)</label>
-                    <input type="number" class="form-control form-control-sm text-end" @bind="_cofinsCost" step="0.01" />
+                    <label class="form-label">COFINS (R$) <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control form-control-sm text-end" @bind="_cofinsCost" step="0.01" min="0" required />
                 </div>
                 <div class="col-md-4 d-flex align-items-end">
                     <p class="mb-0 small text-muted">Total rateio: <strong>R$ @GetProrateTotal().ToString("N2")</strong></p>
                 </div>
             </div>
+            <p class="small text-muted mb-0">Informe 0 quando não houver valor. Campos com * são obrigatórios.</p>
         }
 
         @if (_step == 3)
@@ -472,7 +473,32 @@
     private async Task ContinuarStep2Async()
     {
         if (_selectedSupplier == null || string.IsNullOrWhiteSpace(_externalPkid))
+        {
+            _errorMessage = "Número da fatura é obrigatório.";
+            _loading = false;
             return;
+        }
+
+        // STOCK_IN.II / ICMS / PIS / COFINS / NFE_AMOUNT are NOT NULL (Eurobus treatDecimalDBNull → 0).
+        if (!_iiCost.HasValue || !_icmsCost.HasValue || !_pisCost.HasValue || !_cofinsCost.HasValue)
+        {
+            _errorMessage = "Preencha II, ICMS, PIS e COFINS (informe 0 se não houver valor).";
+            _loading = false;
+            return;
+        }
+        if (_iiCost < 0 || _icmsCost < 0 || _pisCost < 0 || _cofinsCost < 0 || (_shipCost ?? 0) < 0 || (_creditAmount ?? 0) < 0)
+        {
+            _errorMessage = "Valores de impostos/frete/crédito não podem ser negativos.";
+            _loading = false;
+            return;
+        }
+        if (_nfeInd && (!_nfeAmount.HasValue || _nfeAmount < 0))
+        {
+            _errorMessage = "Informe o valor da NFE (ou 0).";
+            _loading = false;
+            return;
+        }
+
         _loading = true;
         _errorMessage = null;
         try
@@ -484,12 +510,12 @@
             {
                 SupplierId = _selectedSupplier.Id,
                 ExternalPkid = _externalPkid.Trim(),
-                ShipCost = _shipCost,
+                ShipCost = _shipCost ?? 0,
                 IiCost = _iiCost,
                 IcmsCost = _icmsCost,
                 PisCost = _pisCost,
                 CofinsCost = _cofinsCost,
-                CreditAmount = _creditAmount,
+                CreditAmount = _creditAmount ?? 0,
                 NfeInd = _nfeInd,
                 NfeAmount = _nfeInd ? _nfeAmount : 0,
                 CurrencyId = 1
