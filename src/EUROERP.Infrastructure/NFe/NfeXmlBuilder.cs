@@ -439,14 +439,53 @@ public class NfeXmlBuilder : INfeXmlBuilder
 
     private static void AppendInfAdic(XmlDocument doc, XmlElement parent, string infCpl, string ns)
     {
-        var text = infCpl.Trim();
+        var text = SanitizeTString(infCpl, maxLength: 5000);
         if (string.IsNullOrEmpty(text)) return;
-        if (text.Length > 5000) text = text.Substring(0, 5000); // limite do schema
         var infAdic = doc.CreateElement("infAdic", ns);
         var infCplEl = doc.CreateElement("infCpl", ns);
         infCplEl.AppendChild(doc.CreateTextNode(text)); // CreateTextNode escapa automaticamente
         infAdic.AppendChild(infCplEl);
         parent.AppendChild(infAdic);
+    }
+
+    /// <summary>
+    /// Adequa texto ao tipo XSD TString da NF-e: pattern [!-ÿ]{1}[ -ÿ]{0,}[!-ÿ]{1}|[!-ÿ]{1}
+    /// (sem CR/LF/TAB, sem espaços nas pontas, só Latin-1).
+    /// </summary>
+    internal static string SanitizeTString(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new System.Text.StringBuilder(value.Length);
+        var lastWasSpace = false;
+        foreach (var ch in value)
+        {
+            // Controles (incl. \n \r \t) → espaço; fora de Latin-1 → omitir
+            if (ch < 0x20 || ch == 0x7F)
+            {
+                if (!lastWasSpace && sb.Length > 0)
+                {
+                    sb.Append(' ');
+                    lastWasSpace = true;
+                }
+                continue;
+            }
+            if (ch > 0xFF) continue;
+            if (ch == ' ')
+            {
+                if (!lastWasSpace && sb.Length > 0)
+                {
+                    sb.Append(' ');
+                    lastWasSpace = true;
+                }
+                continue;
+            }
+            sb.Append(ch);
+            lastWasSpace = false;
+        }
+        var text = sb.ToString().Trim();
+        if (text.Length > maxLength)
+            text = text.Substring(0, maxLength).TrimEnd();
+        return text;
     }
 
     private static void AppendElem(XmlDocument doc, XmlElement parent, string ns, string localName, string value)

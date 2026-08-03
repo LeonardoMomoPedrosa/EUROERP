@@ -1687,7 +1687,8 @@ public class NfeIndividualService : INfeIndividualService
         parts.Insert(0, carLine);
         if (!string.IsNullOrWhiteSpace(userInfo))
             parts.Add(userInfo.Trim());
-        var text = string.Join("\n", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+        // XSD TString (infCpl) não permite CR/LF/TAB — usar espaço entre partes
+        var text = string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
