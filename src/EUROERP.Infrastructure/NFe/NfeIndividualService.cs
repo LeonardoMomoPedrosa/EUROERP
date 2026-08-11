@@ -107,7 +107,11 @@ public class NfeIndividualService : INfeIndividualService
                 ISNULL(o.NFE_PROTOCOL_RESULT, '') AS NfeProtocolResult,
                 ISNULL(o.NFE_PROTOCOL, '') AS NfeProtocol,
                 ISNULL(o.NFE_KEY, '') AS NfeKey,
-                (SELECT SUM(od.QUANTITY) FROM [ORDER_DETAILS] od WHERE od.ORDER_ID = o.PKId AND od.QUANTITY > 0) AS ProductCount,
+                (SELECT SUM(od.QUANTITY)
+                 FROM [ORDER_DETAILS] od
+                 JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+                 JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+                 WHERE od.ORDER_ID = o.PKId AND od.QUANTITY > 0 AND pg.PRODUCT_CLASS_ID = 1) AS ProductCount,
                 (c.ADDRESS_STREET + ', ' + ISNULL(c.ADDRESS_NUMBER, '') + ' ' + ISNULL(c.ADDRESS_COMPLEMENT, '') + ' - ' + ISNULL(ci.NAME, '') + '/' + ISNULL(st.CODE, '')) AS Address,
                 ISNULL(o.SHIPMENT_COST, 0) AS ShipmentCost,
                 ISNULL(o.DISCOUNT, 0) AS Discount,
@@ -1582,7 +1586,15 @@ public class NfeIndividualService : INfeIndividualService
         {
             var firstCfop = await _connection.ExecuteScalarAsync<string>(
                 new CommandDefinition(
-                    "SELECT TOP 1 cf.CODE FROM [ORDER_DETAILS] od JOIN [ORDER] o ON o.PKId = od.ORDER_ID JOIN [CLIENT] c ON c.PKId = o.CLIENT_ID JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID JOIN [CST_CFOP] csf ON csf.CSTB_ID = p.CSTB_ID AND csf.STATE_ID = c.ADDRESS_STATE_ID JOIN [CFOP] cf ON csf.CFOP_ID = cf.PKId WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0",
+                    @"SELECT TOP 1 cf.CODE
+                      FROM [ORDER_DETAILS] od
+                      JOIN [ORDER] o ON o.PKId = od.ORDER_ID
+                      JOIN [CLIENT] c ON c.PKId = o.CLIENT_ID
+                      JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+                      JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+                      JOIN [CST_CFOP] csf ON csf.CSTB_ID = p.CSTB_ID AND csf.STATE_ID = c.ADDRESS_STATE_ID
+                      JOIN [CFOP] cf ON csf.CFOP_ID = cf.PKId
+                      WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0 AND pg.PRODUCT_CLASS_ID = 1",
                     new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(firstCfop)) cfopCode = firstCfop.Replace(".", "");
         }
@@ -1597,9 +1609,9 @@ public class NfeIndividualService : INfeIndividualService
                 ISNULL(p.CSTB_ID, '00') AS CstbId
             FROM [ORDER_DETAILS] od
             JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
-            LEFT JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             LEFT JOIN [FISCAL_CLASS] fc ON fc.PKId = p.FISCAL_CLASS_ID
-            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
+            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0 AND pg.PRODUCT_CLASS_ID = 1
             ORDER BY od.ORDER_ID, od.PRODUCT_ID";
         var rows = await _connection.QueryAsync<OrderDetailRow>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
         var list = new List<NfeDetInput>();
@@ -1785,18 +1797,40 @@ public class NfeIndividualService : INfeIndividualService
 
     private async Task<decimal> GetOrderTotalAsync(int orderId, CancellationToken ct)
     {
+        // Product NFe only (PRODUCT_CLASS_ID != 2). Credit prorated by product share — same as legacy getOrderTotalAmountDataSet(..., 1).
         const string sql = @"
-            SELECT (SUM(t1.TOTAL) - MAX(t1.CREDIT)) * (1 - MAX(t1.DISC) / 100) + MAX(t1.OE) + MAX(t1.SHIP) AS CONVERTED_TOTAL_NET_PRICE
-            FROM (
-                SELECT CAST(SUM(ROUND(ROUND(ROUND(price * conversion, 2) * (1 - od.discount/100), 2) * quantity, 2)) AS DECIMAL(14,2)) AS TOTAL,
-                    ISNULL(o.CREDIT, 0) AS CREDIT, ISNULL(o.OTHER_EXPENSES, 0) AS OE,
-                    (ISNULL(od.ignore_order_disc, 0) - 1) * -1 * ISNULL(o.DISCOUNT, 0) AS DISC,
-                    ISNULL(o.SHIPMENT_COST, 0) AS SHIP
-                FROM [ORDER_DETAILS] od
-                JOIN [ORDER] o ON o.PKId = od.ORDER_ID
-                WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
-                GROUP BY o.CREDIT, o.DISCOUNT, o.OTHER_EXPENSES, o.SHIPMENT_COST, od.IGNORE_ORDER_DISC
-            ) t1";
+            SELECT ISNULL((
+                SELECT TOP 1
+                    sum(t1.TOTAL) + sum(t1.TOTAL*(t1.IOD-1))*max(t1.DISC)/100 - max(t1.CREDIT) + MAX(t1.SHIP)*t1.CS + MAX(t1.OE) AS CONVERTED_TOTAL_NET_PRICE
+                FROM (
+                    SELECT
+                        cast((sum(round(round(round(price*conversion,2)*(1-od.discount/100),2)*quantity,2,1))) as decimal(14,2)) AS TOTAL,
+                        isnull((select cast((sum(round(round(round(od2.price*od2.conversion,2)*(1-od2.discount/100),2)*od2.quantity,2,1))) as decimal(14,2))
+                            from order_details od2
+                            join PRODUCT p2 on p2.PKId=od2.PRODUCT_ID
+                            join PRODUCT_GROUP pg2 on pg2.PKId=p2.GROUP_ID
+                            join [order] o2 on o2.PKId=od2.ORDER_ID
+                            where od2.order_id = @OrderId and pg2.PRODUCT_CLASS_ID != 2)/
+                            nullif((select cast((sum(round(round(round(od2.price*od2.conversion,2)*(1-od2.discount/100),2)*od2.quantity,2,1))) as decimal(14,2))
+                            from order_details od2
+                            join PRODUCT p2 on p2.PKId=od2.PRODUCT_ID
+                            join PRODUCT_GROUP pg2 on pg2.PKId=p2.GROUP_ID
+                            join [order] o2 on o2.PKId=od2.ORDER_ID
+                            where od2.quantity>0 and od2.order_id = @OrderId),0)*o.CREDIT,0) as CREDIT,
+                        (isNull(od.ignore_order_disc,convert(bit,0))-1)*-1*isNull(o.DISCOUNT,0) as DISC,
+                        isnull(od.ignore_order_disc,convert(bit,0)) as IOD,
+                        ISNULL(o.SHIPMENT_COST,0) as SHIP,
+                        ISNULL(o.CHARGE_SHIPMENT,0) as CS,
+                        ISNULL(o.OTHER_EXPENSES,0) as OE
+                    FROM order_details od
+                    JOIN PRODUCT p on p.PKId=od.PRODUCT_ID
+                    JOIN PRODUCT_GROUP pg on pg.PKId=p.GROUP_ID
+                    JOIN [order] o on o.PKId=od.ORDER_ID
+                    WHERE od.order_id = @OrderId AND pg.PRODUCT_CLASS_ID != 2
+                    GROUP BY o.credit, o.SHIPMENT_COST, o.DISCOUNT, od.IGNORE_ORDER_DISC, o.CHARGE_SHIPMENT, o.OTHER_EXPENSES
+                ) t1
+                GROUP BY t1.CS
+            ), 0)";
         var total = await _connection.ExecuteScalarAsync<decimal?>(
             new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
         return total ?? 0;
@@ -1810,9 +1844,10 @@ public class NfeIndividualService : INfeIndividualService
             JOIN [ORDER] o ON o.PKId = od.ORDER_ID
             JOIN [CLIENT] c ON c.PKId = o.CLIENT_ID
             JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             JOIN [CST_CFOP] csf ON csf.CSTB_ID = p.CSTB_ID AND csf.STATE_ID = c.ADDRESS_STATE_ID
             JOIN [CFOP] cf ON csf.CFOP_ID = cf.PKId
-            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0";
+            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0 AND pg.PRODUCT_CLASS_ID = 1";
         var rows = await _connection.QueryAsync<CfopRow>(
             new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
         return rows.Select(r => new CfopItemDto
