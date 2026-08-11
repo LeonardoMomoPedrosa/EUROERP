@@ -62,6 +62,7 @@ public sealed class NfesCancellationService : INfesCancellationService
                 await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, order.OrderId, tx, cancellationToken)
                     .ConfigureAwait(false);
 
+                string? eventoXml = null;
                 if (config.UseSimpliss)
                 {
                     var cancelOutcome = await CancelSimplissForOrderAsync(config, order, memo, request.MotivoCode, cancellationToken)
@@ -72,8 +73,7 @@ public sealed class NfesCancellationService : INfesCancellationService
                         return Fail(cancelOutcome.ErrorMessage ?? "Falha ao cancelar NFS-e no Simpliss.");
                     }
 
-                    await TrySaveCancelEventXmlAsync(order.OrderId, config, cancelOutcome.EventoXml, cancellationToken)
-                        .ConfigureAwait(false);
+                    eventoXml = cancelOutcome.EventoXml;
                 }
                 else
                 {
@@ -89,11 +89,16 @@ public sealed class NfesCancellationService : INfesCancellationService
                 await ClearOrderNfesFieldsAsync(order.OrderId, request.NfesNo, tx, cancellationToken).ConfigureAwait(false);
                 tx.Commit();
 
+                var xmlRelative = await TrySaveCancelEventXmlAsync(
+                        request.NfesNo, order.OrderId, config, eventoXml, cancellationToken)
+                    .ConfigureAwait(false);
+
                 return new CancelNfesResult
                 {
                     Success = true,
                     Message = "Cancelamento efetuado com sucesso.",
-                    OrderId = order.OrderId
+                    OrderId = order.OrderId,
+                    XmlRelativePath = xmlRelative
                 };
             }
             catch
@@ -186,25 +191,28 @@ public sealed class NfesCancellationService : INfesCancellationService
                 }
 
                 if (orderId is > 0)
-                {
                     await ClearOrderNfesFieldsAsync(orderId.Value, request.NfesNo, tx, cancellationToken).ConfigureAwait(false);
-                    await TrySaveCancelEventXmlAsync(orderId.Value, config, eventoXml, cancellationToken).ConfigureAwait(false);
-                }
 
                 tx.Commit();
 
+                var xmlRelative = await TrySaveCancelEventXmlAsync(
+                        request.NfesNo, orderId, config, eventoXml, cancellationToken)
+                    .ConfigureAwait(false);
+
                 _logger.LogWarning(
-                    "Manual NFES cancel succeeded for NFS-e {NfesNo} by user {UserId}. OrderId={OrderId}, RegisterLocal={RegisterLocal}",
+                    "Manual NFES cancel succeeded for NFS-e {NfesNo} by user {UserId}. OrderId={OrderId}, RegisterLocal={RegisterLocal}, Xml={Xml}",
                     request.NfesNo,
                     userId,
                     orderId,
-                    request.RegisterLocalCancel);
+                    request.RegisterLocalCancel,
+                    xmlRelative);
 
                 return new CancelNfesResult
                 {
                     Success = true,
                     Message = "Cancelamento manual efetuado com sucesso.",
-                    OrderId = orderId
+                    OrderId = orderId,
+                    XmlRelativePath = xmlRelative
                 };
             }
             catch
@@ -256,11 +264,36 @@ public sealed class NfesCancellationService : INfesCancellationService
                 row.OrderId = orderId;
             }
 
-            if (row.OrderId is int oid and > 0)
-                row.XmlRelativePath = $"S{oid}/{oid}-nfse-cancel.xml";
+            row.XmlRelativePath = ResolveCancelXmlRelativePath(config.XmlPath, row.ReceiptNo, row.OrderId);
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Prefers S{orderId}/{orderId}-nfse-cancel.xml, then CANCEL/{nfesNo}-nfse-cancel.xml.
+    /// </summary>
+    private static string? ResolveCancelXmlRelativePath(string? xmlPath, int nfesNo, int? orderId)
+    {
+        if (string.IsNullOrWhiteSpace(xmlPath))
+            return null;
+
+        if (orderId is int oid and > 0)
+        {
+            var orderRelative = $"S{oid}/{oid}-nfse-cancel.xml";
+            if (File.Exists(Path.Combine(xmlPath, "S" + oid, oid + "-nfse-cancel.xml")))
+                return orderRelative;
+        }
+
+        var cancelRelative = $"CANCEL/{nfesNo}-nfse-cancel.xml";
+        if (File.Exists(Path.Combine(xmlPath, "CANCEL", nfesNo + "-nfse-cancel.xml")))
+            return cancelRelative;
+
+        // Assume path for new cancels that store OrderId even if file check races.
+        if (orderId is int assumedOid and > 0)
+            return $"S{assumedOid}/{assumedOid}-nfse-cancel.xml";
+
+        return null;
     }
 
     /// <summary>
@@ -510,22 +543,45 @@ public sealed class NfesCancellationService : INfesCancellationService
         }
     }
 
-    private static async Task TrySaveCancelEventXmlAsync(int orderId, NfesConfigSnapshot config, string? eventoXml, CancellationToken cancellationToken)
+    /// <summary>
+    /// Saves cancel event XML under CANCEL/{nfesNo}-nfse-cancel.xml always,
+    /// and also under S{orderId}/{orderId}-nfse-cancel.xml when OrderId is known.
+    /// Returns the preferred relative path for /NFE_FILES/.
+    /// </summary>
+    private static async Task<string?> TrySaveCancelEventXmlAsync(
+        int nfesNo,
+        int? orderId,
+        NfesConfigSnapshot config,
+        string? eventoXml,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(config.XmlPath) || string.IsNullOrWhiteSpace(eventoXml))
-            return;
+        if (string.IsNullOrWhiteSpace(config.XmlPath) || string.IsNullOrWhiteSpace(eventoXml) || nfesNo < 1)
+            return null;
 
+        string? preferredRelative = null;
         try
         {
-            var folder = Path.Combine(config.XmlPath, "S" + orderId);
-            Directory.CreateDirectory(folder);
-            var path = Path.Combine(folder, orderId + "-nfse-cancel.xml");
-            await File.WriteAllTextAsync(path, eventoXml, cancellationToken).ConfigureAwait(false);
+            var cancelFolder = Path.Combine(config.XmlPath, "CANCEL");
+            Directory.CreateDirectory(cancelFolder);
+            var cancelPath = Path.Combine(cancelFolder, nfesNo + "-nfse-cancel.xml");
+            await File.WriteAllTextAsync(cancelPath, eventoXml, cancellationToken).ConfigureAwait(false);
+            preferredRelative = $"CANCEL/{nfesNo}-nfse-cancel.xml";
+
+            if (orderId is int oid and > 0)
+            {
+                var orderFolder = Path.Combine(config.XmlPath, "S" + oid);
+                Directory.CreateDirectory(orderFolder);
+                var orderPath = Path.Combine(orderFolder, oid + "-nfse-cancel.xml");
+                await File.WriteAllTextAsync(orderPath, eventoXml, cancellationToken).ConfigureAwait(false);
+                preferredRelative = $"S{oid}/{oid}-nfse-cancel.xml";
+            }
         }
         catch
         {
             // Non-fatal.
         }
+
+        return preferredRelative;
     }
 
     private static string FormatPrefeituraCancelErrors(RetornoCancelamentoNFe retorno)

@@ -44,6 +44,8 @@ public class CancelNfesResult
     public bool Success { get; set; }
     public string Message { get; set; } = "";
     public int? OrderId { get; set; }
+    /// <summary>Relative path under /NFE_FILES/ for the cancel event XML, when saved.</summary>
+    public string? XmlRelativePath { get; set; }
 }
 
 public class NfesCanceledReceiptDto
@@ -53,6 +55,6 @@ public class NfesCanceledReceiptDto
     public string Memo { get; set; } = "";
     /// <summary>Pedido (OS): RECEIPT_FORM (novos cancelamentos) ou resolvido via XML em disco.</summary>
     public int? OrderId { get; set; }
-    /// <summary>Caminho relativo sob /NFE_FILES/, ex.: S123/123-nfse-cancel.xml.</summary>
+    /// <summary>Caminho relativo sob /NFE_FILES/, ex.: S123/123-nfse-cancel.xml ou CANCEL/15-nfse-cancel.xml.</summary>
     public string? XmlRelativePath { get; set; }
 }

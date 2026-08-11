@@ -108,6 +108,11 @@
                         {
                             <span class="d-block mt-1 text-muted">Pedido (OS) atualizado: #@orderId</span>
                         }
+                        @if (_result.Success && !string.IsNullOrEmpty(_result.XmlRelativePath))
+                        {
+                            <a href="/NFE_FILES/@_result.XmlRelativePath.Replace('\\', '/')" target="_blank" rel="noopener noreferrer"
+                               class="d-inline-block mt-1">Abrir XML do cancelamento</a>
+                        }
                     </div>
                 }
             }

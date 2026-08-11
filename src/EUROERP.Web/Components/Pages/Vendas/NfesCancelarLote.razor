@@ -47,7 +47,10 @@
                     @if (_result.Success && _result.OrderId is int orderId)
                     {
                         <span class="d-block mt-1 text-muted">Pedido (OS) #@orderId</span>
-                        <a href="/NFE_FILES/S@(orderId)/@(orderId)-nfse-cancel.xml" target="_blank" rel="noopener noreferrer"
+                    }
+                    @if (_result.Success && !string.IsNullOrEmpty(_result.XmlRelativePath))
+                    {
+                        <a href="/NFE_FILES/@_result.XmlRelativePath.Replace('\\', '/')" target="_blank" rel="noopener noreferrer"
                            class="d-inline-block mt-1">Abrir XML do cancelamento</a>
                     }
                 </div>
@@ -76,7 +79,7 @@
         {
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover table-bordered mb-0">
+                    <table class="table table-sm table-hover table-bordered mb-0 data-grid-table">
                         <thead class="table-light">
                             <tr>
                                 <th style="width: 7rem;">Data</th>
