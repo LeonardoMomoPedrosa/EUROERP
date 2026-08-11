@@ -4,7 +4,8 @@ public interface INfesCancellationService
 {
     Task<CancelNfesResult> CancelAsync(CancelNfesRequest request, CancellationToken cancellationToken = default);
     Task<CancelNfesResult> CancelManualAsync(CancelNfesManualRequest request, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<NfesCanceledReceiptDto>> GetTodayCanceledAsync(CancellationToken cancellationToken = default);
+    /// <summary>Cancelamentos dos últimos 7 dias (RECEIPT_CANCEL), com link XML quando o OrderId é resolvido.</summary>
+    Task<IReadOnlyList<NfesCanceledReceiptDto>> GetWeekCanceledAsync(CancellationToken cancellationToken = default);
 }
 
 public class CancelNfesRequest
@@ -50,4 +51,8 @@ public class NfesCanceledReceiptDto
     public DateTime CancelDate { get; set; }
     public int ReceiptNo { get; set; }
     public string Memo { get; set; } = "";
+    /// <summary>Pedido (OS): RECEIPT_FORM (novos cancelamentos) ou resolvido via XML em disco.</summary>
+    public int? OrderId { get; set; }
+    /// <summary>Caminho relativo sob /NFE_FILES/, ex.: S123/123-nfse-cancel.xml.</summary>
+    public string? XmlRelativePath { get; set; }
 }

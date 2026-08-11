@@ -47,6 +47,8 @@
                     @if (_result.Success && _result.OrderId is int orderId)
                     {
                         <span class="d-block mt-1 text-muted">Pedido (OS) #@orderId</span>
+                        <a href="/NFE_FILES/S@(orderId)/@(orderId)-nfse-cancel.xml" target="_blank" rel="noopener noreferrer"
+                           class="d-inline-block mt-1">Abrir XML do cancelamento</a>
                     }
                 </div>
             }
@@ -55,7 +57,7 @@
 
     <div class="card grid-card">
         <div class="card-header py-2">
-            <h6 class="mb-0">Cancelamentos de hoje</h6>
+            <h6 class="mb-0">Cancelamento da semana</h6>
         </div>
         @if (_listLoading)
         {
@@ -64,10 +66,10 @@
                 Carregando...
             </div>
         }
-        else if (_todayCanceled.Count == 0)
+        else if (_weekCanceled.Count == 0)
         {
             <div class="card-body py-4">
-                <p class="text-muted mb-0 small">Nenhum cancelamento registrado hoje.</p>
+                <p class="text-muted mb-0 small">Nenhum cancelamento registrado nos últimos 7 dias.</p>
             </div>
         }
         else
@@ -80,15 +82,27 @@
                                 <th style="width: 7rem;">Data</th>
                                 <th style="width: 6rem;">Nota #</th>
                                 <th>Motivo</th>
+                                <th style="width: 5rem;">XML</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var item in _todayCanceled)
+                            @foreach (var item in _weekCanceled)
                             {
                                 <tr>
                                     <td class="text-nowrap">@item.CancelDate.ToString("dd/MM/yyyy")</td>
                                     <td>@item.ReceiptNo</td>
                                     <td title="@item.Memo">@item.Memo</td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(item.XmlRelativePath))
+                                        {
+                                            <a href="/NFE_FILES/@item.XmlRelativePath.Replace('\\', '/')" target="_blank" rel="noopener noreferrer"
+                                               class="btn btn-sm btn-outline-secondary py-0 px-1">XML</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -106,7 +120,7 @@
     private string _motivoCode = "9";
     private bool _submitting;
     private CancelNfesResult? _result;
-    private IReadOnlyList<NfesCanceledReceiptDto> _todayCanceled = Array.Empty<NfesCanceledReceiptDto>();
+    private IReadOnlyList<NfesCanceledReceiptDto> _weekCanceled = Array.Empty<NfesCanceledReceiptDto>();
     private bool _listLoading = true;
     private string? _userId;
 
@@ -117,15 +131,15 @@
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         _userId = state.User.Identity?.Name ?? "SYS";
-        await LoadTodayCanceledAsync();
+        await LoadWeekCanceledAsync();
     }
 
-    private async Task LoadTodayCanceledAsync()
+    private async Task LoadWeekCanceledAsync()
     {
         _listLoading = true;
         try
         {
-            _todayCanceled = await CancellationService.GetTodayCanceledAsync();
+            _weekCanceled = await CancellationService.GetWeekCanceledAsync();
         }
         finally
         {
@@ -165,7 +179,7 @@
 
             if (_result.Success)
             {
-                await LoadTodayCanceledAsync();
+                await LoadWeekCanceledAsync();
                 _nfesNoText = "";
                 _memo = "";
                 _motivoCode = "9";

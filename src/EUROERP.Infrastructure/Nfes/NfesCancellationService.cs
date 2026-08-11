@@ -59,7 +59,7 @@ public sealed class NfesCancellationService : INfesCancellationService
             using var tx = _connection.BeginTransaction();
             try
             {
-                await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, tx, cancellationToken)
+                await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, order.OrderId, tx, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (config.UseSimpliss)
@@ -181,7 +181,7 @@ public sealed class NfesCancellationService : INfesCancellationService
 
                 if (request.RegisterLocalCancel)
                 {
-                    await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, tx, cancellationToken)
+                    await InsertReceiptCancelAsync(request.NfesNo, request.CancelDate, memo, userId, applicationId, orderId, tx, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -220,17 +220,95 @@ public sealed class NfesCancellationService : INfesCancellationService
         }
     }
 
-    public async Task<IReadOnlyList<NfesCanceledReceiptDto>> GetTodayCanceledAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NfesCanceledReceiptDto>> GetWeekCanceledAsync(CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT CANCEL_DATE AS CancelDate, RECEIPT_NO AS ReceiptNo, ISNULL(MEMO, '') AS Memo
+            SELECT
+                CANCEL_DATE AS CancelDate,
+                RECEIPT_NO AS ReceiptNo,
+                ISNULL(MEMO, '') AS Memo,
+                CASE
+                    WHEN RECEIPT_FORM IS NOT NULL AND RECEIPT_FORM > 0 AND RECEIPT_FORM <> RECEIPT_NO
+                    THEN RECEIPT_FORM
+                    ELSE NULL
+                END AS OrderId
             FROM RECEIPT_CANCEL
-            WHERE CAST(SYS_CREATION_DATE AS date) = CAST(GETDATE() AS date)
+            WHERE SYS_CREATION_DATE >= DATEADD(day, -7, GETDATE())
             ORDER BY SYS_CREATION_DATE DESC";
 
-        var rows = await _connection.QueryAsync<NfesCanceledReceiptDto>(
-            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return rows.ToList();
+        var rows = (await _connection.QueryAsync<NfesCanceledReceiptDto>(
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+        if (rows.Count == 0)
+            return rows;
+
+        var config = await _configProvider.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var missing = rows.Where(r => r.OrderId is null or < 1).Select(r => r.ReceiptNo).ToHashSet();
+        var orderByReceipt = missing.Count > 0
+            ? TryMapCancelXmlOrderIds(config.XmlPath, missing)
+            : new Dictionary<int, int>();
+
+        foreach (var row in rows)
+        {
+            if (row.OrderId is null or < 1
+                && orderByReceipt.TryGetValue(row.ReceiptNo, out var orderId))
+            {
+                row.OrderId = orderId;
+            }
+
+            if (row.OrderId is int oid and > 0)
+                row.XmlRelativePath = $"S{oid}/{oid}-nfse-cancel.xml";
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Maps NFS-e number → OrderId for folders that have {orderId}-nfse-cancel.xml,
+    /// matching nNFSe from the sibling {orderId}-nfse.xml when present.
+    /// </summary>
+    private static Dictionary<int, int> TryMapCancelXmlOrderIds(string? xmlPath, HashSet<int> receiptNos)
+    {
+        var map = new Dictionary<int, int>();
+        if (string.IsNullOrWhiteSpace(xmlPath) || receiptNos.Count == 0 || !Directory.Exists(xmlPath))
+            return map;
+
+        try
+        {
+            foreach (var cancelPath in Directory.EnumerateFiles(xmlPath, "*-nfse-cancel.xml", SearchOption.AllDirectories))
+            {
+                var fileName = Path.GetFileName(cancelPath);
+                var dash = fileName.IndexOf('-');
+                if (dash <= 0 || !int.TryParse(fileName.AsSpan(0, dash), out var orderId) || orderId < 1)
+                    continue;
+
+                var nfsePath = Path.Combine(Path.GetDirectoryName(cancelPath)!, orderId + "-nfse.xml");
+                if (!File.Exists(nfsePath))
+                    continue;
+
+                try
+                {
+                    var xml = File.ReadAllText(nfsePath);
+                    var (numero, _) = NfesNfseXmlParser.ParseAuthorizedNfse(xml);
+                    if (!int.TryParse(numero, out var receiptNo) || !receiptNos.Contains(receiptNo))
+                        continue;
+
+                    map[receiptNo] = orderId;
+                    if (map.Count >= receiptNos.Count)
+                        break;
+                }
+                catch
+                {
+                    // Skip unreadable XML.
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: list still returns without XML links.
+        }
+
+        return map;
     }
 
     private async Task<SimplissCancelResponse> CancelSimplissForOrderAsync(
@@ -332,6 +410,7 @@ public sealed class NfesCancellationService : INfesCancellationService
         string memo,
         string userId,
         string applicationId,
+        int? orderId,
         IDbTransaction tx,
         CancellationToken cancellationToken)
     {
@@ -349,7 +428,9 @@ public sealed class NfesCancellationService : INfesCancellationService
                 CancelDate = cancelDate.Date,
                 ReceiptNo = nfesNo,
                 Memo = memo,
-                ReceiptForm = nfesNo
+                // Prefer OrderId so the weekly list can link /NFE_FILES/S{orderId}/... without a disk scan.
+                // Legacy rows used RECEIPT_FORM = RECEIPT_NO (redundant).
+                ReceiptForm = orderId is > 0 ? orderId.Value : nfesNo
             }, tx, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
