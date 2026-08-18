@@ -51,7 +51,7 @@ public class BillsToReceiveSearchService : IBillsToReceiveSearchService
         // Eurobus FinancialBillsController.searchBtr — plus FantasyName; Paid/ComId via SUM (ERPCOM3).
         const string select = @"
 SELECT o.PKId AS OrderId, o.BTR_ID AS BtrId, ISNULL(o.RECEIPT, 0) AS Receipt,
-    ISNULL(o.NFES_NO, 0) AS NfesNo,
+    ISNULL(TRY_CAST(o.NFES_NO AS INT), 0) AS NfesNo,
     btrd.TERM_NO AS TermNo, btr.TERMS AS Terms,
     ROUND(btrd.AMOUNT, 2) AS Amount,
     ROUND(ISNULL(SUM(fc.AMOUNT), 0), 2) AS Paid, ISNULL(SUM(fc.COMMISSION_ID), 0) AS ComId,

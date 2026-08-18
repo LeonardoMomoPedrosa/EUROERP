@@ -591,7 +591,7 @@ public class ClientService : IClientService
                 o.PKId AS OrderId,
                 o.SENT_DATE AS SentDate,
                 o.SALES_AGENT AS SalesAgent,
-                ISNULL(o.NFES_NO, 0) AS NfeNo,
+                ISNULL(TRY_CAST(o.NFES_NO AS INT), 0) AS NfeNo,
                 c.PKId AS ClientId,
                 c.SOCIAL_NAME AS SocialName,
                 ci.NAME AS City,
