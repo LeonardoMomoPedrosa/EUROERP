@@ -569,12 +569,12 @@ else
                         <div class="pedido-print-header-legacy mb-2">
                             <table border="0" cellspacing="0" cellpadding="0" class="w-100 pedido-print-header-table">
                                 <tr>
-                                    <td colspan="6" class="pedido-print-header-empresa">Aquanimal — Rua Nazaré, 166 - Vila Madalena - CEP: 05448-000 - São Paulo / SP</td>
+                                    <td colspan="6" class="pedido-print-header-empresa">EUROBUS — Rua Botocudos, 49 - Vl. Anastácio - CEP: 05093-030 - São Paulo / SP - (11) 3644-7748</td>
                                 </tr>
                                 <tr class="pedido-print-header-spacer"><td colspan="6" class="pedido-print-header-spacer">&#160;</td></tr>
                                 <tr>
-                                    <td rowspan="7" class="pedido-print-header-logo-td"><img src="/images/lionbw.jpg" alt="Aquanimal" class="pedido-print-header-logo" /></td>
-                                    <td rowspan="7">&#160;</td>
+                                    <td rowspan="6" class="pedido-print-header-logo-td"><img src="/images/lionbw.jpg" alt="EUROBUS" class="pedido-print-header-logo" /></td>
+                                    <td rowspan="6">&#160;</td>
                                     <td class="pedido-print-header-cell"><b>OS #</b> &#160; @_printModalData.OrderId</td>
                                     <td class="pedido-print-header-cell"><b>DATA:</b> &#160; @_printModalData.OrderDate.ToString("dd/MM/yyyy")</td>
                                     <td class="pedido-print-header-cell"><b>Usuário</b> &#160; @_printModalData.SalesAgent</td>
@@ -598,6 +598,28 @@ else
                                     <td class="pedido-print-header-cell"><b>NF #</b> &#160; @(_printModalData.Receipt?.ToString() ?? "—")</td>
                                     <td class="pedido-print-header-cell">@_printModalData.MlOrderId</td>
                                 </tr>
+                                <tr>
+                                    <td colspan="6" class="pedido-print-header-cell">Dados Adicionais: @_printModalData.CarProblem</td>
+                                </tr>
+                                @if (_printModalData.CarId is > 0)
+                                {
+                                    <tr>
+                                        <td colspan="6">
+                                            <table class="w-100 pedido-print-frota-table mb-0">
+                                                <tr>
+                                                    <td class="pedido-print-header-cell"><b>Descrição do Carro</b></td>
+                                                    <td class="pedido-print-header-cell"><b>Placa do Carro</b></td>
+                                                    <td class="pedido-print-header-cell"><b>Kilometragem</b></td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="pedido-print-header-cell">@_printModalData.CarDescription</td>
+                                                    <td class="pedido-print-header-cell">@_printModalData.CarPlate</td>
+                                                    <td class="pedido-print-header-cell">@(_printModalData.CarKm?.ToString("N0") ?? "")</td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                }
                             </table>
                             <br />
                         </div>

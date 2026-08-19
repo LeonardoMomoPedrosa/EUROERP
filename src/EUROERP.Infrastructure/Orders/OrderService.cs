@@ -25,6 +25,12 @@ public class OrderService : IOrderService
     private bool SkipStockForAnimalTaxProduct(int productId) =>
         _animalTaxLionProductId > 0 && productId == _animalTaxLionProductId;
 
+    private bool ShouldSkipStock(int productId, bool isService) =>
+        isService || SkipStockForAnimalTaxProduct(productId);
+
+    private static bool IsServiceClass(string? prodSrvInd) =>
+        string.Equals(prodSrvInd?.Trim(), "S", StringComparison.OrdinalIgnoreCase);
+
     public async Task<IReadOnlyList<SalesAgentDto>> GetSalesAgentsAsync(CancellationToken cancellationToken = default)
     {
         var appId = await GetApplicationIdAsync(cancellationToken).ConfigureAwait(false);
@@ -209,10 +215,12 @@ public class OrderService : IOrderService
                 od.QUANTITY AS Quantity,
                 CAST(ROUND(od.PRICE, 2) AS DECIMAL(14,2)) AS Price,
                 od.DISCOUNT AS Discount,
-                CAST(ROUND(ROUND(ROUND(od.PRICE, 2) * (1 - od.DISCOUNT/100), 2) * od.QUANTITY, 2) AS DECIMAL(14,2)) AS TotalPrice
+                CAST(ROUND(ROUND(ROUND(od.PRICE, 2) * (1 - od.DISCOUNT/100), 2) * od.QUANTITY, 2) AS DECIMAL(14,2)) AS TotalPrice,
+                CAST(CASE WHEN pc.PROD_SRV_IND = 'S' THEN 1 ELSE 0 END AS BIT) AS IsService
             FROM [ORDER_DETAILS] od
             LEFT JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
             JOIN [PRODUCT_GROUP] pg ON p.GROUP_ID = pg.PKId
+            JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
             WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
             ORDER BY p.NAME";
         var list = await _connection.QueryAsync<OrderDetailItemDto>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -233,7 +241,8 @@ public class OrderService : IOrderService
                 cli.COST_IND AS CostInd,
                 p.CURRENCY_ID AS CurrencyId,
                 ISNULL(d.DISCOUNT, 0) AS Discount,
-                ISNULL(cc.CONVERSION, 1) AS Conversion
+                ISNULL(cc.CONVERSION, 1) AS Conversion,
+                pc.PROD_SRV_IND AS ProdSrvInd
             FROM [PRODUCT] p
             JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
@@ -258,7 +267,8 @@ public class OrderService : IOrderService
             CurrencySymbol = (string)row.CurrencySymbol,
             Conversion = (decimal)row.Conversion,
             CostInd = (bool)row.CostInd,
-            CostFinal = (decimal)row.CostFinal
+            CostFinal = (decimal)row.CostFinal,
+            IsService = IsServiceClass(Convert.ToString(row.ProdSrvInd))
         };
     }
 
@@ -296,7 +306,7 @@ public class OrderService : IOrderService
         var product = await GetProductForSaleAsync(productId, orderId, clientId, cancellationToken).ConfigureAwait(false);
         if (product == null)
             throw new InvalidOperationException("Produto inexistente ou inativo para este cliente.");
-        if (product.Stock < quantity)
+        if (!product.IsService && product.Stock < quantity)
             throw new InvalidOperationException("Estoque insuficiente.");
 
         var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
@@ -309,7 +319,7 @@ public class OrderService : IOrderService
         if (existing != null)
         {
             var newQty = existing.Quantity + quantity;
-            if (!SkipStockForAnimalTaxProduct(productId))
+            if (!ShouldSkipStock(productId, product.IsService))
                 await OperateStockAsync(productId, orderId, clientId, -quantity, "Adicionou ao pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
             const string upd = @"
                 UPDATE [ORDER_DETAILS] SET QTD_ORDERED = @QtdOrdered, QUANTITY = @Quantity
@@ -318,7 +328,7 @@ public class OrderService : IOrderService
             return;
         }
 
-        if (!SkipStockForAnimalTaxProduct(productId))
+        if (!ShouldSkipStock(productId, product.IsService))
             await OperateStockAsync(productId, orderId, clientId, -quantity, "Adicionou ao pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
         const string ins = @"
             INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, PRODUCT_ID, QTD_ORDERED, QUANTITY, UNIT_ID, PRICE, COST_FINAL, HAS_COST_IND, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
@@ -373,12 +383,20 @@ public class OrderService : IOrderService
 
     public async Task RemoveOrderDetailAsync(int orderId, int productId, int clientId, CancellationToken cancellationToken = default)
     {
-        const string getQty = "SELECT QUANTITY FROM [ORDER_DETAILS] WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
-        var qty = await _connection.ExecuteScalarAsync<decimal?>(new CommandDefinition(getQty, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (qty == null || qty == 0)
+        const string getQty = @"
+            SELECT od.QUANTITY AS Quantity,
+                   CAST(CASE WHEN pc.PROD_SRV_IND = 'S' THEN 1 ELSE 0 END AS BIT) AS IsService
+            FROM [ORDER_DETAILS] od
+            JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
+            JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
+            JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
+            WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0";
+        var row = await _connection.QueryFirstOrDefaultAsync<(decimal Quantity, bool IsService)>(
+            new CommandDefinition(getQty, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (row.Quantity == 0)
             return;
-        if (!SkipStockForAnimalTaxProduct(productId))
-            await OperateStockAsync(productId, orderId, clientId, qty.Value, "Removeu produto do pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
+        if (!ShouldSkipStock(productId, row.IsService))
+            await OperateStockAsync(productId, orderId, clientId, row.Quantity, "Removeu produto do pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
         const string del = "DELETE FROM [ORDER_DETAILS] WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
         await _connection.ExecuteAsync(new CommandDefinition(del, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -424,7 +442,7 @@ public class OrderService : IOrderService
         var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
         foreach (var d in details)
         {
-            if (!SkipStockForAnimalTaxProduct(d.ProductId))
+            if (!ShouldSkipStock(d.ProductId, d.IsService))
                 await OperateStockAsync(d.ProductId, orderId, header.ClientId, d.Quantity, "Resetando pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
         }
 
@@ -524,7 +542,7 @@ public class OrderService : IOrderService
         var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
         foreach (var d in details)
         {
-            if (!SkipStockForAnimalTaxProduct(d.ProductId))
+            if (!ShouldSkipStock(d.ProductId, d.IsService))
                 await OperateStockAsync(d.ProductId, orderId, header.ClientId, d.Quantity, "Cancelando pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -989,13 +1007,16 @@ public class OrderService : IOrderService
                 o.SALES_AGENT AS SalesAgent, c.ADDRESS_STREET AS AddressStreet, ISNULL(c.ADDRESS_NUMBER, '') AS AddressNumber,
                 ISNULL(c.ADDRESS_COMPLEMENT, '') AS AddressComplement, ISNULL(c.ADDRESS_BLOCK, '') AS AddressBlock,
                 ci.NAME AS City, st.CODE AS State, ISNULL(c.ADDRESS_ZIPCODE, '') AS AddressZipCode,
-                ISNULL(c.PHONE1, '') AS Phone1, mkt.CURRENCY_ID AS CurrencyId, cur.SYMBOL AS CurrencySymbol
+                ISNULL(c.PHONE1, '') AS Phone1, mkt.CURRENCY_ID AS CurrencyId, cur.SYMBOL AS CurrencySymbol,
+                o.CAR_ID AS CarId, ISNULL(car.DESCRIPTION, '') AS CarDescription, ISNULL(car.PLATE, '') AS CarPlate,
+                o.CAR_KM AS CarKm, ISNULL(o.CAR_PROBLEM, '') AS CarProblem
             FROM [ORDER] o
             JOIN [CLIENT] c ON o.CLIENT_ID = c.PKId
             JOIN [MARKET] mkt ON mkt.PKId = c.MARKET_ID
             JOIN [CURRENCY] cur ON cur.PKId = mkt.CURRENCY_ID
             LEFT JOIN [CITY] ci ON ci.PKId = c.ADDRESS_CITY_ID
             LEFT JOIN [STATE] st ON st.PKId = c.ADDRESS_STATE_ID
+            LEFT JOIN [CAR] car ON car.PKId = o.CAR_ID
             WHERE o.PKId = @OrderId";
         var header = await _connection.QueryFirstOrDefaultAsync<dynamic>(new CommandDefinition(sqlHeader, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (header == null)
@@ -1045,12 +1066,17 @@ public class OrderService : IOrderService
             AddressNumber = (string)header.AddressNumber,
             AddressComplement = (string)header.AddressComplement,
             AddressBlock = (string)header.AddressBlock,
-            City = (string)header.City,
-            State = (string)header.State,
+            City = header.City as string ?? "",
+            State = header.State as string ?? "",
             AddressZipCode = (string)header.AddressZipCode,
             Phone1 = (string)header.Phone1,
             Receipt = header.Receipt != null ? (int?)header.Receipt : null,
             Memo = (string)header.Memo,
+            CarProblem = header.CarProblem as string ?? "",
+            CarId = header.CarId != null ? (int?)header.CarId : null,
+            CarDescription = header.CarDescription as string ?? "",
+            CarPlate = header.CarPlate as string ?? "",
+            CarKm = header.CarKm != null ? Convert.ToInt64(header.CarKm) : null,
             MlOrderId = mlOrderId,
             MlOrderDate = null,
             MlShipmentCost = null,

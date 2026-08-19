@@ -1375,6 +1375,8 @@ h1:focus {
 .pedido-print-header-logo-td { width: 10%; vertical-align: top; padding: 0; }
 .pedido-print-header-logo { max-height: 48px; width: auto; display: block; }
 .pedido-print-header-cell { padding: 0.05rem 0.25rem; text-align: left; }
+.pedido-print-frota-table { background: #f4f6f7; border-collapse: collapse; }
+.pedido-print-frota-table td { padding: 0.15rem 0.4rem; font-size: 0.8rem; }
 
 /* Etiqueta para recorte (Imprimir / Imprimir Pedido / Packing slip / Etiquetas): logo Aquanimal, Pedido #, ML #, Destinatário */
 .pedido-print-label-block {

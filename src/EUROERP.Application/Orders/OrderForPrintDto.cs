@@ -23,6 +23,11 @@ public class OrderForPrintDto
     public string Phone1 { get; set; } = "";
     public int? Receipt { get; set; }
     public string Memo { get; set; } = "";
+    public string CarProblem { get; set; } = "";
+    public int? CarId { get; set; }
+    public string CarDescription { get; set; } = "";
+    public string CarPlate { get; set; } = "";
+    public long? CarKm { get; set; }
     public string MlOrderId { get; set; } = "";
     public DateTime? MlOrderDate { get; set; }
     public decimal? MlShipmentCost { get; set; }

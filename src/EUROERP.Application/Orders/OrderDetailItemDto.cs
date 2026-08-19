@@ -10,4 +10,5 @@ public class OrderDetailItemDto
     public decimal Price { get; set; }
     public decimal Discount { get; set; }
     public decimal TotalPrice { get; set; }
+    public bool IsService { get; set; }
 }
