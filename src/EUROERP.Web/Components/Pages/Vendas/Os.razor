@@ -163,7 +163,7 @@
                                         var p = _productSuggestions[i];
                                         var isHighlighted = i == _productSuggestionHighlightIndex;
                                         <div class="px-2 py-1 small cursor-pointer @(isHighlighted ? "pedido-autocomplete-highlight" : "")" @onmousedown="() => SelectProductSuggestion(p)" style="cursor: pointer;">
-                                            @p.Name — Estoque: @p.Stock — R$ @p.Price.ToString("N2")
+                                            @p.ProductId@(string.IsNullOrWhiteSpace(p.ExternalPkId) ? "" : " — " + p.ExternalPkId) — @p.Name — Estoque: @p.Stock — R$ @p.Price.ToString("N2")
                                         </div>
                                     }
                                 }
@@ -243,6 +243,7 @@
                         <thead class="table-light sticky-top">
                             <tr>
                                 <th>Cód.</th>
+                                <th>Cód. ext.</th>
                                 <th>Nome</th>
                                 <th>Estoque</th>
                                 <th>Preço</th>
@@ -253,6 +254,7 @@
                             {
                                 <tr role="button" @onclick="() => SelecionarProdutoBuscaRica(p)">
                                     <td>@p.ProductId</td>
+                                    <td>@(p.ExternalPkId ?? "")</td>
                                     <td>@p.Name</td>
                                     <td>@p.Stock</td>
                                     <td>R$ @p.Price.ToString("N2")</td>

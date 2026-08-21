@@ -63,6 +63,13 @@ public class NfeIndividualService : INfeIndividualService
         return timeInZone.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + gmt;
     }
 
+    /// <summary>Current calendar date in the NFe timezone (Brasília by default).</summary>
+    private DateTime GetNfeDateNow()
+    {
+        var gmt = _configuration["NFe:GmtOffset"] ?? "-03:00";
+        return DateTime.UtcNow.AddHours(ParseGmtOffsetToHours(gmt)).Date;
+    }
+
     /// <summary>
     /// Parses GmtOffset string (e.g. "-03:00", "+05:30") to offset in hours from UTC.
     /// </summary>
@@ -520,7 +527,8 @@ public class NfeIndividualService : INfeIndividualService
                 ?? "18"),
             PisAliqPercent = ParseTaxPercent(_configuration["NFe:PisAliq"] ?? "1.65"),
             CofinsAliqPercent = ParseTaxPercent(_configuration["NFe:CofinsAliq"] ?? "3"),
-            InfCpl = await BuildInfCplAsync(request.OrderId, request.InformacoesComplementares, cancellationToken).ConfigureAwait(false)
+            InfCpl = await BuildInfCplAsync(request.OrderId, request.InformacoesComplementares, cancellationToken).ConfigureAwait(false),
+            CobrDupVenc = GetNfeDateNow().AddDays(15)
         };
 
         XmlDocument nfeDoc;
@@ -1683,7 +1691,30 @@ public class NfeIndividualService : INfeIndividualService
             WHERE o.PKId = @OrderId";
         var row = await _connection.QuerySingleOrDefaultAsync<CarInfoRow>(
             new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
+
+        const string vencSql = @"
+            SELECT fbtrd.DUE_DATE AS DueDate
+            FROM FINANCE_BTR_DETAIL fbtrd
+            JOIN FINANCE_BTR fbtr ON fbtr.PKId = fbtrd.FINANCE_BTR_ID
+            JOIN [ORDER] o ON o.BTR_ID = fbtr.PKId
+            WHERE o.PKId = @OrderId
+            ORDER BY fbtrd.TERM_NO";
+        var dueDates = (await _connection.QueryAsync<DateTime>(
+            new CommandDefinition(vencSql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
         var parts = new List<string>();
+        // Mesmo conteúdo do DANFE Eurobus4 (NfePDFGenerator): consumidor final, obs, vencimentos, OS/frota.
+        parts.Add("Venda para consumidor final.");
+        if (!string.IsNullOrWhiteSpace(userInfo))
+            parts.Add(userInfo.Trim());
+        if (dueDates.Count > 0)
+        {
+            var venc = "Vencs: " + string.Join("  ", dueDates.Select(d => d.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture)));
+            parts.Add(venc);
+        }
+        if (row != null && !string.IsNullOrWhiteSpace(row.CarProblem))
+            parts.Add(row.CarProblem.Trim());
+
         var carLine = $"OS {orderId}";
         if (row != null)
         {
@@ -1693,12 +1724,9 @@ public class NfeIndividualService : INfeIndividualService
                 carLine += $" - {desc} Placa: {plate}";
             else if (desc.Length > 0)
                 carLine += $" - {desc}";
-            if (!string.IsNullOrWhiteSpace(row.CarProblem))
-                parts.Add(row.CarProblem.Trim());
         }
-        parts.Insert(0, carLine);
-        if (!string.IsNullOrWhiteSpace(userInfo))
-            parts.Add(userInfo.Trim());
+        parts.Add(carLine);
+
         // XSD TString (infCpl) não permite CR/LF/TAB — usar espaço entre partes
         var text = string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         return string.IsNullOrWhiteSpace(text) ? null : text;

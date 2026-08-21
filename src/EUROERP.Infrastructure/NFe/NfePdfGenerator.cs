@@ -1,10 +1,11 @@
+using System.Data;
 using System.Globalization;
 using System.Text;
 using System.Xml;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using EUROERP.Application.Config;
+using Dapper;
 using Microsoft.Extensions.Configuration;
 using ZXing.ImageSharp;
 using ZXing.Common;
@@ -22,23 +23,22 @@ public interface INfePdfGenerator
 public class NfePdfGenerator : INfePdfGenerator
 {
     private readonly IConfiguration _configuration;
-    private readonly ISysControlService _sysControl;
+    private readonly IDbConnection _connection;
     private const string NsNfe = "http://www.portalfiscal.inf.br/nfe";
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     /// <summary>Quando true, desenha linhas e rótulos [ Seção N ] entre blocos para facilitar ajustes. Definir false na versão final.</summary>
     private const bool ShowSectionMarkers = true;
 
-    public NfePdfGenerator(IConfiguration configuration, ISysControlService sysControl)
+    public NfePdfGenerator(IConfiguration configuration, IDbConnection connection)
     {
         _configuration = configuration;
-        _sysControl = sysControl;
+        _connection = connection;
     }
 
     public async Task GeneratePdfAsync(int orderId, string chave, string nfeProcXmlPath, string pdfOutputPath, CancellationToken cancellationToken = default)
     {
-        var icmsAliq = await _sysControl.GetValueAsync("ICMS_ALIQ", cancellationToken).ConfigureAwait(false)
-            ?? _configuration["NFe:ICMS_ALIQ"];
+        var eurobusAdic = await LoadEurobusAdicAsync(orderId, cancellationToken).ConfigureAwait(false);
 
         await Task.Run(() =>
         {
@@ -491,7 +491,7 @@ public class NfePdfGenerator : INfePdfGenerator
                         });
 
                         // Seção 8: DADOS ADICIONAIS — título no canto; duas colunas separadas apenas por linha vertical
-                        var infCompleta = BuildInformacoesComplementares(data, icmsAliq);
+                        var infCompleta = BuildInformacoesComplementares(data, eurobusAdic);
                         content.Item().PaddingTop(6).Column(sec8 =>
                         {
                             sec8.Item().Text("DADOS ADICIONAIS").Bold().FontSize(6);
@@ -536,40 +536,128 @@ public class NfePdfGenerator : INfePdfGenerator
         return c;
     }
 
-    /// <summary>Monta o texto do subbloco Informações Complementares: mensagem F2 (InfAdic), linhas do appsettings e valor aproximado dos impostos (como no legado: vNF * ICMS_ALIQ / 100).</summary>
-    private string BuildInformacoesComplementares(DanfeData data, string? icmsAliqFromSysControl)
+    /// <summary>
+    /// Informações complementares no DANFE como no legado Eurobus4 (NfePDFGenerator):
+    /// "Venda para consumidor final.", Vencs das parcelas BTR, CAR_PROBLEM e OS/frota.
+    /// Sem textos de peixes ornamentais / MPA / Simples Nacional do Aquanimal.
+    /// </summary>
+    private static string BuildInformacoesComplementares(DanfeData data, EurobusAdic adic)
     {
+        if (data.TpNF != 1)
+            return (data.InfAdic ?? "").Trim();
+
         var sb = new StringBuilder();
-        // Mensagem na nota (F2) — vem do XML infCpl quando foi autorizada
-        if (!string.IsNullOrWhiteSpace(data.InfAdic))
-            sb.AppendLine(data.InfAdic.Trim());
+        var infAdic = (data.InfAdic ?? "").Trim();
+        var infHasVenda = infAdic.Contains("Venda para consumidor final.", StringComparison.OrdinalIgnoreCase);
+        var infHasVencs = infAdic.Contains("Vencs:", StringComparison.OrdinalIgnoreCase);
 
-        // Para NF-e de Saída (tpNF == 1): texto padrão Simples Nacional + valor aprox. impostos + linhas fixas (como no legado)
-        if (data.TpNF == 1)
+        if (!infHasVenda)
+            sb.AppendLine("Venda para consumidor final.");
+
+        if (!string.IsNullOrWhiteSpace(infAdic))
         {
-            var docSimples = _configuration["NFe:DadosAdicionais:DocumentoSimplesNacional"] ?? "Documento emitido por ME ou EPP optante pelo Simples Nacional.";
-            sb.AppendLine(docSimples);
-
-            var icmsAliqStr = (icmsAliqFromSysControl ?? _configuration["NFe:ICMS_ALIQ"])?.Trim().Replace(',', '.');
-            if (!string.IsNullOrEmpty(icmsAliqStr) && decimal.TryParse(icmsAliqStr, System.Globalization.NumberStyles.Number, Inv, out var aliq))
+            var display = infAdic
+                .Replace(" Vencs:", "\nVencs:", StringComparison.OrdinalIgnoreCase)
+                .Replace(" OS ", "\nOS ", StringComparison.Ordinal);
+            foreach (var raw in display.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None))
             {
-                var vNfStr = (data.VNf ?? "").Trim().Replace(',', '.');
-                if (decimal.TryParse(vNfStr, System.Globalization.NumberStyles.Number, Inv, out var vNf))
+                foreach (var line in WrapLine(raw.Trim(), 120))
                 {
-                    var imposto = Math.Round(vNf * aliq / 100m, 2);
-                    sb.AppendLine("Valor aproximados dos impostos: R$ " + FormatDecimalPtBr(imposto.ToString("F2", Inv)));
+                    if (!string.IsNullOrWhiteSpace(line))
+                        sb.AppendLine(line);
                 }
             }
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(adic.CarProblem))
+            {
+                foreach (var line in WrapLine(adic.CarProblem.Trim(), 130))
+                    sb.AppendLine(line);
+            }
+            if (!string.IsNullOrWhiteSpace(adic.CarInfo))
+                sb.AppendLine(adic.CarInfo.Trim());
+        }
 
-            var registroMpa = _configuration["NFe:DadosAdicionais:RegistroMpa"] ?? "REGISTRO MPA - RGP - 1104-SP";
-            sb.AppendLine(registroMpa);
-            var envioPeixes = _configuration["NFe:DadosAdicionais:EnvioPeixes"] ?? "Envio de peixes ornamentais sem a necessidade de Guia de Transporte de Animais - GTA";
-            sb.AppendLine(envioPeixes);
-            var portaria = _configuration["NFe:DadosAdicionais:PortariaSapMapa"] ?? "De acordo com Art 9o da Portaria SAP/MAPA No 17, de 26 Jan de 2021";
-            sb.AppendLine(portaria);
+        if (!infHasVencs && adic.DueDates.Count > 0)
+        {
+            var venc = "Vencs: " + string.Join("  ", adic.DueDates.Select(d => d.ToString("dd/MM/yyyy", Inv)));
+            foreach (var line in WrapLine(venc, 120))
+                sb.AppendLine(line);
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private async Task<EurobusAdic> LoadEurobusAdicAsync(int orderId, CancellationToken ct)
+    {
+        var result = new EurobusAdic();
+        if (orderId <= 0) return result;
+
+        const string vencSql = @"
+            SELECT fbtrd.DUE_DATE AS DueDate
+            FROM FINANCE_BTR_DETAIL fbtrd
+            JOIN FINANCE_BTR fbtr ON fbtr.PKId = fbtrd.FINANCE_BTR_ID
+            JOIN [ORDER] o ON o.BTR_ID = fbtr.PKId
+            WHERE o.PKId = @OrderId
+            ORDER BY fbtrd.TERM_NO";
+        var dates = await _connection.QueryAsync<DateTime>(
+            new CommandDefinition(vencSql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
+        result.DueDates = dates.ToList();
+
+        const string carSql = @"
+            SELECT ISNULL(o.CAR_PROBLEM, '') AS CarProblem,
+                   ISNULL(car.PLATE, '') AS CarPlate,
+                   ISNULL(car.DESCRIPTION, '') AS CarDesc
+            FROM [ORDER] o
+            LEFT JOIN CAR car ON car.PKId = o.CAR_ID
+            WHERE o.PKId = @OrderId";
+        var row = await _connection.QuerySingleOrDefaultAsync<EurobusCarRow>(
+            new CommandDefinition(carSql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
+        if (row == null) return result;
+
+        result.CarProblem = (row.CarProblem ?? "").Trim();
+        var carLine = $"OS {orderId}";
+        var plate = (row.CarPlate ?? "").Trim();
+        var desc = (row.CarDesc ?? "").Trim();
+        if (plate.Length > 0)
+            carLine += $" - {desc} Placa: {plate}";
+        else if (desc.Length > 0)
+            carLine += $" - {desc}";
+        result.CarInfo = carLine;
+        return result;
+    }
+
+    private static IEnumerable<string> WrapLine(string text, int size)
+    {
+        if (string.IsNullOrEmpty(text) || size <= 0)
+        {
+            if (!string.IsNullOrEmpty(text))
+                yield return text;
+            yield break;
+        }
+        var remaining = text;
+        while (remaining.Length > size)
+        {
+            yield return remaining[..size];
+            remaining = remaining[size..];
+        }
+        if (remaining.Length > 0)
+            yield return remaining;
+    }
+
+    private sealed class EurobusAdic
+    {
+        public List<DateTime> DueDates { get; set; } = new();
+        public string CarProblem { get; set; } = "";
+        public string CarInfo { get; set; } = "";
+    }
+
+    private sealed class EurobusCarRow
+    {
+        public string? CarProblem { get; set; }
+        public string? CarPlate { get; set; }
+        public string? CarDesc { get; set; }
     }
 
     private void GenerateFallbackPdf(string chave, int orderId, string pdfOutputPath)

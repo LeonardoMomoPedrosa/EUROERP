@@ -282,6 +282,7 @@ public class OrderService : IOrderService
             SELECT TOP (@Limit)
                 p.PKId AS ProductId,
                 p.NAME AS Name,
+                p.EXTERNAL_PKID AS ExternalPkId,
                 p.STOCK AS Stock,
                 ROUND(mp.PRICE * ISNULL(cc.CONVERSION, 1), 2) AS Price
             FROM [PRODUCT] p
@@ -291,7 +292,12 @@ public class OrderService : IOrderService
             JOIN [MARKET_PRODUCT] mp ON mp.MARKET_ID = cli.MARKET_ID AND mp.PRODUCT_ID = p.PKId
             JOIN [MARKET] mkt ON mkt.PKId = mp.MARKET_ID
             LEFT JOIN [CURRENCY_CONVERSION] cc ON cc.SOURCE_CURRENCY_ID = mkt.CURRENCY_ID AND cc.TARGET_CURRENCY_ID = p.CURRENCY_ID
-            WHERE p.ACTIVE = 'Y' AND p.NAME LIKE @NameLike
+            WHERE p.ACTIVE = 'Y'
+              AND (
+                    p.NAME LIKE @NameLike
+                    OR ISNULL(p.EXTERNAL_PKID, '') LIKE @NameLike
+                    OR CAST(p.PKId AS VARCHAR(20)) LIKE @NameLike
+                  )
             ORDER BY p.NAME";
         var list = await _connection.QueryAsync<ProductForSaleSuggestionDto>(
             new CommandDefinition(sql, new { OrderId = orderId, NameLike = nameLike, Limit = limit }, cancellationToken: cancellationToken)).ConfigureAwait(false);

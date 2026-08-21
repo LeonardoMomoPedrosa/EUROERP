@@ -44,6 +44,8 @@ public sealed class NfeBuildInput
     public string? PesoL { get; set; }
     /// <summary>Informações complementares de interesse do contribuinte (infCpl). Opcional; máx. 5000 caracteres.</summary>
     public string? InfCpl { get; set; }
+    /// <summary>Vencimento da duplicata (cobr/dup), como no legado Eurobus4: emissão + 15 dias.</summary>
+    public DateTime CobrDupVenc { get; set; }
     /// <summary>ICMS alíquota % (regime normal, CRT 3).</summary>
     public decimal IcmsAliqPercent { get; set; } = 18;
     public decimal PisAliqPercent { get; set; } = 1.65m;
@@ -133,6 +135,7 @@ public class NfeXmlBuilder : INfeXmlBuilder
             AppendDet(doc, infNFe, det, input, ns);
         AppendTotal(doc, infNFe, input, ns);
         AppendTransp(doc, infNFe, input, ns);
+        AppendCobr(doc, infNFe, input, ns);
         AppendPag(doc, infNFe, input.TotalVnf, ns);
         if (!string.IsNullOrWhiteSpace(input.InfCpl))
             AppendInfAdic(doc, infNFe, input.InfCpl, ns);
@@ -424,6 +427,36 @@ public class NfeXmlBuilder : INfeXmlBuilder
             transp.AppendChild(vol);
         }
         parent.AppendChild(transp);
+    }
+
+    /// <summary>Grupo cobr/fat/dup como no legado Eurobus4 (receipt.aspx printNFESale): uma duplicata, vencimento emissão+15 dias, vLiq = vProd − vDesc.</summary>
+    private static void AppendCobr(XmlDocument doc, XmlElement parent, NfeBuildInput input, string ns)
+    {
+        var vOrig = input.Det.Sum(d => d.VProd);
+        var vDesc = input.TotalVdesc;
+        var vLiq = Math.Round(vOrig - vDesc, 2, MidpointRounding.AwayFromZero);
+        if (vLiq < 0) vLiq = 0;
+        if (vLiq <= 0 && vOrig <= 0) return;
+
+        var venc = input.CobrDupVenc == default
+            ? DateTime.Today.AddDays(15)
+            : input.CobrDupVenc.Date;
+
+        var cobr = doc.CreateElement("cobr", ns);
+        var fat = doc.CreateElement("fat", ns);
+        AppendElem(doc, fat, ns, "nFat", "1");
+        AppendElem(doc, fat, ns, "vOrig", FmtDec(vOrig));
+        AppendElem(doc, fat, ns, "vDesc", FmtDec(vDesc));
+        AppendElem(doc, fat, ns, "vLiq", FmtDec(vLiq));
+        cobr.AppendChild(fat);
+
+        var dup = doc.CreateElement("dup", ns);
+        AppendElem(doc, dup, ns, "nDup", "001");
+        AppendElem(doc, dup, ns, "dVenc", venc.ToString("yyyy-MM-dd", Inv));
+        AppendElem(doc, dup, ns, "vDup", FmtDec(vLiq));
+        cobr.AppendChild(dup);
+
+        parent.AppendChild(cobr);
     }
 
     private static void AppendPag(XmlDocument doc, XmlElement parent, decimal vNf, string ns)
