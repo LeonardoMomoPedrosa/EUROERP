@@ -12,6 +12,7 @@ public interface IOrderService
     Task<ProductForSaleDto?> GetProductForSaleAsync(int productId, int orderId, int clientId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProductForSaleSuggestionDto>> GetProductSuggestionsForSaleAsync(string term, int orderId, int limit = 15, CancellationToken cancellationToken = default);
     /// <param name="unitPriceOverride">When set (positive), stored as line <c>PRICE</c> instead of catalog/market price (POS override).</param>
+    /// <remarks>Orçamento (MODE=Q) does not check or deduct stock (Eurobus <c>batchInOrderDetail</c> / <c>operateStock</c>). Venda (MODE=S) requires stock.</remarks>
     Task AddOrderDetailAsync(int orderId, int productId, decimal quantity, int clientId, string applicationId, string userId, decimal? unitPriceOverride = null, CancellationToken cancellationToken = default);
     /// <summary>Add order detail from site import with explicit price (no market lookup). Deducts stock except for <c>Ecom:AnimalTaxLionProductId</c> (fee line is imported without stock movement).</summary>
     Task AddOrderDetailFromSiteAsync(int orderId, int productId, int quantity, decimal price, int clientId, string applicationId, string userId, CancellationToken cancellationToken = default);

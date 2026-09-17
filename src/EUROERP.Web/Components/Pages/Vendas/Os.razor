@@ -410,7 +410,7 @@
                             <tr class="pedido-cart-row">
                                 <td class="pedido-cart-code">@d.LionCode</td>
                                 <td class="pedido-cart-name">@d.Name</td>
-                                <td class="pedido-cart-qty text-end">@d.Quantity</td>
+                                <td class="pedido-cart-qty text-end">@d.DisplayQuantity</td>
                                 <td class="pedido-cart-price text-end">@d.Price.ToString("N2")</td>
                                 <td class="pedido-cart-disc text-end">@d.Discount.ToString("N1")</td>
                                 <td class="pedido-cart-total text-end">@d.TotalPrice.ToString("N2")</td>
@@ -1193,7 +1193,7 @@ else
             await OrderService.RemoveOrderDetailAsync(OrderId, d.ProductId, _header.ClientId);
             _selectedProductId = d.ProductId;
             _productSearch = d.Name;
-            _quantity = d.Quantity;
+            _quantity = d.DisplayQuantity;
             _selectedProductForSale = await OrderService.GetProductForSaleAsync(d.ProductId, OrderId, _header.ClientId);
             await CarregarDetalhesAsync();
             await FocusQuantityAsync();

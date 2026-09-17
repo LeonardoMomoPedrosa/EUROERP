@@ -13,4 +13,6 @@ public class ProductForSaleDto
     public decimal CostFinal { get; set; }
     /// <summary>True when PRODUCT_CLASS.PROD_SRV_IND = S (Eurobus: no stock check/deduction).</summary>
     public bool IsService { get; set; }
+    /// <summary>Parent order MODE (S = Venda, Q = Orçamento).</summary>
+    public string OrderMode { get; set; } = "S";
 }

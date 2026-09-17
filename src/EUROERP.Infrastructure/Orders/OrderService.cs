@@ -31,6 +31,12 @@ public class OrderService : IOrderService
     private static bool IsServiceClass(string? prodSrvInd) =>
         string.Equals(prodSrvInd?.Trim(), "S", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsQuoteMode(string? mode) =>
+        string.Equals(mode?.Trim(), "Q", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Eurobus: orçamento totals use QTD_ORDERED (QTOTAL); venda uses QUANTITY (TOTAL).</summary>
+    private const string LineQtyExpr = "CASE WHEN LTRIM(RTRIM(o.MODE)) = 'Q' THEN od.QTD_ORDERED ELSE od.QUANTITY END";
+
     public async Task<IReadOnlyList<SalesAgentDto>> GetSalesAgentsAsync(CancellationToken cancellationToken = default)
     {
         var appId = await GetApplicationIdAsync(cancellationToken).ConfigureAwait(false);
@@ -213,15 +219,18 @@ public class OrderService : IOrderService
                 CAST(pg.PRODUCT_CLASS_ID AS VARCHAR) + SUBSTRING('000000' + CAST(od.PRODUCT_ID AS VARCHAR), LEN(CAST(od.PRODUCT_ID AS VARCHAR)), 7) AS LionCode,
                 p.NAME AS Name,
                 od.QUANTITY AS Quantity,
+                od.QTD_ORDERED AS QtdOrdered,
+                CAST(CASE WHEN LTRIM(RTRIM(o.MODE)) = 'Q' THEN 1 ELSE 0 END AS BIT) AS IsQuote,
                 CAST(ROUND(od.PRICE, 2) AS DECIMAL(14,2)) AS Price,
                 od.DISCOUNT AS Discount,
-                CAST(ROUND(ROUND(ROUND(od.PRICE, 2) * (1 - od.DISCOUNT/100), 2) * od.QUANTITY, 2) AS DECIMAL(14,2)) AS TotalPrice,
+                CAST(ROUND(ROUND(ROUND(od.PRICE, 2) * (1 - od.DISCOUNT/100), 2) * " + LineQtyExpr + @", 2) AS DECIMAL(14,2)) AS TotalPrice,
                 CAST(CASE WHEN pc.PROD_SRV_IND = 'S' THEN 1 ELSE 0 END AS BIT) AS IsService
             FROM [ORDER_DETAILS] od
+            JOIN [ORDER] o ON o.PKId = od.ORDER_ID
             LEFT JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
             JOIN [PRODUCT_GROUP] pg ON p.GROUP_ID = pg.PKId
             JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
-            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
+            WHERE od.ORDER_ID = @OrderId AND (" + LineQtyExpr + @") > 0
             ORDER BY p.NAME";
         var list = await _connection.QueryAsync<OrderDetailItemDto>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         return list.ToList();
@@ -242,7 +251,8 @@ public class OrderService : IOrderService
                 p.CURRENCY_ID AS CurrencyId,
                 ISNULL(d.DISCOUNT, 0) AS Discount,
                 ISNULL(cc.CONVERSION, 1) AS Conversion,
-                pc.PROD_SRV_IND AS ProdSrvInd
+                pc.PROD_SRV_IND AS ProdSrvInd,
+                o.MODE AS OrderMode
             FROM [PRODUCT] p
             JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
@@ -268,7 +278,8 @@ public class OrderService : IOrderService
             Conversion = (decimal)row.Conversion,
             CostInd = (bool)row.CostInd,
             CostFinal = (decimal)row.CostFinal,
-            IsService = IsServiceClass(Convert.ToString(row.ProdSrvInd))
+            IsService = IsServiceClass(Convert.ToString(row.ProdSrvInd)),
+            OrderMode = Convert.ToString(row.OrderMode) ?? "S"
         };
     }
 
@@ -312,34 +323,52 @@ public class OrderService : IOrderService
         var product = await GetProductForSaleAsync(productId, orderId, clientId, cancellationToken).ConfigureAwait(false);
         if (product == null)
             throw new InvalidOperationException("Produto inexistente ou inativo para este cliente.");
-        if (!product.IsService && product.Stock < quantity)
+
+        // Eurobus batchInOrderDetail / operateStock: orçamento does not check or deduct stock.
+        var isQuote = IsQuoteMode(product.OrderMode);
+        if (!isQuote && !product.IsService && product.Stock < quantity)
             throw new InvalidOperationException("Estoque insuficiente.");
 
-        var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
-        var existing = details.FirstOrDefault(d => d.ProductId == productId);
+        const string sqlExisting = @"
+            SELECT od.QTD_ORDERED AS QtdOrdered, od.QUANTITY AS Quantity
+            FROM [ORDER_DETAILS] od
+            WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0";
+        var existing = await _connection.QueryFirstOrDefaultAsync<OrderLineQty>(
+            new CommandDefinition(sqlExisting, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
         var box = (byte)0;
         decimal price = unitPriceOverride is { } op && op > 0
             ? decimal.Round(op, 2)
             : (product.CostInd ? product.CostFinal : product.Price);
 
-        if (existing != null)
+        decimal newQtdOrdered;
+        decimal newQuantity;
+        if (isQuote)
         {
-            var newQty = existing.Quantity + quantity;
+            newQtdOrdered = (existing?.QtdOrdered ?? 0) + quantity;
+            newQuantity = existing?.Quantity ?? 0;
+        }
+        else
+        {
+            newQtdOrdered = (existing?.QtdOrdered ?? 0) + quantity;
+            newQuantity = (existing?.Quantity ?? 0) + quantity;
             if (!ShouldSkipStock(productId, product.IsService))
                 await OperateStockAsync(productId, orderId, clientId, -quantity, "Adicionou ao pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (existing != null)
+        {
             const string upd = @"
                 UPDATE [ORDER_DETAILS] SET QTD_ORDERED = @QtdOrdered, QUANTITY = @Quantity
                 WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = @Box";
-            await _connection.ExecuteAsync(new CommandDefinition(upd, new { QtdOrdered = newQty, Quantity = newQty, OrderId = orderId, ProductId = productId, Box = box }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            await _connection.ExecuteAsync(new CommandDefinition(upd, new { QtdOrdered = newQtdOrdered, Quantity = newQuantity, OrderId = orderId, ProductId = productId, Box = box }, cancellationToken: cancellationToken)).ConfigureAwait(false);
             return;
         }
 
-        if (!ShouldSkipStock(productId, product.IsService))
-            await OperateStockAsync(productId, orderId, clientId, -quantity, "Adicionou ao pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
         const string ins = @"
             INSERT INTO [ORDER_DETAILS] (ORDER_ID, BOX, PRODUCT_ID, QTD_ORDERED, QUANTITY, UNIT_ID, PRICE, COST_FINAL, HAS_COST_IND, CURRENCY_ID, CONVERSION, IGNORE_ORDER_DISC, DISCOUNT)
             VALUES (
-                @OrderId, @Box, @ProductId, @Quantity, @Quantity,
+                @OrderId, @Box, @ProductId, @QtdOrdered, @Quantity,
                 (SELECT ISNULL(UNIT_ID, 1) FROM PRODUCT WHERE PKId = @ProductId),
                 @Price,
                 (SELECT COST_FINAL FROM PRODUCT WHERE PKId = @ProductId),
@@ -353,7 +382,8 @@ public class OrderService : IOrderService
             OrderId = orderId,
             Box = box,
             ProductId = productId,
-            Quantity = quantity,
+            QtdOrdered = newQtdOrdered,
+            Quantity = newQuantity,
             Price = price,
             CurrencyId = currencyId,
             Conversion = product.Conversion,
@@ -391,17 +421,18 @@ public class OrderService : IOrderService
     {
         const string getQty = @"
             SELECT od.QUANTITY AS Quantity,
+                   od.QTD_ORDERED AS QtdOrdered,
                    CAST(CASE WHEN pc.PROD_SRV_IND = 'S' THEN 1 ELSE 0 END AS BIT) AS IsService
             FROM [ORDER_DETAILS] od
             JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
             JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             JOIN [PRODUCT_CLASS] pc ON pc.PKId = pg.PRODUCT_CLASS_ID
             WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0";
-        var row = await _connection.QueryFirstOrDefaultAsync<(decimal Quantity, bool IsService)>(
+        var row = await _connection.QueryFirstOrDefaultAsync<OrderLineQty>(
             new CommandDefinition(getQty, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (row.Quantity == 0)
+        if (row == null || (row.Quantity == 0 && row.QtdOrdered == 0))
             return;
-        if (!ShouldSkipStock(productId, row.IsService))
+        if (row.Quantity > 0 && !ShouldSkipStock(productId, row.IsService))
             await OperateStockAsync(productId, orderId, clientId, row.Quantity, "Removeu produto do pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
         const string del = "DELETE FROM [ORDER_DETAILS] WHERE ORDER_ID = @OrderId AND PRODUCT_ID = @ProductId AND BOX = 0";
         await _connection.ExecuteAsync(new CommandDefinition(del, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -415,7 +446,7 @@ public class OrderService : IOrderService
         const string getSql = @"
             SELECT od.PRICE
             FROM [ORDER_DETAILS] od
-            WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0 AND od.QUANTITY > 0";
+            WHERE od.ORDER_ID = @OrderId AND od.PRODUCT_ID = @ProductId AND od.BOX = 0 AND (od.QUANTITY > 0 OR od.QTD_ORDERED > 0)";
         var currentPrice = await _connection.ExecuteScalarAsync<decimal?>(
             new CommandDefinition(getSql, new { OrderId = orderId, ProductId = productId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (currentPrice == null)
@@ -448,7 +479,7 @@ public class OrderService : IOrderService
         var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
         foreach (var d in details)
         {
-            if (!ShouldSkipStock(d.ProductId, d.IsService))
+            if (d.Quantity > 0 && !ShouldSkipStock(d.ProductId, d.IsService))
                 await OperateStockAsync(d.ProductId, orderId, header.ClientId, d.Quantity, "Resetando pedido " + orderId, null!, cancellationToken).ConfigureAwait(false);
         }
 
@@ -548,7 +579,7 @@ public class OrderService : IOrderService
         var details = await GetOrderDetailsAsync(orderId, cancellationToken).ConfigureAwait(false);
         foreach (var d in details)
         {
-            if (!ShouldSkipStock(d.ProductId, d.IsService))
+            if (d.Quantity > 0 && !ShouldSkipStock(d.ProductId, d.IsService))
                 await OperateStockAsync(d.ProductId, orderId, header.ClientId, d.Quantity, "Cancelando pedido " + orderId, userId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -593,13 +624,13 @@ public class OrderService : IOrderService
         const string sql = @"
             SELECT (SUM(t1.TOTAL) - MAX(t1.CREDIT)) * (1 - MAX(t1.DISC) / 100) + MAX(t1.OE) + MAX(t1.SHIP) AS CONVERTED_TOTAL_NET_PRICE
             FROM (
-                SELECT CAST(SUM(ROUND(ROUND(ROUND(price * conversion, 2) * (1 - od.discount/100), 2) * quantity, 2)) AS DECIMAL(14,2)) AS TOTAL,
+                SELECT CAST(SUM(ROUND(ROUND(ROUND(price * conversion, 2) * (1 - od.discount/100), 2) * " + LineQtyExpr + @", 2)) AS DECIMAL(14,2)) AS TOTAL,
                     ISNULL(o.CREDIT, 0) AS CREDIT, ISNULL(o.OTHER_EXPENSES, 0) AS OE,
                     (ISNULL(od.ignore_order_disc, 0) - 1) * -1 * ISNULL(o.DISCOUNT, 0) AS DISC,
                     CASE WHEN ISNULL(o.CHARGE_SHIPMENT, 1) = 1 THEN ISNULL(o.SHIPMENT_COST, 0) ELSE 0 END AS SHIP
                 FROM [ORDER_DETAILS] od
                 JOIN [ORDER] o ON o.PKId = od.ORDER_ID
-                WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0
+                WHERE od.ORDER_ID = @OrderId AND (" + LineQtyExpr + @") > 0
                 GROUP BY o.CREDIT, o.DISCOUNT, o.OTHER_EXPENSES, o.SHIPMENT_COST, o.CHARGE_SHIPMENT, od.IGNORE_ORDER_DISC
             ) t1";
         var total = await _connection.ExecuteScalarAsync<decimal?>(new CommandDefinition(sql, new { OrderId = orderId }, cancellationToken: ct)).ConfigureAwait(false);
@@ -663,12 +694,13 @@ public class OrderService : IOrderService
                 ISNULL(SUM(CASE WHEN pg.PRODUCT_CLASS_ID = 2 THEN line.LineTotal ELSE 0 END), 0) AS ServiceTotal,
                 ISNULL(SUM(CASE WHEN ISNULL(od.IGNORE_ORDER_DISC, 0) = 0 THEN line.LineTotal ELSE 0 END), 0) AS DiscountableTotal
             FROM [ORDER_DETAILS] od
+            JOIN [ORDER] o ON o.PKId = od.ORDER_ID
             JOIN [PRODUCT] p ON p.PKId = od.PRODUCT_ID
             JOIN [PRODUCT_GROUP] pg ON pg.PKId = p.GROUP_ID
             CROSS APPLY (
-                SELECT CAST(ROUND(ROUND(ROUND(od.PRICE * od.CONVERSION, 2) * (1 - ISNULL(od.DISCOUNT, 0) / 100.0), 2) * od.QUANTITY, 2) AS DECIMAL(14,2)) AS LineTotal
+                SELECT CAST(ROUND(ROUND(ROUND(od.PRICE * od.CONVERSION, 2) * (1 - ISNULL(od.DISCOUNT, 0) / 100.0), 2) * " + LineQtyExpr + @", 2) AS DECIMAL(14,2)) AS LineTotal
             ) line
-            WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0";
+            WHERE od.ORDER_ID = @OrderId AND (" + LineQtyExpr + @") > 0";
         var classTotals = await _connection.QueryFirstAsync<(decimal ProductTotal, decimal ServiceTotal, decimal DiscountableTotal)>(
             new CommandDefinition(classTotalsSql, new { OrderId = orderId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
         row.ProductTotal = classTotals.ProductTotal;
@@ -821,7 +853,7 @@ public class OrderService : IOrderService
 
             decimal creditToApply = summary.Credit;
             var totalGross = await _connection.ExecuteScalarAsync<decimal>(new CommandDefinition(
-                "SELECT ISNULL(SUM(ROUND(ROUND(ROUND(od.PRICE * od.CONVERSION, 2) * (1 - od.DISCOUNT/100), 2) * od.QUANTITY, 2)), 0) FROM [ORDER_DETAILS] od WHERE od.ORDER_ID = @OrderId AND od.QUANTITY > 0",
+                "SELECT ISNULL(SUM(ROUND(ROUND(ROUND(od.PRICE * od.CONVERSION, 2) * (1 - od.DISCOUNT/100), 2) * " + LineQtyExpr + @", 2)), 0) FROM [ORDER_DETAILS] od JOIN [ORDER] o ON o.PKId = od.ORDER_ID WHERE od.ORDER_ID = @OrderId AND (" + LineQtyExpr + @") > 0",
                 new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
             if (creditToApply > 0 && creditToApply > totalGross) creditToApply = totalGross;
             if (creditToApply > 0)
@@ -939,6 +971,11 @@ public class OrderService : IOrderService
         using var tr = _connection.BeginTransaction();
         try
         {
+            // Eurobus performSale: switch MODE to S before deducting stock.
+            await _connection.ExecuteAsync(new CommandDefinition(
+                "UPDATE [ORDER] SET MODE = 'S' WHERE PKId = @OrderId",
+                new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
+
             var lines = (await _connection.QueryAsync<(int ProductId, decimal QtdOrdered, decimal Quantity, decimal Stock)>(
                 new CommandDefinition(sqlLines, new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false)).ToList();
 
@@ -967,10 +1004,6 @@ public class OrderService : IOrderService
                 WHERE ORDER_ID = @OrderId AND HAS_COST_IND = 0";
             await _connection.ExecuteAsync(new CommandDefinition(sendServices, new { OrderId = orderId },
                 cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
-
-            await _connection.ExecuteAsync(new CommandDefinition(
-                "UPDATE [ORDER] SET MODE = 'S' WHERE PKId = @OrderId",
-                new { OrderId = orderId }, cancellationToken: cancellationToken, transaction: tr)).ConfigureAwait(false);
 
             tr.Commit();
         }
@@ -1035,7 +1068,7 @@ public class OrderService : IOrderService
         {
             LionCode = d.LionCode,
             Name = d.Name,
-            Quantity = d.Quantity,
+            Quantity = d.DisplayQuantity,
             Price = d.Price,
             Discount = d.Discount,
             TotalPrice = d.TotalPrice
@@ -1427,5 +1460,12 @@ public class OrderService : IOrderService
     {
         public DateTime AllowDelinq { get; init; }
         public bool IgnoreDelinq { get; init; }
+    }
+
+    private sealed class OrderLineQty
+    {
+        public decimal QtdOrdered { get; init; }
+        public decimal Quantity { get; init; }
+        public bool IsService { get; init; }
     }
 }
