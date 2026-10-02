@@ -40,7 +40,6 @@ internal static class NfesDpsBuilder
         var cMunTomador = NfesTextHelper.CleanDigits(work.Client.CMun ?? codMun);
         var cepTomador = NfesTextHelper.CleanDigits(work.Client.AddressZipCode ?? "0").PadLeft(8, '0')[^8..];
         var email = NfesTextHelper.Substring((work.Client.Email ?? "").Split('/')[0].Trim(), 80);
-        var includeIbsCbs = config.IncludeIbsCbs;
 
         var settings = new XmlWriterSettings
         {
@@ -139,23 +138,20 @@ internal static class NfesDpsBuilder
             writer.WriteEndElement(); // trib
             writer.WriteEndElement(); // valores
 
-            if (includeIbsCbs)
-            {
-                writer.WriteStartElement("IBSCBS", Ns);
-                WriteEl(writer, "finNFSe", config.IbsCbsFinNfse);
-                WriteEl(writer, "indFinal", config.IbsCbsIndFinal);
-                WriteEl(writer, "cIndOp", config.IbsCbsIndOp);
-                WriteEl(writer, "indDest", config.IbsCbsIndDest);
-                writer.WriteStartElement("valores", Ns);
-                writer.WriteStartElement("trib", Ns);
-                writer.WriteStartElement("gIBSCBS", Ns);
-                WriteEl(writer, "CST", config.IbsCbsCst);
-                WriteEl(writer, "cClassTrib", config.IbsCbsClassTrib);
-                writer.WriteEndElement(); // gIBSCBS
-                writer.WriteEndElement(); // trib
-                writer.WriteEndElement(); // valores
-                writer.WriteEndElement(); // IBSCBS
-            }
+            writer.WriteStartElement("IBSCBS", Ns);
+            WriteEl(writer, "finNFSe", config.IbsCbsFinNfse);
+            WriteEl(writer, "indFinal", config.IbsCbsIndFinal);
+            WriteEl(writer, "cIndOp", config.IbsCbsIndOp);
+            WriteEl(writer, "indDest", config.IbsCbsIndDest);
+            writer.WriteStartElement("valores", Ns);
+            writer.WriteStartElement("trib", Ns);
+            writer.WriteStartElement("gIBSCBS", Ns);
+            WriteEl(writer, "CST", config.IbsCbsCst);
+            WriteEl(writer, "cClassTrib", config.IbsCbsClassTrib);
+            writer.WriteEndElement(); // gIBSCBS
+            writer.WriteEndElement(); // trib
+            writer.WriteEndElement(); // valores
+            writer.WriteEndElement(); // IBSCBS
 
             writer.WriteEndElement(); // infDPS
             writer.WriteEndElement(); // DPS
