@@ -1,0 +1,166 @@
+@page "/diretoria/ibs-cbs"
+@using System.Globalization
+@using EUROERP.Application.Config
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>IBS / CBS</PageTitle>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="mb-0">IBS / CBS (NF-e)</h5>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_messageSuccess ? "alert-success" : "alert-danger") py-2 mb-2">@_message</div>
+        }
+
+        @if (_loading)
+        {
+            <p class="text-muted mb-0">Carregando...</p>
+        }
+        else
+        {
+            <p class="small text-muted mb-3">
+                Parâmetros da reforma tributária usados no cálculo da base e dos valores de IBS/CBS na emissão da NF-e.
+                Gravados em <code>SYS_CONTROL</code>.
+            </p>
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-2">
+                    <label class="form-label">CST</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_cst" maxlength="3" />
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label">cClassTrib</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_classTrib" maxlength="6" />
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label">Alíq. IBS UF (%)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_ibsUf" maxlength="10" />
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label">Alíq. IBS Mun (%)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_ibsMun" maxlength="10" />
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label">Alíq. CBS (%)</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_cbs" maxlength="10" />
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Salvando..." : "Salvar")</button>
+                </div>
+            </div>
+            <span class="small text-muted d-block mt-2">Use ponto ou vírgula. Na transição 2026 o padrão é IBS UF 0,1 e CBS 0,9.</span>
+        }
+    </div>
+</div>
+
+@code {
+    private const string CodeCst = "IBS_CST";
+    private const string CodeClassTrib = "IBS_CCLASSTRIB";
+    private const string CodeIbsUf = "IBS_ALIQ_UF";
+    private const string CodeIbsMun = "IBS_ALIQ_MUN";
+    private const string CodeCbs = "CBS_ALIQ";
+
+    private string _cst = "000";
+    private string _classTrib = "000001";
+    private string _ibsUf = "0.1";
+    private string _ibsMun = "0";
+    private string _cbs = "0.9";
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private bool _messageSuccess;
+
+    [Inject] private ISysControlService SysControl { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var map = await SysControl.GetValuesAsync(new[] { CodeCst, CodeClassTrib, CodeIbsUf, CodeIbsMun, CodeCbs });
+            if (map.TryGetValue(CodeCst, out var cst) && !string.IsNullOrWhiteSpace(cst)) _cst = cst.Trim();
+            if (map.TryGetValue(CodeClassTrib, out var ct) && !string.IsNullOrWhiteSpace(ct)) _classTrib = ct.Trim();
+            if (map.TryGetValue(CodeIbsUf, out var uf) && !string.IsNullOrWhiteSpace(uf)) _ibsUf = uf.Trim();
+            if (map.TryGetValue(CodeIbsMun, out var mun) && !string.IsNullOrWhiteSpace(mun)) _ibsMun = mun.Trim();
+            if (map.TryGetValue(CodeCbs, out var cbs) && !string.IsNullOrWhiteSpace(cbs)) _cbs = cbs.Trim();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        var cst = (_cst ?? "").Trim();
+        var classTrib = (_classTrib ?? "").Trim();
+        if (cst.Length is < 1 or > 3 || !cst.All(char.IsDigit))
+        {
+            _message = "CST inválido. Informe até 3 dígitos.";
+            _messageSuccess = false;
+            return;
+        }
+        if (classTrib.Length is < 1 or > 6 || !classTrib.All(char.IsDigit))
+        {
+            _message = "cClassTrib inválido. Informe até 6 dígitos.";
+            _messageSuccess = false;
+            return;
+        }
+        if (!TryParseAliq(_ibsUf, out var ibsUf) || !TryParseAliq(_ibsMun, out var ibsMun) || !TryParseAliq(_cbs, out var cbs))
+        {
+            _message = "Alíquota inválida. Informe um número entre 0 e 100.";
+            _messageSuccess = false;
+            return;
+        }
+
+        _saving = true;
+        _message = null;
+        try
+        {
+            var ufText = FormatAliq(ibsUf);
+            var munText = FormatAliq(ibsMun);
+            var cbsText = FormatAliq(cbs);
+            await SysControl.SetValueAsync(CodeCst, cst.PadLeft(3, '0'));
+            await SysControl.SetValueAsync(CodeClassTrib, classTrib.PadLeft(6, '0'));
+            await SysControl.SetValueAsync(CodeIbsUf, ufText);
+            await SysControl.SetValueAsync(CodeIbsMun, munText);
+            await SysControl.SetValueAsync(CodeCbs, cbsText);
+            _cst = cst.PadLeft(3, '0');
+            _classTrib = classTrib.PadLeft(6, '0');
+            _ibsUf = ufText;
+            _ibsMun = munText;
+            _cbs = cbsText;
+            _message = "Parâmetros IBS/CBS salvos.";
+            _messageSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+            _messageSuccess = false;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static bool TryParseAliq(string? raw, out decimal value)
+    {
+        value = 0;
+        var s = (raw ?? "").Trim().Replace(',', '.');
+        if (!decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
+            return false;
+        return value >= 0 && value <= 100;
+    }
+
+    private static string FormatAliq(decimal value) =>
+        value.ToString("0.####", CultureInfo.InvariantCulture);
+}

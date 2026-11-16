@@ -50,6 +50,17 @@ public sealed class NfeBuildInput
     public decimal IcmsAliqPercent { get; set; } = 18;
     public decimal PisAliqPercent { get; set; } = 1.65m;
     public decimal CofinsAliqPercent { get; set; } = 3m;
+
+    /// <summary>CST IBS/CBS (3 dígitos). Padrão transição: 000.</summary>
+    public string IbsCbsCst { get; set; } = "000";
+    /// <summary>Classificação tributária IBS/CBS.</summary>
+    public string IbsCbsClassTrib { get; set; } = "000001";
+    /// <summary>Alíquota IBS UF % (ex.: 0.1 na transição 2026).</summary>
+    public decimal IbsUfAliqPercent { get; set; } = 0.1m;
+    /// <summary>Alíquota IBS Municipal %.</summary>
+    public decimal IbsMunAliqPercent { get; set; }
+    /// <summary>Alíquota CBS % (ex.: 0.9 na transição 2026).</summary>
+    public decimal CbsAliqPercent { get; set; } = 0.9m;
 }
 
 public sealed class NfeEmitInput
@@ -102,7 +113,11 @@ public sealed class NfeDetInput
     public decimal VProd { get; set; }
     public decimal VDesc { get; set; }
     public decimal VFrete { get; set; }
+    /// <summary>Seguro do item (quando houver).</summary>
+    public decimal VSeg { get; set; }
     public decimal VOutro { get; set; }
+    /// <summary>Juros/multa do item (quando houver) — entram na BC do IBS/CBS.</summary>
+    public decimal VJurosMulta { get; set; }
     public string Csosn { get; set; } = "102"; // 102 Isento, 500 ST já cobrada, etc.
     public string Origem { get; set; } = "0"; // 0 Nacional
 }
@@ -245,27 +260,27 @@ public class NfeXmlBuilder : INfeXmlBuilder
         AppendElem(doc, prod, ns, "qTrib", FmtDec(det.QCom));
         AppendElem(doc, prod, ns, "vUnTrib", FmtDec(det.VUnCom));
         if (det.VFrete > 0) AppendElem(doc, prod, ns, "vFrete", FmtDec(det.VFrete));
+        if (det.VSeg > 0) AppendElem(doc, prod, ns, "vSeg", FmtDec(det.VSeg));
         if (det.VDesc > 0) AppendElem(doc, prod, ns, "vDesc", FmtDec(det.VDesc));
         if (det.VOutro > 0) AppendElem(doc, prod, ns, "vOutro", FmtDec(det.VOutro));
         AppendElem(doc, prod, ns, "indTot", "1");
         detEl.AppendChild(prod);
 
         var imposto = doc.CreateElement("imposto", ns);
-        var lineBase = det.VProd - det.VDesc + det.VFrete + det.VOutro;
-        if (lineBase < 0) lineBase = 0;
+        var lineBase = CalcLineGross(det);
         var crt = input.Emit.Crt ?? "1";
+        var classic = CalcClassicTaxes(det, input);
 
         var icms = doc.CreateElement("ICMS", ns);
         if (crt == "3")
         {
-            var vIcms = Math.Round(lineBase * input.IcmsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
             var icms00 = doc.CreateElement("ICMS00", ns);
             AppendElem(doc, icms00, ns, "orig", det.Origem);
             AppendElem(doc, icms00, ns, "CST", "00");
             AppendElem(doc, icms00, ns, "modBC", "0");
             AppendElem(doc, icms00, ns, "vBC", FmtDec(lineBase));
             AppendElem(doc, icms00, ns, "pICMS", FmtDec(input.IcmsAliqPercent));
-            AppendElem(doc, icms00, ns, "vICMS", FmtDec(vIcms));
+            AppendElem(doc, icms00, ns, "vICMS", FmtDec(classic.VIcms));
             icms.AppendChild(icms00);
         }
         else
@@ -279,14 +294,12 @@ public class NfeXmlBuilder : INfeXmlBuilder
 
         if (crt == "3")
         {
-            var vPis = Math.Round(lineBase * input.PisAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
-            var vCofins = Math.Round(lineBase * input.CofinsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
             var pis = doc.CreateElement("PIS", ns);
             var pisAliq = doc.CreateElement("PISAliq", ns);
             AppendElem(doc, pisAliq, ns, "CST", "01");
             AppendElem(doc, pisAliq, ns, "vBC", FmtDec(lineBase));
             AppendElem(doc, pisAliq, ns, "pPIS", FmtDec(input.PisAliqPercent));
-            AppendElem(doc, pisAliq, ns, "vPIS", FmtDec(vPis));
+            AppendElem(doc, pisAliq, ns, "vPIS", FmtDec(classic.VPis));
             pis.AppendChild(pisAliq);
             imposto.AppendChild(pis);
 
@@ -295,7 +308,7 @@ public class NfeXmlBuilder : INfeXmlBuilder
             AppendElem(doc, cofinsAliq, ns, "CST", "01");
             AppendElem(doc, cofinsAliq, ns, "vBC", FmtDec(lineBase));
             AppendElem(doc, cofinsAliq, ns, "pCOFINS", FmtDec(input.CofinsAliqPercent));
-            AppendElem(doc, cofinsAliq, ns, "vCOFINS", FmtDec(vCofins));
+            AppendElem(doc, cofinsAliq, ns, "vCOFINS", FmtDec(classic.VCofins));
             cofins.AppendChild(cofinsAliq);
             imposto.AppendChild(cofins);
         }
@@ -314,29 +327,32 @@ public class NfeXmlBuilder : INfeXmlBuilder
             imposto.AppendChild(cofins);
         }
 
-        // IBSCBS - Implementação básica para atender obrigatoriedade a partir de 2026
+        var ibs = CalcIbsCbs(det, input, classic);
         var ibscbs = doc.CreateElement("IBSCBS", ns);
-        AppendElem(doc, ibscbs, ns, "CST", "000");
-        AppendElem(doc, ibscbs, ns, "cClassTrib", "000001");
+        AppendElem(doc, ibscbs, ns, "CST", NormalizeCst(input.IbsCbsCst));
+        AppendElem(doc, ibscbs, ns, "cClassTrib", NormalizeClassTrib(input.IbsCbsClassTrib));
         var gIBSCBS = doc.CreateElement("gIBSCBS", ns);
-        AppendElem(doc, gIBSCBS, ns, "vBC", "0.00");
+        AppendElem(doc, gIBSCBS, ns, "vBC", FmtDec(ibs.VBc));
         var gIBSUF = doc.CreateElement("gIBSUF", ns);
-        AppendElem(doc, gIBSUF, ns, "pIBSUF", "0.1000");
-        AppendElem(doc, gIBSUF, ns, "vIBSUF", "0.00");
+        AppendElem(doc, gIBSUF, ns, "pIBSUF", FmtAliqRtc(input.IbsUfAliqPercent));
+        AppendElem(doc, gIBSUF, ns, "vIBSUF", FmtDec(ibs.VIbsUf));
         gIBSCBS.AppendChild(gIBSUF);
         var gIBSMun = doc.CreateElement("gIBSMun", ns);
-        AppendElem(doc, gIBSMun, ns, "pIBSMun", "0.0000");
-        AppendElem(doc, gIBSMun, ns, "vIBSMun", "0.00");
+        AppendElem(doc, gIBSMun, ns, "pIBSMun", FmtAliqRtc(input.IbsMunAliqPercent));
+        AppendElem(doc, gIBSMun, ns, "vIBSMun", FmtDec(ibs.VIbsMun));
         gIBSCBS.AppendChild(gIBSMun);
-        AppendElem(doc, gIBSCBS, ns, "vIBS", "0.00");
+        AppendElem(doc, gIBSCBS, ns, "vIBS", FmtDec(ibs.VIbs));
         var gCBS = doc.CreateElement("gCBS", ns);
-        AppendElem(doc, gCBS, ns, "pCBS", "0.9000");
-        AppendElem(doc, gCBS, ns, "vCBS", "0.00");
+        AppendElem(doc, gCBS, ns, "pCBS", FmtAliqRtc(input.CbsAliqPercent));
+        AppendElem(doc, gCBS, ns, "vCBS", FmtDec(ibs.VCbs));
         gIBSCBS.AppendChild(gCBS);
         ibscbs.AppendChild(gIBSCBS);
         imposto.AppendChild(ibscbs);
 
         detEl.AppendChild(imposto);
+
+        // Em 2026 IBS/CBS/IS não entram no total do item (NT 2026.008).
+        AppendElem(doc, detEl, ns, "vItem", FmtDec(CalcVItem2026(det)));
         parent.AppendChild(detEl);
     }
 
@@ -344,20 +360,30 @@ public class NfeXmlBuilder : INfeXmlBuilder
     {
         var vProd = input.Det.Sum(d => d.VProd);
         var vFrete = input.TotalVfrete;
+        var vSeg = input.Det.Sum(d => d.VSeg);
         var vNf = input.TotalVnf;
         var crt = input.Emit.Crt ?? "1";
         decimal vBc = 0, vIcms = 0, vPis = 0, vCofins = 0;
-        if (crt == "3")
+        decimal vBcIbsCbs = 0, vIbsUf = 0, vIbsMun = 0, vIbs = 0, vCbs = 0;
+        decimal vNfTot = 0;
+
+        foreach (var d in input.Det)
         {
-            foreach (var d in input.Det)
+            var classic = CalcClassicTaxes(d, input);
+            var ibs = CalcIbsCbs(d, input, classic);
+            if (crt == "3")
             {
-                var lineBase = d.VProd - d.VDesc + d.VFrete + d.VOutro;
-                if (lineBase < 0) lineBase = 0;
-                vBc += lineBase;
-                vIcms += Math.Round(lineBase * input.IcmsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
-                vPis += Math.Round(lineBase * input.PisAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
-                vCofins += Math.Round(lineBase * input.CofinsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+                vBc += CalcLineGross(d);
+                vIcms += classic.VIcms;
+                vPis += classic.VPis;
+                vCofins += classic.VCofins;
             }
+            vBcIbsCbs += ibs.VBc;
+            vIbsUf += ibs.VIbsUf;
+            vIbsMun += ibs.VIbsMun;
+            vIbs += ibs.VIbs;
+            vCbs += ibs.VCbs;
+            vNfTot += CalcVItem2026(d);
         }
 
         var total = doc.CreateElement("total", ns);
@@ -372,7 +398,7 @@ public class NfeXmlBuilder : INfeXmlBuilder
         AppendElem(doc, icmsTot, ns, "vFCPSTRet", "0.00");
         AppendElem(doc, icmsTot, ns, "vProd", FmtDec(vProd));
         AppendElem(doc, icmsTot, ns, "vFrete", FmtDec(vFrete));
-        AppendElem(doc, icmsTot, ns, "vSeg", "0.00");
+        AppendElem(doc, icmsTot, ns, "vSeg", FmtDec(vSeg));
         AppendElem(doc, icmsTot, ns, "vDesc", FmtDec(input.TotalVdesc));
         AppendElem(doc, icmsTot, ns, "vII", "0.00");
         AppendElem(doc, icmsTot, ns, "vIPI", "0.00");
@@ -383,32 +409,34 @@ public class NfeXmlBuilder : INfeXmlBuilder
         AppendElem(doc, icmsTot, ns, "vNF", FmtDec(vNf));
         total.AppendChild(icmsTot);
 
-        // IBSCBSTot - Implementação básica para atender obrigatoriedade a partir de 2026
         var ibscbsTot = doc.CreateElement("IBSCBSTot", ns);
-        AppendElem(doc, ibscbsTot, ns, "vBCIBSCBS", "0.00");
+        AppendElem(doc, ibscbsTot, ns, "vBCIBSCBS", FmtDec(vBcIbsCbs));
         var gIBSTot = doc.CreateElement("gIBS", ns);
         var gIBSUFTot = doc.CreateElement("gIBSUF", ns);
         AppendElem(doc, gIBSUFTot, ns, "vDif", "0.00");
         AppendElem(doc, gIBSUFTot, ns, "vDevTrib", "0.00");
-        AppendElem(doc, gIBSUFTot, ns, "vIBSUF", "0.00");
+        AppendElem(doc, gIBSUFTot, ns, "vIBSUF", FmtDec(vIbsUf));
         gIBSTot.AppendChild(gIBSUFTot);
         var gIBSMunTot = doc.CreateElement("gIBSMun", ns);
         AppendElem(doc, gIBSMunTot, ns, "vDif", "0.00");
         AppendElem(doc, gIBSMunTot, ns, "vDevTrib", "0.00");
-        AppendElem(doc, gIBSMunTot, ns, "vIBSMun", "0.00");
+        AppendElem(doc, gIBSMunTot, ns, "vIBSMun", FmtDec(vIbsMun));
         gIBSTot.AppendChild(gIBSMunTot);
-        AppendElem(doc, gIBSTot, ns, "vIBS", "0.00");
+        AppendElem(doc, gIBSTot, ns, "vIBS", FmtDec(vIbs));
         AppendElem(doc, gIBSTot, ns, "vCredPres", "0.00");
         AppendElem(doc, gIBSTot, ns, "vCredPresCondSus", "0.00");
         ibscbsTot.AppendChild(gIBSTot);
         var gCBSTot = doc.CreateElement("gCBS", ns);
         AppendElem(doc, gCBSTot, ns, "vDif", "0.00");
         AppendElem(doc, gCBSTot, ns, "vDevTrib", "0.00");
-        AppendElem(doc, gCBSTot, ns, "vCBS", "0.00");
+        AppendElem(doc, gCBSTot, ns, "vCBS", FmtDec(vCbs));
         AppendElem(doc, gCBSTot, ns, "vCredPres", "0.00");
         AppendElem(doc, gCBSTot, ns, "vCredPresCondSus", "0.00");
         ibscbsTot.AppendChild(gCBSTot);
         total.AppendChild(ibscbsTot);
+
+        // Em 2026 vNFTot = soma dos vItem (sem IBS/CBS/IS).
+        AppendElem(doc, total, ns, "vNFTot", FmtDec(vNfTot));
 
         parent.AppendChild(total);
     }
@@ -528,11 +556,87 @@ public class NfeXmlBuilder : INfeXmlBuilder
         parent.AppendChild(el);
     }
 
+    /// <summary>
+    /// BC bruta do item: produto + frete + seguro + outras + juros/multa − desconto.
+    /// </summary>
+    internal static decimal CalcLineGross(NfeDetInput det)
+    {
+        var gross = det.VProd + det.VFrete + det.VSeg + det.VOutro + det.VJurosMulta - det.VDesc;
+        return gross < 0 ? 0 : Math.Round(gross, 2, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// Total do item em 2026: sem acrescentar IBS/CBS/IS (NT 2026.008).
+    /// </summary>
+    internal static decimal CalcVItem2026(NfeDetInput det) => CalcLineGross(det);
+
+    internal static ClassicTaxValues CalcClassicTaxes(NfeDetInput det, NfeBuildInput input)
+    {
+        var crt = input.Emit.Crt ?? "1";
+        if (crt != "3")
+            return default;
+
+        var lineBase = CalcLineGross(det);
+        var vIcms = Math.Round(lineBase * input.IcmsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var vPis = Math.Round(lineBase * input.PisAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var vCofins = Math.Round(lineBase * input.CofinsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        return new ClassicTaxValues(vIcms, vPis, vCofins, VFcp: 0, VIss: 0);
+    }
+
+    /// <summary>
+    /// BC IBS/CBS = produto + frete + acessórias + seguro + juros/multa
+    /// − desconto − ISS − ICMS − FCP − PIS − COFINS.
+    /// </summary>
+    internal static IbsCbsValues CalcIbsCbs(NfeDetInput det, NfeBuildInput input, ClassicTaxValues classic)
+    {
+        var vBc = CalcLineGross(det)
+                  - classic.VIss
+                  - classic.VIcms
+                  - classic.VFcp
+                  - classic.VPis
+                  - classic.VCofins;
+        if (vBc < 0) vBc = 0;
+        vBc = Math.Round(vBc, 2, MidpointRounding.AwayFromZero);
+
+        var vIbsUf = Math.Round(vBc * input.IbsUfAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var vIbsMun = Math.Round(vBc * input.IbsMunAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var vIbs = Math.Round(vIbsUf + vIbsMun, 2, MidpointRounding.AwayFromZero);
+        var vCbs = Math.Round(vBc * input.CbsAliqPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        return new IbsCbsValues(vBc, vIbsUf, vIbsMun, vIbs, vCbs);
+    }
+
+    private static string NormalizeCst(string? cst)
+    {
+        var digits = NfeChaveHelper.CleanDigits(cst ?? "");
+        if (digits.Length == 0) return "000";
+        return digits.PadLeft(3, '0');
+    }
+
+    private static string NormalizeClassTrib(string? classTrib)
+    {
+        var digits = NfeChaveHelper.CleanDigits(classTrib ?? "");
+        if (digits.Length == 0) return "000001";
+        return digits.PadLeft(6, '0');
+    }
+
     private static string FmtDec(decimal d) => d.ToString("0.00", Inv);
+
+    /// <summary>Alíquota RTC: 0 ou 2–4 casas decimais (TDec_0302_04RTC).</summary>
+    private static string FmtAliqRtc(decimal d)
+    {
+        if (d == 0) return "0";
+        var s = d.ToString("0.00##", Inv);
+        if (!s.Contains('.')) s += ".00";
+        return s;
+    }
+
     private static string CleanToXml(string? s, int maxLen)
     {
         if (string.IsNullOrEmpty(s)) return "";
         s = s.Replace("&", "").Replace("<", "").Replace(">", "").Replace("\"", "").Replace("'", "").Trim();
         return s.Length > maxLen ? s.Substring(0, maxLen) : s;
     }
+
+    internal readonly record struct ClassicTaxValues(decimal VIcms, decimal VPis, decimal VCofins, decimal VFcp, decimal VIss);
+    internal readonly record struct IbsCbsValues(decimal VBc, decimal VIbsUf, decimal VIbsMun, decimal VIbs, decimal VCbs);
 }

@@ -527,6 +527,14 @@ public class NfeIndividualService : INfeIndividualService
                 ?? "18"),
             PisAliqPercent = ParseTaxPercent(_configuration["NFe:PisAliq"] ?? "1.65"),
             CofinsAliqPercent = ParseTaxPercent(_configuration["NFe:CofinsAliq"] ?? "3"),
+            IbsCbsCst = await ResolveSysOrConfigAsync("IBS_CST", "NFe:IbsCst", "000", cancellationToken).ConfigureAwait(false),
+            IbsCbsClassTrib = await ResolveSysOrConfigAsync("IBS_CCLASSTRIB", "NFe:IbsClassTrib", "000001", cancellationToken).ConfigureAwait(false),
+            IbsUfAliqPercent = ParseIbsCbsPercent(
+                await ResolveSysOrConfigAsync("IBS_ALIQ_UF", "NFe:IbsUfAliq", "0.1", cancellationToken).ConfigureAwait(false)),
+            IbsMunAliqPercent = ParseIbsCbsPercent(
+                await ResolveSysOrConfigAsync("IBS_ALIQ_MUN", "NFe:IbsMunAliq", "0", cancellationToken).ConfigureAwait(false)),
+            CbsAliqPercent = ParseIbsCbsPercent(
+                await ResolveSysOrConfigAsync("CBS_ALIQ", "NFe:CbsAliq", "0.9", cancellationToken).ConfigureAwait(false)),
             InfCpl = await BuildInfCplAsync(request.OrderId, request.InformacoesComplementares, cancellationToken).ConfigureAwait(false),
             CobrDupVenc = GetNfeDateNow().AddDays(15)
         };
@@ -1678,6 +1686,29 @@ public class NfeIndividualService : INfeIndividualService
         if (d > 0 && d < 1)
             d *= 100;
         return d;
+    }
+
+    /// <summary>
+    /// Alíquotas IBS/CBS na transição são fracionárias (ex.: 0,1% / 0,9%). Não escala valores &lt; 1.
+    /// </summary>
+    private static decimal ParseIbsCbsPercent(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return 0;
+        var s = raw.Trim().Replace(',', '.');
+        if (!decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            return 0;
+        if (d < 0) return 0;
+        if (d > 100) return 100;
+        return d;
+    }
+
+    private async Task<string> ResolveSysOrConfigAsync(string sysCode, string configKey, string fallback, CancellationToken ct)
+    {
+        var fromSys = await _sysControl.GetValueAsync(sysCode, ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(fromSys)) return fromSys.Trim();
+        var fromCfg = _configuration[configKey];
+        if (!string.IsNullOrWhiteSpace(fromCfg)) return fromCfg.Trim();
+        return fallback;
     }
 
     private async Task<string?> BuildInfCplAsync(int orderId, string? userInfo, CancellationToken ct)

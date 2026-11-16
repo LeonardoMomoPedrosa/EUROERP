@@ -198,6 +198,7 @@
           ]
         },
         { "label": "Alíq. ICMS", "route": "/diretoria/icms" },
+        { "label": "IBS / CBS", "route": "/diretoria/ibs-cbs" },
         { "label": "Certificado", "route": "/diretoria/admin/certificado" },
         { "label": "Configuração NFES", "route": "/diretoria/admin/nfes-config" },
         { "label": "Cancel Manual NFES", "route": "/diretoria/admin/nfes-cancel-manual" }
