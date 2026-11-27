@@ -59,8 +59,18 @@
                 <label class="form-label">CNPJ ou CPF</label>
                 <input type="text" class="form-control form-control-sm" placeholder="Digite CNPJ ou CPF..." @bind="_filter.Cnpjpf" />
             </div>
+            <div class="col-md-2">
+                <label class="form-label">Estado</label>
+                <select class="form-select form-select-sm" @bind="_stateId">
+                    <option value="0">Todos</option>
+                    @foreach (var st in _states.Where(x => x.Id > 0))
+                    {
+                        <option value="@st.Id">@st.Name</option>
+                    }
+                </select>
+            </div>
             <div class="col-md-auto">
-                <button type="button" class="btn btn-primary btn-sm" @onclick="Buscar" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
+                <button type="button" class="btn btn-primary btn-sm" @onclick="BuscarNovo" disabled="@_loading">@(_loading ? "Buscando..." : "Buscar")</button>
             </div>
             <div class="col-md-auto">
                 <a class="btn btn-success btn-sm" href="/principal/clientes/cadastro/novo">Novo cliente</a>
@@ -97,7 +107,7 @@
                                 <td>@c.Id</td>
                                 <td>@c.SocialName</td>
                                 <td>@c.FantasyName</td>
-                                <td>@(c.City)/@(c.State)</td>
+                                <td>@(string.Join("/", new[] { c.City, c.State }.Where(x => !string.IsNullOrEmpty(x))))</td>
                                 <td>@c.Phone</td>
                                 <td>@c.Sales</td>
                             </tr>
@@ -107,7 +117,38 @@
             </div>
         </div>
     </div>
-    <p class="text-muted small mt-2">Clique em um cliente para editar.</p>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2">
+        <span class="text-muted small">
+            Exibindo @(((_page - 1) * PageSize) + 1)–@(((_page - 1) * PageSize) + _list.Count) de @_totalCount clientes.
+            Clique em um cliente para editar.
+        </span>
+        @if (TotalPages > 1)
+        {
+            <nav aria-label="Paginação de clientes">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(_page == 1 ? "disabled" : "")">
+                        <button type="button" class="page-link" disabled="@(_page == 1 || _loading)" @onclick="() => IrParaPagina(1)">&laquo;</button>
+                    </li>
+                    <li class="page-item @(_page == 1 ? "disabled" : "")">
+                        <button type="button" class="page-link" disabled="@(_page == 1 || _loading)" @onclick="() => IrParaPagina(_page - 1)">Anterior</button>
+                    </li>
+                    @foreach (var p in VisiblePages())
+                    {
+                        var target = p;
+                        <li class="page-item @(target == _page ? "active" : "")">
+                            <button type="button" class="page-link" disabled="@_loading" @onclick="() => IrParaPagina(target)">@target</button>
+                        </li>
+                    }
+                    <li class="page-item @(_page == TotalPages ? "disabled" : "")">
+                        <button type="button" class="page-link" disabled="@(_page == TotalPages || _loading)" @onclick="() => IrParaPagina(_page + 1)">Próxima</button>
+                    </li>
+                    <li class="page-item @(_page == TotalPages ? "disabled" : "")">
+                        <button type="button" class="page-link" disabled="@(_page == TotalPages || _loading)" @onclick="() => IrParaPagina(TotalPages)">&raquo;</button>
+                    </li>
+                </ul>
+            </nav>
+        }
+    </div>
 }
 else if (_searched)
 {
@@ -115,7 +156,15 @@ else if (_searched)
 }
 
 @code {
+    private const int PageSize = 20;
+
     private readonly ClientFilterDto _filter = new();
+    private ClientFilterDto _appliedFilter = new();
+    private IReadOnlyList<IdNameDto> _states = new List<IdNameDto>();
+    private int _stateId;
+    private int _page = 1;
+    private int _totalCount;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_totalCount / (double)PageSize));
     private IReadOnlyList<ClientSummaryDto> _list = new List<ClientSummaryDto>();
     private string? _errorMessage;
     private bool _loading;
@@ -128,19 +177,57 @@ else if (_searched)
     private CancellationTokenSource? _debounceCts;
 
     [Inject] private IClientService ClientService { get; set; } = null!;
+    [Inject] private IClientReferenceService ReferenceService { get; set; } = null!;
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = null!;
     protected override async Task OnInitializedAsync()
-    {        await Buscar();
+    {
+        try
+        {
+            _states = await ReferenceService.GetStatesAsync(1);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Erro ao carregar estados: " + ex.Message;
+        }
+
+        await BuscarNovo();
     }
 
-    private async Task Buscar()
+    private async Task BuscarNovo()
+    {
+        _appliedFilter = new ClientFilterDto
+        {
+            Name = _filter.Name,
+            Cnpjpf = _filter.Cnpjpf,
+            StateId = _stateId > 0 ? _stateId : null
+        };
+        await CarregarPagina(1);
+    }
+
+    private async Task IrParaPagina(int page)
+    {
+        if (_loading) return;
+        await CarregarPagina(Math.Clamp(page, 1, TotalPages));
+    }
+
+    private async Task CarregarPagina(int page)
     {
         _errorMessage = null;
         _loading = true;
         try
         {
-            _list = await ClientService.GetListAsync(_filter);
+            var result = await ClientService.GetPagedListAsync(_appliedFilter, page, PageSize);
+            var lastPage = Math.Max(1, (int)Math.Ceiling(result.TotalCount / (double)PageSize));
+            if (page > lastPage)
+            {
+                page = lastPage;
+                result = await ClientService.GetPagedListAsync(_appliedFilter, page, PageSize);
+            }
+
+            _list = result.Items;
+            _totalCount = result.TotalCount;
+            _page = page;
             _searched = true;
         }
         catch (Exception ex)
@@ -151,6 +238,15 @@ else if (_searched)
         {
             _loading = false;
         }
+    }
+
+    private IEnumerable<int> VisiblePages()
+    {
+        const int window = 2;
+        var start = Math.Max(1, _page - window);
+        var end = Math.Min(TotalPages, _page + window);
+        for (var i = start; i <= end; i++)
+            yield return i;
     }
 
     private async Task OnNameChanged()

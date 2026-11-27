@@ -51,6 +51,56 @@ public class ClientService : IClientService
         return list.ToList();
     }
 
+    public async Task<ClientListPageDto> GetPagedListAsync(ClientFilterDto filter, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        if (pageSize < 1) pageSize = 20;
+        if (page < 1) page = 1;
+
+        var where = new System.Text.StringBuilder(" WHERE c.ACTIVE = 'Y'");
+        if (!string.IsNullOrWhiteSpace(filter.Name))
+            where.Append(" AND (c.SOCIAL_NAME LIKE @NameLike OR c.FANTASY_NAME LIKE @NameLike)");
+        if (!string.IsNullOrWhiteSpace(filter.Cnpjpf))
+            where.Append(" AND (REPLACE(REPLACE(REPLACE(c.CNPJPF, '.', ''), '-', ''), '/', '') LIKE @CnpjpfLike)");
+        if (filter.StateId is > 0)
+            where.Append(" AND c.ADDRESS_STATE_ID = @StateId");
+
+        var nameLike = string.IsNullOrWhiteSpace(filter.Name) ? null : $"%{filter.Name.Trim()}%";
+        var cnpjpfDigits = string.IsNullOrWhiteSpace(filter.Cnpjpf) ? null : new string(filter.Cnpjpf.Trim().Where(char.IsDigit).ToArray());
+        var cnpjpfLike = string.IsNullOrEmpty(cnpjpfDigits) ? null : $"%{cnpjpfDigits}%";
+
+        var countSql = "SELECT COUNT(*) FROM CLIENT c" + where;
+        var listSql = @"
+            SELECT
+                c.PKId AS Id,
+                c.SOCIAL_NAME AS SocialName,
+                c.FANTASY_NAME AS FantasyName,
+                ct.NAME AS City,
+                st.CODE AS State,
+                c.PHONE1 + ISNULL(', ' + c.PHONE2, '') + ISNULL(', ' + c.PHONE3, '') AS Phone,
+                c.FAX_NO AS FaxNo,
+                (SELECT TOP 1 u.UserName FROM aspnet_Users u INNER JOIN CLIENT_SALES_AGENTS_LINK cs ON u.UserId = cs.USER_ID WHERE cs.CLIENT_ID = c.PKId) AS Sales
+            FROM CLIENT c
+            LEFT JOIN STATE st ON c.ADDRESS_STATE_ID = st.PKId
+            LEFT JOIN CITY ct ON c.ADDRESS_CITY_ID = ct.PKId" + where + @"
+            ORDER BY c.SOCIAL_NAME, c.PKId
+            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
+
+        var parameters = new
+        {
+            NameLike = nameLike,
+            CnpjpfLike = cnpjpfLike,
+            StateId = filter.StateId,
+            Offset = (page - 1) * pageSize,
+            PageSize = pageSize
+        };
+
+        var total = await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(countSql, parameters, cancellationToken: cancellationToken));
+        var items = await _connection.QueryAsync<ClientSummaryDto>(
+            new CommandDefinition(listSql, parameters, cancellationToken: cancellationToken));
+        return new ClientListPageDto { Items = items.ToList(), TotalCount = total };
+    }
+
     public async Task<IReadOnlyList<ClientSummaryDto>> GetSuggestionsAsync(string term, int limit = 10, CancellationToken cancellationToken = default)
     {
         var t = (term ?? "").Trim();
