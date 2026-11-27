@@ -3,6 +3,7 @@ namespace EUROERP.Application.Clients;
 public interface IClientService
 {
     Task<IReadOnlyList<ClientSummaryDto>> GetListAsync(ClientFilterDto filter, CancellationToken cancellationToken = default);
+    Task<ClientListPageDto> GetPagedListAsync(ClientFilterDto filter, int page, int pageSize, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ClientSummaryDto>> GetSuggestionsAsync(string term, int limit = 10, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetCarPlateSuggestionsAsync(string term, int limit = 15, CancellationToken cancellationToken = default);
     Task<ClientEditDto?> GetByIdAsync(int clientId, CancellationToken cancellationToken = default);
